@@ -7,7 +7,7 @@
   <title>Slice · 剧情体验评估</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="stylesheet" href="./styles.css?v=20260905-experience-1" />
-  <link rel="stylesheet" href="./experience-report.css?v=20260905-plans-2" />
+  <link rel="stylesheet" href="./experience-report.css?v=20260905-gameplay-5" />
 </head>
 <body data-view-mode="actual" data-workbench="experience">
   <div id="app" class="app">
@@ -30,7 +30,7 @@
         <div class="context-divider"></div>
         <label class="compact-field persona-field">
           <span title="仅作评审标签，不会改变后端 Preview Player 身份">评审标签</span>
-          <select id="persona-select" aria-label="评测视角">
+          <select id="persona-select" aria-label="互动对象建议">
             <option>默认 Preview Player</option>
           </select>
         </label>
@@ -194,6 +194,11 @@
             <div class="eval-character-tools"><label>基础角色卡<input id="eval-character-search" type="search" placeholder="搜索姓名、设定或来源剧本" /></label><button id="eval-cast-reset" class="button ghost" type="button">恢复本剧本角色</button></div>
             <p class="dialog-note">勾选 0–8 张真实角色卡。已选卡优先显示；保存后会进入编译 Source，而非只更换显示名。</p>
             <div id="eval-scenario-characters" class="eval-character-grid"></div>
+            <div class="eval-role-selection">
+              <label>我扮演谁<select id="eval-player-character" aria-label="玩家扮演角色"><option value="">自定义试玩身份（Preview Player）</option></select></label>
+              <label>首位互动 NPC<select id="eval-first-follower" aria-label="首位互动 NPC"><option value="">按剧本推荐选择</option></select></label>
+            </div>
+            <p class="dialog-note">扮演身份与互动对象独立保存到后端。你扮演的角色不会再次作为 NPC 出现；未选择角色时，明确使用 Preview Player。</p>
           </section>
           <label class="full">世界简介<textarea id="eval-description" rows="3" required></textarea></label>
           <label class="full">世界观设定<textarea id="eval-setting" rows="3" required></textarea></label>
@@ -212,10 +217,10 @@
 
   <script src="./scenario-library.js?v=20260905-experience-1"></script>
   <script src="./auth-config.js?v=20260905-experience-1"></script>
-  <script src="./eval-backend.js?v=20260905-durable-3"></script>
+  <script src="./eval-backend.js?v=20260905-gameplay-5"></script>
   <script src="./compiled-plan-view.js?v=20260905-plans-2"></script>
   <script src="./cost-estimate.js?v=20260905-plans-2"></script>
-  <script src="./experience-report.js?v=20260905-durable-3"></script>
-  <script src="./app.js?v=20260905-durable-3"></script>
+  <script src="./experience-report.js?v=20260905-gameplay-5"></script>
+  <script src="./app.js?v=20260905-gameplay-5"></script>
 </body>
 </html>

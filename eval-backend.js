@@ -359,6 +359,25 @@
     }));
   }
 
+  function previewRunRequest(input, track) {
+    return { track,
+      ...(input.playerCharacterVersionId ? { playerCharacterVersionId: input.playerCharacterVersionId } : {}),
+      ...(input.firstFollowerCharacterVersionId ? { firstFollowerCharacterVersionId: input.firstFollowerCharacterVersionId } : {}),
+    };
+  }
+
+  function assertPreviewIdentity(preview, input) {
+    const identity = preview?.identitySnapshot;
+    const player = input.playerCharacterVersionId;
+    if (player && (identity?.sourceType !== 'playable_character' || identity.sourceCharacterVersionId !== player
+      || (preview.castSnapshot?.entries || []).some((row) => row.characterVersionId === player))) {
+      throw Object.assign(new Error('服务端未按所选角色建立玩家身份，或仍把玩家角色当成 NPC；停止开局'), { code: 'SLICE_EVAL_PLAYER_IDENTITY_MISMATCH' });
+    }
+    if (input.firstFollowerCharacterVersionId && preview?.firstFollower?.characterVersionId !== input.firstFollowerCharacterVersionId) {
+      throw Object.assign(new Error('服务端首位互动角色与选择不一致；停止开局'), { code: 'SLICE_EVAL_FIRST_FOLLOWER_MISMATCH' });
+    }
+  }
+
   function normalizeSourceDocument(value) {
     if (value == null) return null;
     if (typeof value !== 'object' || Array.isArray(value)
@@ -394,11 +413,19 @@
       personaOptions: Array.isArray(input.personaOptions)
         ? input.personaOptions.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
       selectedPersona: String(input.selectedPersona || '').trim() || null,
+      playerCharacterVersionId: String(input.playerCharacterVersionId || '').trim() || null,
+      firstFollowerCharacterVersionId: String(input.firstFollowerCharacterVersionId || '').trim() || null,
       characters: normalizeInputCharacters(input.characters, characterVersionIds),
       sourceDocument: normalizeSourceDocument(input.sourceDocument),
     };
     for (const field of ['title', 'description', 'setting', 'goal']) {
       if (!normalized[field]) throw new Error(field + ' 不能为空');
+    }
+    for (const key of ['playerCharacterVersionId', 'firstFollowerCharacterVersionId']) {
+      if (normalized[key] && !characterVersionIds.includes(normalized[key])) throw new Error('玩家与互动 NPC 必须从本次已绑定角色卡中选择');
+    }
+    if (normalized.playerCharacterVersionId && normalized.playerCharacterVersionId === normalized.firstFollowerCharacterVersionId) {
+      throw new Error('玩家扮演角色不能同时成为首位互动 NPC');
     }
     if (normalized.title.length > 160) throw new Error('世界标题不能超过 160 字');
     if (!normalized.playerActions.length) throw new Error('至少填写一个玩家行动');
@@ -686,7 +713,8 @@
   }
   function resolveScenarioDmTarget(input, action) {
     const body = String(action || '');
-    const characters = Array.isArray(input?.characters) ? input.characters : [];
+    const characters = (Array.isArray(input?.characters) ? input.characters : [])
+      .filter((row) => row.characterVersionId !== input?.playerCharacterVersionId);
     const addressed = characters.map((character) => {
       const name = String(character.displayName || '');
       if (!name || !body.includes(name)) return null;
@@ -702,8 +730,10 @@
     const matched = addressed[0]?.character || characters
       .filter((character) => body.includes(String(character.displayName || '')))
       .sort((left, right) => [...String(right.displayName)].length - [...String(left.displayName)].length)[0];
-    const fallback = matched || characters[0] || (input?.characterVersionIds?.[0]
-      ? { displayName: null, characterVersionId: input.characterVersionIds[0] } : null);
+    const fallbackId = input?.firstFollowerCharacterVersionId
+      || input?.characterVersionIds?.find((id) => id !== input?.playerCharacterVersionId);
+    const fallback = matched || characters.find((row) => row.characterVersionId === fallbackId)
+      || characters[0] || (fallbackId ? { displayName: null, characterVersionId: fallbackId } : null);
     if (!fallback?.characterVersionId) throw resourceUnavailable(
       'SLICE_EVAL_DM_TARGET_MISSING',
       '评测输入没有可绑定的 CharacterVersion，无法创建同角色私聊。',
@@ -1055,14 +1085,18 @@
 
   function parseJourneyAction(value) {
     const action = String(value || '').trim();
+    const post = action.match(/^发帖\s*[：:]\s*([\s\S]+)$/u);
+    if (post) return { type: 'post', body: post[1].trim() };
+    const reply = action.match(/^回复评论\s*[：:]\s*([\s\S]+)$/u);
+    if (reply) return { type: 'reply', body: reply[1].trim() };
     const comment = action.match(/^评论\s*[：:]\s*([\s\S]+)$/u);
     if (comment) return { type: 'comment', body: comment[1].trim() };
     const dm = action.match(/^私聊\s+([^：:]+)[：:]\s*([\s\S]+)$/u);
     if (dm) return { type: 'dm_message', targetName: dm[1].trim(), body: dm[2].trim() };
     const event = action.match(/^事件\s*[：:]\s*(\S+)$/u);
     if (event) return { type: 'event_action', choiceId: event[1] };
-    if (/^(评论|私聊|事件)\s*[：:]/u.test(action) || /^私聊\s/u.test(action)) {
-      throw new Error('行动格式：评论：正文 / 私聊 角色名：正文 / 事件：choiceId；其他文字按自由行动提交');
+    if (/^(发帖|回复评论|评论|私聊|事件)\s*[：:]/u.test(action) || /^私聊\s/u.test(action)) {
+      throw new Error('行动格式：发帖：正文 / 回复评论：正文 / 评论：正文 / 私聊 角色名：正文 / 事件：choiceId；其他文字按自由行动提交');
     }
     return { type: 'free_act', body: action };
   }
@@ -1070,6 +1104,11 @@
   async function executeJourneyAction(preview, input, action) {
     const payload = parseJourneyAction(action);
     try {
+      if (payload.type === 'post') {
+        const run = await call('evalGetRun', { params: { runId: preview.runId } });
+        return await executeRunCommand(preview.runId, run, payload);
+      }
+      if (payload.type === 'reply') return await executeNpcReplyRun(preview, payload.body);
       if (payload.type === 'comment') return await executeCommentRun(preview.runId, payload.body);
       if (payload.type === 'dm_message') {
         const matches = input.characters.filter((character) => character.displayName === payload.targetName);
@@ -1092,6 +1131,24 @@
       if (error?.status === 401) throw error;
       return failedExecution(error, payload);
     }
+  }
+
+  async function executeNpcReplyRun(preview, body) {
+    const runId = preview.runId;
+    const player = (preview.actorStates || []).find((row) => row.kind === 'player');
+    if (!player?.actorId) throw resourceUnavailable('SLICE_EVAL_REPLY_TARGET_MISSING', '缺少服务器确认的玩家身份，不能猜测评论作者');
+    const snapshot = await readExperienceProjections(runId);
+    if (snapshot.replies?.status !== 'succeeded' || snapshot.replies.value?.truncated) {
+      throw resourceUnavailable('SLICE_EVAL_REPLY_TARGET_MISSING', '评论未完整读取，不能猜测回复目标');
+    }
+    const targets = pageItems(snapshot.replies.value).flatMap((thread) => pageItems(thread.value)
+      .filter((row) => row.replyId && row.author?.actorId && row.author.actorId !== player.actorId)
+      .map((row) => ({ ...row, rootPostId: thread.postId })));
+    targets.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(b.replyId).localeCompare(String(a.replyId)));
+    const target = targets[0];
+    if (!target) throw resourceUnavailable('SLICE_EVAL_REPLY_TARGET_MISSING', '本轮没有真实 NPC 评论可回复；不会替换成自由行动');
+    const run = await call('evalGetRun', { params: { runId } });
+    return executeRunCommand(runId, run, { type: 'reply', rootPostId: target.rootPostId, parentContentId: target.replyId, body });
   }
 
   async function readExperienceProjections(runId) {
@@ -1202,10 +1259,12 @@
       checkExperienceStop(input);
       publish({ kind: 'checkpoint', step: 'preview', message: '创建双 Preview Run' });
       const [current, candidate] = await Promise.all([
-        call('createCompilerExperimentPreviewRun', { params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-current'), body: { track: 'current' } }),
-        call('createCompilerExperimentPreviewRun', { params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-v2'), body: { track: 'v2_candidate' } }),
+        call('createCompilerExperimentPreviewRun', { params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-current'), body: previewRunRequest(input, 'current') }),
+        call('createCompilerExperimentPreviewRun', { params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-v2'), body: previewRunRequest(input, 'v2_candidate') }),
       ]);
       result.previewRuns = { current, v2Candidate: candidate };
+      assertPreviewIdentity(current, input);
+      assertPreviewIdentity(candidate, input);
       checkExperienceStop(input);
 
       publish({ kind: 'checkpoint', step: 'opening', message: '确认双轨服务端 Opening Post' });
@@ -1420,8 +1479,8 @@
   window.SliceEvalBackend = Object.freeze({
     loadContract, connect, disconnect, connected, runFullEvaluation, resumeCompilation, requestStop,
     __testing: Object.freeze({
-      validateInput, normalizeSourceDocument, normalizeInputCharacters, buildWorldSeed, buildWorldDraftContent,
-      parseJourneyAction, executeJourneyAction, readExperienceProjections, directMessageChannel,
+      validateInput, normalizeSourceDocument, normalizeInputCharacters, previewRunRequest, assertPreviewIdentity, buildWorldSeed, buildWorldDraftContent,
+      parseJourneyAction, executeJourneyAction, executeNpcReplyRun, readExperienceProjections, directMessageChannel,
       waitForExperiment,
       buildCreateWorldDraftRequest, buildCreateWorldDraftRevisionRequest,
       buildCreateCompilerExperimentRequest, backendRouteError, compactError,

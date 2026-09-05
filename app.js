@@ -537,6 +537,8 @@
       personaOptions: [...(value.personaOptions || [])],
       characters: [...(value.characters || [])],
       selectedPersona: String((value.personaOptions || [])[0] || ''),
+      playerCharacterVersionId: value.playerCharacterVersionId || null,
+      firstFollowerCharacterVersionId: value.firstFollowerCharacterVersionId || null,
     };
   }
 
@@ -1528,7 +1530,7 @@
       setHealth('running', experimentLabel, `${result.turns?.length || 0} 轮已返回`);
     } else {
       setHealth(issueCount ? 'error' : '', experimentLabel,
-        issueCount ? `${issueCount} 个可定位问题` : '双轨全链路完成');
+        issueCount ? `${issueCount} 个可定位问题` : '双轨流程已结束，玩法覆盖见报告');
     }
     renderNodes(); renderInspector();
   }
@@ -1547,6 +1549,8 @@
       playerActions: $('#eval-actions').value.split('\n').map((item) => item.trim()).filter(Boolean),
       sourceDocument: state.pendingSourceDocument ? { ...state.pendingSourceDocument, title: $('#eval-title').value.trim() } : null,
       selectedPersona: $('#persona-select').value || state.evalInput.selectedPersona || '',
+      playerCharacterVersionId: $('#eval-player-character').value || null,
+      firstFollowerCharacterVersionId: $('#eval-first-follower').value || null,
       topicTags: [...(state.evalInput.topicTags || [])],
       personaOptions: [...(state.evalInput.personaOptions || [])],
       baseScenarioId: state.evalInput.baseScenarioId || state.evalInput.sourceScenarioId || null,
@@ -1639,6 +1643,24 @@
         ${card.speakingStylePreview ? `<small>说话：${escapeHtml(card.speakingStylePreview)}</small>` : ''}
         <code title="${escapeHtml(id)}">${escapeHtml(id)}</code></label>`;
     }).join('') || '<p class="experience-muted">没有匹配的基础角色卡。</p>';
+    renderStartRoles();
+  }
+
+  function renderStartRoles(reset = false) {
+    const ids = parseCharacterVersionIds($('#eval-character-version-id').value);
+    const catalog = characterCatalog();
+    const cards = ids.map((id) => catalog.find((card) => card.characterVersionId === id)
+      || { characterVersionId: id, displayName: `角色 ${id.slice(0, 8)}` });
+    const player = $('#eval-player-character'), follower = $('#eval-first-follower');
+    const chosenPlayer = reset ? state.evalInput.playerCharacterVersionId : player.value;
+    const chosenFollower = reset ? state.evalInput.firstFollowerCharacterVersionId : follower.value;
+    const option = (card) => `<option value="${escapeHtml(card.characterVersionId)}">${escapeHtml(card.displayName)}</option>`;
+    const playable = cards.filter((card) => card.playable !== false);
+    player.innerHTML = '<option value="">自定义试玩身份（Preview Player）</option>' + playable.map(option).join('');
+    player.value = playable.some((card) => card.characterVersionId === chosenPlayer) ? chosenPlayer : '';
+    const npcs = cards.filter((card) => card.characterVersionId !== player.value);
+    follower.innerHTML = '<option value="">按剧本推荐选择</option>' + npcs.map(option).join('');
+    follower.value = npcs.some((card) => card.characterVersionId === chosenFollower) ? chosenFollower : '';
   }
 
   function updateSourceMeta() {
@@ -1672,9 +1694,11 @@
     $('#instruction-count').textContent = `${state.evalInput.evaluationInstruction.length} / 2000`;
     updateSourceMeta();
     renderScenarioCharacters();
+    renderStartRoles(true);
   }
 
   function initializeScenarioControls() {
+    $('#eval-player-character').addEventListener('change', () => renderStartRoles());
     const select = $('#scenario-select');
     const scenarios = scenarioLibrary.length ? scenarioLibrary : [FALLBACK_SCENARIO];
     select.innerHTML = scenarios.map((scenario) =>

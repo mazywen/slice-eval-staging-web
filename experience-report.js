@@ -39,6 +39,10 @@
   function actorNames(result, track, execution) {
     const names = new Map();
     for (const item of array(result?.input?.characters)) names.set(item.characterVersionId, item.displayName);
+    const preview = result?.previewRuns?.[track.key];
+    const player = array(preview?.actorStates).find((item) => item.kind === 'player');
+    if (player) names.set(player.actorId, preview?.identitySnapshot?.displayName || '玩家');
+    for (const item of array(execution?.projections?.stats?.value?.skills)) names.set(item.skillId, item.name || item.skillId);
     for (const item of array(result?.previewRuns?.[track.key]?.castSnapshot?.entries)) names.set(item.actorId, item.displayName || names.get(item.characterVersionId) || item.actorId);
     for (const item of items(execution?.projections?.cast?.value)) names.set(item.actorId, item.displayName || names.get(item.actorId) || item.actorId);
     for (const item of [...items(execution?.projectionsBefore?.relationships?.value), ...items(execution?.projections?.relationships?.value)]) {
@@ -52,7 +56,9 @@
     if (Array.isArray(value)) {
       for (const item of value) {
         // Stable identities prevent array reorder from creating false relationship/stat changes.
-        const key = item?.edgeId || item?.relationshipId || item?.actorId || item?.key || item?.statCode || item?.statId || item?.code || item?.id || item?.milestoneId;
+        const skill = item?.skillId || item?.skillCode || (path.endsWith('skills') ? item?.code || item?.key : null);
+        const key = skill ? `${item?.actorId ? `${item.actorId}.` : ''}${skill}`
+          : item?.edgeId || item?.relationshipId || item?.key || item?.statCode || item?.statId || item?.code || item?.actorId || item?.id || item?.milestoneId;
         if (key) numericValues(item, `${path}.${key}`, result);
       }
     } else for (const [key, child] of Object.entries(value)) {
@@ -94,11 +100,30 @@
     }
     return { rows, gaps };
   }
+  function entityChanges(before, after) {
+    const rows = [], gaps = [];
+    for (const [scope, label, key] of [['events', '事件', 'eventId'], ['activities', '活动', 'activityId'], ['milestones', '里程碑', 'milestoneId']]) {
+      if (incomplete(before?.[scope]) || incomplete(after?.[scope])) gaps.push(label);
+      const prior = new Map(items(before?.[scope]?.value).map((row) => [row[key], row]));
+      for (const row of items(after?.[scope]?.value)) {
+        if (!row[key] || JSON.stringify(prior.get(row[key])) === JSON.stringify(row)) continue;
+        rows.push({ scope, label, row, previous: prior.get(row[key]) || null,
+          isDelta: !incomplete(before?.[scope]) && !incomplete(after?.[scope]) });
+      }
+    }
+    return { rows, gaps };
+  }
+  function entitiesHtml(changes) {
+    return changes.rows.map(({ label, row, previous, isDelta }) => `<article class="experience-message"><div><span>${label}</span><strong>${esc(row.title || '未回传标题')}</strong><small>${isDelta ? previous ? '本轮更新' : '本轮新增' : '已观测，缺少可比基线'}</small></div><p>${esc(row.setup || row.description || '')}</p>${row.objective ? `<p>目标：${esc(row.objective)}</p>` : ''}<small>状态：${esc([previous?.state, row.state, row.resolution].filter(Boolean).join(' → ') || '未回传')}</small>${row.currentTurn !== undefined ? `<p>回合 ${esc(row.currentTurn)} / ${esc(row.maxTurns ?? '未回传')}</p>` : ''}${array(row.choices).length ? `<ol>${row.choices.map((choice) => `<li>${esc(typeof choice === 'string' ? choice : choice.label)}</li>`).join('')}</ol>` : ''}${row.freeInputAllowed ? '<small>支持自由输入回应</small>' : ''}${array(row.evidence).map((item) => `<p>证据：${esc(item.summary)}</p>`).join('')}</article>`).join('');
+  }
   function stepModel(result, track, step, index) {
     const execution = step?.[track.key];
     if (!execution) return null;
     const trace = traceCommand(result, track, execution);
     const outcome = { ...(execution.outcome || {}), ...(trace?.outcome || {}) };
+    const surfaces = surfaceChanges(execution.projectionsBefore, execution.projections);
+    const playerActorId = array(result?.previewRuns?.[track.key]?.actorStates).find((row) => row.kind === 'player')?.actorId;
+    const npcMessages = playerActorId ? surfaces.rows.filter((row) => row.isDelta && row.actorId && row.actorId !== playerActorId) : [];
     return {
       index, track, execution, trace, outcome,
       action: execution.payload?.body || (execution.payload?.choiceId ? `事件选项：${execution.payload.choiceId}` : step.action || '服务端开场'),
@@ -106,11 +131,13 @@
       director: outcome.directorDecision,
       effects: outcome.narrativeEffects,
       diff: stateDiff(execution.projectionsBefore, execution.projections),
-      surfaces: surfaceChanges(execution.projectionsBefore, execution.projections),
+      surfaces, npcMessages, playerActorId,
+      entities: entityChanges(execution.projectionsBefore, execution.projections),
+      summaryCopies: npcMessages.filter((row) => row.text.trim() && row.text.trim() === String(outcome.narrativeSummary || '').trim()),
       names: actorNames(result, track, execution),
       seedEvidence: root.SliceCompiledPlanView?.seedEvidence(result, track.code, outcome.directorDecision?.seedRef) || '',
-      noVisibleFeedback: execution.status === 'applied' && outcome.writeCounts
-        && ['contents', 'dmMessages', 'events', 'activities', 'hooks', 'xpLedgerEntries', 'statLedgerEntries', 'relationshipMoments'].every((key) => outcome.writeCounts[key] === 0),
+      noVisibleFeedback: execution.status === 'applied' && Boolean(playerActorId)
+        && surfaces.gaps.length === 0 && npcMessages.length === 0,
     };
   }
   function raw(title, value) { return `<details class="experience-raw"><summary>${esc(title)}</summary><pre>${esc(JSON.stringify(value ?? null, null, 2))}</pre></details>`; }
@@ -129,13 +156,18 @@
     return `<section class="experience-track">
       <div class="experience-track-head"><strong>${model.track.label}</strong><span class="experience-status ${execution.status === 'applied' ? '' : 'has-issue'}">${esc(status[execution.status] || execution.status)}</span></div>
       <p class="experience-summary">${esc(outcome.narrativeSummary || execution.error?.message || '后端尚未返回剧情摘要')}</p>
-      ${model.noVisibleFeedback ? '<p class="experience-warning">玩法观察：本步命令已生效，但真实写入中没有帖子、评论、私聊、事件或数值反馈。剧情摘要不等于玩家可见的互动内容。</p>' : ''}
+      ${model.noVisibleFeedback ? '<p class="experience-warning">玩法观察：命令已生效，但完整快照中没有新增 NPC 回应。玩家自己的帖子、经验奖励和剧情摘要均不能替代 NPC 互动。</p>' : ''}
       ${director ? `<div class="experience-director"><strong>${esc(narrative[director.narrativeFunction] || director.narrativeFunction)} · ${esc(tension[director.tensionBand] || director.tensionBand)}</strong><p>${esc(director.reason)}</p><small>聚焦：${esc(array(director.spotlightActorIds).map((id) => names.get(id) || id).join('、') || '无')} · 剧情种子 ${esc(director.seedRef || '未回传')}</small></div>` : '<p class="experience-muted">本轮 Director 决策未回传；不从生成文字推测。</p>'}
       ${effects ? `<div class="experience-effects"><span>结果 ${esc(effects.outcomeBandCode)}</span><span>影响 ${esc(array(effects.stateEffectCodes).join(' / '))}</span>${effects.endingProfileCode ? `<strong>结局证据 ${esc(effects.endingProfileCode)}</strong>` : ''}${array(effects.openLoopChanges).map((loop) => `<small>伏笔 ${esc(loop.loopRef)} · ${esc(loop.kind)} · ${esc(loop.operation)}</small>`).join('')}</div>` : ''}
       ${model.seedEvidence || ''}
+      <p class="experience-muted">AI 调用记录 ${model.usage.count || '未回传'} · 命令 ${esc(status[execution.status] || execution.status)} · 新增 NPC 消息 ${model.playerActorId && !surfaces.gaps.length ? model.npcMessages.length : '证据不完整'}</p>
+      ${model.summaryCopies.length ? '<p class="experience-warning">有 NPC 消息与剧情摘要完全相同，需要核查是否仍在复制旁白，而非生成角色台词。</p>' : ''}
       <h4>角色回应 <small>按真实内容 ID 对比前后快照</small></h4>
       ${messages || `<p class="experience-muted">${surfaces.gaps.length ? '该步缺少完整消息快照，不能判定没有回应。' : '已读取范围内，本轮没有新增帖子、评论或私聊。'}</p>`}
       ${surfaces.gaps.length ? `<p class="experience-warning">证据不完整：${esc(surfaces.gaps.join('、'))}。分页/历史报告未采集的内容不计为零。</p>` : ''}
+      <h4>事件、活动与里程碑</h4>
+      ${entitiesHtml(model.entities) || '<p class="experience-muted">本轮未观测到新的玩法卡片或状态变化。</p>'}
+      ${model.entities.gaps.length ? `<p class="experience-muted">缺少完整对比：${esc(model.entities.gaps.join('、'))}。未采集不代表没有发生。</p>` : ''}
       <h4>数值变化</h4>
       ${stateRows ? `<div class="experience-table-wrap"><table><thead><tr><th>指标</th><th>前</th><th>后</th><th>变化</th></tr></thead><tbody>${stateRows}</tbody></table></div>` : '<p class="experience-muted">完整可比的指标中，未观测到数值变化。</p>'}
       ${diff.gaps.length ? `<p class="experience-warning">缺少前后快照：${esc(diff.gaps.join('、'))}，无法计算这些指标。</p>` : ''}
@@ -143,6 +175,28 @@
       ${raw('本步实际请求 / Outcome / Director / 模型调用', { input: execution.payload, command: execution.command, outcome, aiCalls: model.trace?.aiCalls || [], errors: execution.error, projectionIssues: execution.projectionIssues })}
       ${raw('本步状态前后快照', { before: execution.projectionsBefore || null, after: execution.projections || null })}
     </section>`;
+  }
+  function gameplayCoverage(result, track) {
+    const models = [{ ...result.opening }, ...array(result.turns)]
+      .map((step, index) => stepModel(result, track, step, index)).filter(Boolean);
+    const messages = models.flatMap((model) => model.npcMessages);
+    const changes = models.flatMap((model) => model.diff.changes);
+    const entities = models.flatMap((model) => model.entities.rows);
+    return [
+      { label: 'NPC 公开回应', observed: messages.some((row) => row.surface !== '私聊') },
+      { label: 'NPC 私信', observed: messages.some((row) => row.surface === '私聊') },
+      { label: '事件呈现', observed: entities.some((item) => item.scope === 'events') },
+      { label: '关系变化', observed: changes.some((item) => item.scope === 'relationships' && item.delta !== null && item.delta !== 0)
+        || models.some((model) => model.outcome.writeCounts?.relationshipMoments > 0) },
+      { label: '技能变化', observed: changes.some((item) => item.scope === 'stats' && item.path.startsWith('skills.') && item.delta !== null && item.delta !== 0) },
+      { label: '里程碑完成', observed: entities.some((item) => item.scope === 'milestones' && item.isDelta
+        && (item.row.resolution === 'completed' || item.row.state === 'completed') && item.previous?.resolution !== 'completed' && item.previous?.state !== 'completed') },
+      { label: '经验增长', observed: changes.some((item) => /(^|\.)xp$/.test(item.path) && item.delta > 0) },
+    ];
+  }
+  function coverageHtml(result, track) {
+    const preview = result?.previewRuns?.[track.key];
+    return `<section class="experience-track"><h3>${esc(track.label)} · 实际玩法覆盖</h3><p>玩家：<strong>${esc(preview?.identitySnapshot?.displayName || '尚未创建')}</strong> · 身份来源：${esc(preview?.identitySnapshot?.sourceType || '未回传')}</p><p>首位互动 NPC：${esc(preview?.firstFollower?.displayName || array(preview?.castSnapshot?.entries).find((row) => row.characterVersionId === preview?.firstFollower?.characterVersionId)?.displayName || '未回传')}</p><div class="experience-effects">${gameplayCoverage(result, track).map((item) => `<span>${item.label}：<b>${item.observed ? '已观测' : '未观测 / 未验证'}</b></span>`).join('')}</div><small>这是本次运行的覆盖情况，不是全部功能已完成的认证；私信不产生经验、技能或里程碑奖励。</small></section>`;
   }
   function selectedTracks(code) { return code === 'both' ? tracks : tracks.filter((track) => track.code === code); }
   function compileHtml(result, track) {
@@ -179,13 +233,14 @@
       ${result.stoppedReason ? `<p class="experience-warning">${result.stoppedReason === 'user_requested' ? '已在回合边界停止；已接受的请求没有撤销。' : '命令未成功应用，已停止后续行动，避免把不连续的状态当成完整玩法。'}</p>` : ''}
       <div class="experience-total">${usageHtml(usage(allCalls), result.durationMs)}<small>仅本次 Preview Run 与编译调用，按 callRef 去重；不累计旧试玩。未回传不显示为 0；不同币种分别统计。</small></div>
       ${root.SliceCostEstimate?.render(result, selected.map((track) => track.code)) || ''}
+      <div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => coverageHtml(result, track)).join('')}</div>
       ${result.compiledPlans?.tracks?.length === 2 && result.compiledPlans.tracks[0].planDigest && result.compiledPlans.tracks[0].planDigest === result.compiledPlans.tracks[1].planDigest ? '<p class="experience-warning">本次 Current / V2 的完整 Plan 摘要相同。请核对是否复用历史编译基线；本次双轨结果不足以证明两套编译器的质量差异。</p>' : ''}
       <section class="experience-section"><div class="experience-section-title"><span>01</span><h2>世界编译与剧情依据</h2></div><p class="experience-goal">源目标：${esc(result.input?.goal || '未提供')}</p><div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => compileHtml(result, track)).join('')}</div></section>
       <section class="experience-section"><div class="experience-section-title"><span>02</span><h2>本次剧情走向</h2></div><div class="experience-outline">${outline}</div></section>
       <section class="experience-section"><div class="experience-section-title"><span>03</span><h2>逐步体验与消耗</h2></div>${steps.map((step, index) => `<article id="experience-step-${index}" class="experience-step"><header><span>${index === 0 ? 'OPENING' : `TURN ${String(index).padStart(2, '0')}`}</span><h3>${esc(index === 0 ? '确认服务端开场' : step.action)}</h3><small>${esc(step.kind || '')} · 双轨墙钟 ${duration(step.durationMs)}</small></header><div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => stepHtml(stepModel(result, track, step, index))).join('')}</div></article>`).join('')}</section>`;
     [...host.querySelectorAll('details')].forEach((el, index) => { el.dataset.detailKey = String(index); if (detailState.has(String(index))) el.open = detailState.get(String(index)); });
   }
-  const api = Object.freeze({ render, usage, uniqueCalls, stateDiff, numericValues, surfaceChanges, stepModel, esc, duration });
+  const api = Object.freeze({ render, usage, uniqueCalls, stateDiff, numericValues, surfaceChanges, entityChanges, gameplayCoverage, stepModel, esc, duration });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SliceExperienceReport = api;
 })(typeof window !== 'undefined' ? window : globalThis);
