@@ -195,7 +195,7 @@
       { label: '里程碑完成', observed: entities.some((item) => item.scope === 'milestones' && item.isDelta
         && (item.row.resolution === 'completed' || item.row.state === 'completed') && item.previous?.resolution !== 'completed' && item.previous?.state !== 'completed') },
       { label: '经验增长', observed: models.some((model) => model.execution.payload?.type !== 'dm_message'
-        && model.diff.changes.some((item) => item.scope === 'progression' && /^(xp|totalXp)$/.test(item.path) && item.delta > 0)) },
+        && model.diff.changes.some((item) => item.scope === 'progression' && /^(progression\.)?(xp|totalXp)$/.test(item.path) && item.delta > 0)) },
     ];
   }
   // A flow ending is not acceptance. Every check is tied to applied Commands

@@ -1086,7 +1086,7 @@
   function parseJourneyAction(value) {
     const action = String(value || '').trim();
     const post = action.match(/^发帖\s*[：:]\s*([\s\S]+)$/u);
-    if (post) return { type: 'post', body: post[1].trim() };
+    if (post) return { type: 'post', body: post[1].trim(), visibility: 'public' };
     const reply = action.match(/^回复评论\s*[：:]\s*([\s\S]+)$/u);
     if (reply) return { type: 'reply', body: reply[1].trim() };
     const comment = action.match(/^评论\s*[：:]\s*([\s\S]+)$/u);
