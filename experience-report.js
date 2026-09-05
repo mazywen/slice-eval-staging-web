@@ -9,7 +9,7 @@
   const labels = { xp: '经验', level: '等级', affinity: '好感度', trust: '信任', intimacy: '亲密度', respect: '尊重', value: '数值', tension: '张力', followerCount: '粉丝', score: '分数', progress: '进度', statValue: '数值', currentValue: '当前值', totalXp: '总经验' };
   const narrative = { OPENING_HOOK: '开场钩子', BOND: '关系推进', INVESTIGATE: '调查', NEGOTIATE: '协商', PUBLIC_CHALLENGE: '公开挑战', PRIVATE_TEST: '私下试探', COMPLICATION: '矛盾升级', REVEAL: '揭示', REVERSAL: '反转', BETRAYAL: '背叛', RESCUE: '救援', REUNION: '重逢', BREAKTHROUGH: '突破', CRISIS_CHOICE: '危机抉择', AFTERMATH: '余波', RECOVERY: '恢复', ENDING_GATE: '结局条件', EPILOGUE: '尾声' };
   const tension = { QUIET: '平静', BUILD: '铺垫', PRESSURE: '施压', PEAK: '高潮', RELEASE: '释放', RECOVERY: '恢复' };
-  const status = { running: '执行中', completed: '已完成', completed_with_issues: '完成，有问题', stopped: '已停止', failed: '失败', applied: '已生效', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
+  const status = { running: '执行中', completed: '流程执行结束', coverage_incomplete: '流程结束，玩法覆盖未通过', verified: '玩法覆盖通过', completed_with_issues: '流程结束，有问题', stopped: '已停止', failed: '失败', applied: '已生效', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
   function duration(ms) { return number(ms) === null ? '未回传' : ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`; }
   function uniqueCalls(calls) {
     const seen = new Set();
@@ -84,7 +84,7 @@
   }
   function flattenSurface(projections, scope) {
     if (scope === 'feed') return items(projections?.feed?.value);
-    if (scope === 'replies') return items(projections?.replies?.value).flatMap((page) => items(page.value));
+    if (scope === 'replies') return items(projections?.replies?.value).flatMap((page) => items(page.value).map((row) => ({ ...row, rootPostId: page.postId || row.rootPostId })));
     if (scope === 'dmThreads') return items(projections?.dmThreads?.value).flatMap((page) => items(page.value).map((message) => ({ ...message, channelId: page.channelId })));
     return [];
   }
@@ -178,25 +178,135 @@
   }
   function gameplayCoverage(result, track) {
     const models = [{ ...result.opening }, ...array(result.turns)]
-      .map((step, index) => stepModel(result, track, step, index)).filter(Boolean);
+      .map((step, index) => stepModel(result, track, step, index)).filter((model) => model?.execution.status === 'applied');
     const messages = models.flatMap((model) => model.npcMessages);
     const changes = models.flatMap((model) => model.diff.changes);
     const entities = models.flatMap((model) => model.entities.rows);
     return [
       { label: 'NPC 公开回应', observed: messages.some((row) => row.surface !== '私聊') },
       { label: 'NPC 私信', observed: messages.some((row) => row.surface === '私聊') },
-      { label: '事件呈现', observed: entities.some((item) => item.scope === 'events') },
-      { label: '关系变化', observed: changes.some((item) => item.scope === 'relationships' && item.delta !== null && item.delta !== 0)
-        || models.some((model) => model.outcome.writeCounts?.relationshipMoments > 0) },
-      { label: '技能变化', observed: changes.some((item) => item.scope === 'stats' && item.path.startsWith('skills.') && item.delta !== null && item.delta !== 0) },
+      { label: '事件呈现', observed: entities.some((item) => item.scope === 'events' && item.isDelta) },
+      { label: '关系变化', observed: changes.some((item) => item.scope === 'relationships' && item.delta !== null && item.delta !== 0) },
+      { label: '技能变化', observed: models.some((model) => model.playerActorId && model.execution.payload?.type !== 'dm_message'
+        && model.diff.changes.some((item) => item.scope === 'stats' && /\.(value|currentValue)$/.test(item.path)
+          && item.delta !== null && item.delta !== 0 && array(model.execution.projections?.stats?.value?.skills)
+            .filter((skill) => !skill.actorId || skill.actorId === model.playerActorId)
+            .some((skill) => item.path.startsWith(`skills.${skill.actorId ? `${skill.actorId}.` : ''}${skill.skillId || skill.skillCode || skill.code || skill.key}.`)))) },
       { label: '里程碑完成', observed: entities.some((item) => item.scope === 'milestones' && item.isDelta
         && (item.row.resolution === 'completed' || item.row.state === 'completed') && item.previous?.resolution !== 'completed' && item.previous?.state !== 'completed') },
-      { label: '经验增长', observed: changes.some((item) => /(^|\.)xp$/.test(item.path) && item.delta > 0) },
+      { label: '经验增长', observed: models.some((model) => model.execution.payload?.type !== 'dm_message'
+        && model.diff.changes.some((item) => item.scope === 'progression' && /^(xp|totalXp)$/.test(item.path) && item.delta > 0)) },
     ];
+  }
+  // A flow ending is not acceptance. Every check is tied to applied Commands
+  // and actual read APIs; model prose, write counts and old snapshots are not proof.
+  function gameplayAcceptance(result, track) {
+    const preview = result?.previewRuns?.[track.key];
+    const all = [{ ...result?.opening }, ...array(result?.turns)]
+      .map((step, index) => stepModel(result, track, step, index)).filter(Boolean);
+    const models = all.filter((model) => model.execution.status === 'applied');
+    const playerId = array(preview?.actorStates).find((row) => row.kind === 'player')?.actorId;
+    const commandId = (model) => model.execution.command?.commandId || model.execution.accepted?.commandId;
+    const checks = [];
+    const add = (key, label, matches, reason) => checks.push({ key, label, observed: matches.length > 0,
+      commandIds: [...new Set(matches.map(commandId).filter(Boolean))], reason: matches.length ? null : reason });
+    const completeSurfaces = (model) => model.surfaces.gaps.length === 0;
+    const sameText = (row, body) => typeof body === 'string' && String(row.text || row.body || '').trim() === body.trim();
+    const completed = (row) => row?.resolution === 'completed' || row?.state === 'completed';
+    const active = (row) => ['active', 'available'].includes(row?.state);
+    const realNpc = (model, surface) => model.npcMessages.filter((row) => (!surface || row.surface === surface)
+      && row.text.trim() && !model.summaryCopies.includes(row));
+    const opening = models.filter((model) => model.execution.payload?.type === 'confirm_opening_post'
+      && completeSurfaces(model) && model.surfaces.rows.some((row) => row.surface === '帖子'
+        && row.actorId === playerId && row.postId && row.isDelta && sameText(row, model.execution.payload.body)));
+    add('opening', '开局应用并回读', opening, '缺少已应用的开局及玩家原文回读');
+    const followerId = array(preview?.castSnapshot?.entries).find((row) =>
+      row.characterVersionId === preview?.firstFollower?.characterVersionId)?.actorId;
+    add('first_follower', '所选首位 NPC 回应', opening.filter((model) => followerId
+      && realNpc(model).some((row) => row.actorId === followerId)), '开局未回读到所选首位 NPC 的独立正文');
+    add('post_comment', '发帖收到 NPC 评论', models.filter((model) => {
+      if (model.execution.payload?.type !== 'post' || !completeSurfaces(model)) return false;
+      const posts = model.surfaces.rows.filter((row) => row.surface === '帖子' && row.actorId === playerId
+        && row.postId && row.isDelta && sameText(row, model.execution.payload.body));
+      return realNpc(model, '评论').some((row) => posts.some((post) => post.postId === row.rootPostId));
+    }), '没有同一发帖命令下、引用该帖的真实 NPC 评论');
+    add('comment_reply', '回复真实评论并继续互动', models.filter((model) => {
+      const payload = model.execution.payload;
+      if (payload?.type !== 'reply' || !completeSurfaces(model)) return false;
+      const target = flattenSurface(model.execution.projectionsBefore, 'replies').find((row) =>
+        row.replyId === payload.parentContentId && row.rootPostId === payload.rootPostId
+        && row.author?.actorId && row.author.actorId !== playerId);
+      return Boolean(target) && model.surfaces.rows.some((row) => row.surface === '评论'
+        && row.actorId === playerId && row.rootPostId === payload.rootPostId
+        && row.parentContentId === payload.parentContentId && sameText(row, payload.body))
+        && realNpc(model, '评论').some((row) => row.rootPostId === payload.rootPostId);
+    }), '缺少正确 root/parent 引用、玩家回复与后续 NPC 评论的回读');
+    const proactive = models.filter((model) => model.execution.payload?.type !== 'dm_message'
+      && completeSurfaces(model) && realNpc(model, '私聊').some((row) => row.channelId && row.messageId));
+    add('proactive_dm', '公开行动触发主动私信', proactive, '空频道、手动建频道及玩家先发起的 DM 不算主动私信');
+    add('dm_reply', '回复主动私信并收到后续回复', models.filter((model) => {
+      const payload = model.execution.payload;
+      if (payload?.type !== 'dm_message' || !completeSurfaces(model)) return false;
+      const incoming = proactive.filter((origin) => origin.index < model.index)
+        .flatMap((origin) => realNpc(origin, '私聊')).filter((row) => row.channelId === payload.channelId);
+      return incoming.length > 0 && model.surfaces.rows.some((row) => row.surface === '私聊'
+        && row.channelId === payload.channelId && row.actorId === playerId && sameText(row, payload.body))
+        && realNpc(model, '私聊').some((row) => row.channelId === payload.channelId
+          && incoming.some((message) => message.actorId === row.actorId));
+    }), '尚未验证同一主动来信人物和频道的后续回复');
+    add('event_resolution', '真实事件回应与结算', models.filter((model) => {
+      const payload = model.execution.payload;
+      if (payload?.type !== 'event_action') return false;
+      const before = items(model.execution.projectionsBefore?.events?.value).find((row) => row.eventId === payload.eventId);
+      const validInput = payload.choiceId ? array(before?.choices).some((choice) => choice.choiceId === payload.choiceId)
+        : before?.freeInputAllowed === true && typeof payload.body === 'string' && payload.body.trim();
+      return active(before) && validInput && model.entities.rows.some((item) => item.scope === 'events'
+        && item.isDelta && item.row.eventId === payload.eventId && item.row.state === 'resolved');
+    }), '未回读到指定 eventId 的有效选择/自由输入及 resolved 状态');
+    for (const row of gameplayCoverage(result, track).filter((row) => ['关系变化', '技能变化', '经验增长'].includes(row.label))) {
+      checks.push({ key: ({ '关系变化': 'relationship', '技能变化': 'skill', '经验增长': 'xp' })[row.label],
+        ...row, commandIds: [], reason: row.observed ? null : '缺少可比的真实前后数值' });
+    }
+    add('milestone_next', '里程碑证据、完成与下一条', models.filter((model) => model.execution.payload?.type !== 'dm_message'
+      && model.entities.rows.some((item) => item.scope === 'milestones' && item.isDelta
+        && completed(item.row) && !completed(item.previous) && array(item.row.evidence).some((entry) => entry.summary)
+        && items(model.execution.projections?.milestones?.value).some((next) =>
+          next.milestoneId !== item.row.milestoneId && active(next)
+          && !active(items(model.execution.projectionsBefore?.milestones?.value).find((prior) => prior.milestoneId === next.milestoneId))))), '缺少本轮完成证据或正式接口返回的下一里程碑');
+    const authoritative = all.length > 0 && all.every((model) => {
+      const execution = model.execution;
+      return execution.status === 'applied' && execution.command?.status === 'applied'
+        && execution.outcome?.status === 'applied' && execution.outcome?.outcomeId
+        && execution.outcome.commandId === commandId(model) && execution.outcome.runId === preview?.runId
+        && execution.projectionsBefore?.run?.status === 'succeeded' && execution.projections?.run?.status === 'succeeded'
+        && execution.projectionsBefore.run.value.revision + 1 === execution.outcome.resultingRevision
+        && execution.projections.run.value.revision === execution.outcome.resultingRevision;
+    });
+    checks.push({ key: 'continuous_applied', label: '同一 Run 连续应用与 Outcome 回读', observed: Boolean(authoritative),
+      commandIds: all.map(commandId).filter(Boolean), reason: authoritative ? null : '存在未应用命令或缺少匹配的正式 Outcome' });
+    const replay = models.length > 0 && models.every((model) => model.execution.idempotencyVerification?.sameCommandId === true
+      && model.execution.idempotencyVerification?.sameOutcomeId === true
+      && model.execution.idempotencyVerification?.revisionUnchanged === true
+      && model.execution.idempotencyVerification?.projectionsUnchanged === true);
+    checks.push({ key: 'idempotency', label: '重试不重复消息或奖励', observed: replay,
+      commandIds: models.map(commandId).filter(Boolean), reason: replay ? null : '未完成同 key 重试与 Outcome/revision/投影复读对比' });
+    const dmRules = models.filter((model) => model.execution.payload?.type === 'dm_message');
+    const dmValid = dmRules.length > 0 && dmRules.every((model) => !model.diff.gaps.includes('stats')
+      && !model.diff.gaps.includes('progression') && !model.entities.gaps.includes('里程碑')
+      && !model.diff.changes.some((change) => change.scope === 'stats' || change.scope === 'progression')
+      && !model.entities.rows.some((item) => item.scope === 'milestones'));
+    checks.push({ key: 'dm_growth_boundary', label: '私信不单独产生数值成长', observed: dmValid,
+      commandIds: dmRules.map(commandId).filter(Boolean), reason: dmValid ? null : 'DM 成长边界缺少完整前后快照或存在变化' });
+    const missing = checks.filter((row) => !row.observed).map((row) => row.key);
+    return { schemaVersion: 'slice.core-gameplay-acceptance.v1', trackCode: track.code,
+      passed: missing.length === 0, checks, missing,
+      workflowFinished: result?.workflowFinished === true || ['completed', 'coverage_incomplete', 'verified'].includes(result?.status),
+      deviceVerified: false, sourceReused: result?.sourceReused ?? null };
   }
   function coverageHtml(result, track) {
     const preview = result?.previewRuns?.[track.key];
-    return `<section class="experience-track"><h3>${esc(track.label)} · 实际玩法覆盖</h3><p>玩家：<strong>${esc(preview?.identitySnapshot?.displayName || '尚未创建')}</strong> · 身份来源：${esc(preview?.identitySnapshot?.sourceType || '未回传')}</p><p>首位互动 NPC：${esc(preview?.firstFollower?.displayName || array(preview?.castSnapshot?.entries).find((row) => row.characterVersionId === preview?.firstFollower?.characterVersionId)?.displayName || '未回传')}</p><div class="experience-effects">${gameplayCoverage(result, track).map((item) => `<span>${item.label}：<b>${item.observed ? '已观测' : '未观测 / 未验证'}</b></span>`).join('')}</div><small>这是本次运行的覆盖情况，不是全部功能已完成的认证；私信不产生经验、技能或里程碑奖励。</small></section>`;
+    const acceptance = gameplayAcceptance(result, track);
+    return `<section class="experience-track"><h3>${esc(track.label)} · 实际玩法覆盖</h3><p class="${acceptance.passed ? 'experience-muted' : 'experience-warning'}">${acceptance.passed ? '本轨道核心玩法覆盖通过' : '核心玩法验收未通过'} · 流程${acceptance.workflowFinished ? '已结束' : '尚未完整结束'} · 手机设备未验收</p><details><summary>连续链与持久化验收 ${acceptance.checks.filter((row) => row.observed).length} / ${acceptance.checks.length}</summary>${acceptance.checks.map((row) => `<p>${esc(row.label)}：${row.observed ? '有回读证据' : esc(row.reason)}</p>`).join('')}</details><p>玩家：<strong>${esc(preview?.identitySnapshot?.displayName || '尚未创建')}</strong> · 身份来源：${esc(preview?.identitySnapshot?.sourceType || '未回传')}</p><p>首位互动 NPC：${esc(preview?.firstFollower?.displayName || array(preview?.castSnapshot?.entries).find((row) => row.characterVersionId === preview?.firstFollower?.characterVersionId)?.displayName || '未回传')}</p><div class="experience-effects">${gameplayCoverage(result, track).map((item) => `<span>${item.label}：<b>${item.observed ? '已观测' : '未观测 / 未验证'}</b></span>`).join('')}</div><small>这是本次运行的覆盖情况，不是全部功能已完成的认证；私信不产生经验、技能或里程碑奖励。</small></section>`;
   }
   function selectedTracks(code) { return code === 'both' ? tracks : tracks.filter((track) => track.code === code); }
   function compileHtml(result, track) {
@@ -228,7 +338,7 @@
       const texts = selected.map((track) => stepModel(result, track, step, index)).filter(Boolean);
       return `<a href="#experience-step-${index}" class="experience-outline-step"><span>${index === 0 ? '开局' : String(index).padStart(2, '0')}</span><div><strong>${esc(index === 0 ? '故事开场' : step.action)}</strong>${texts.map((model) => `<p><b>${model.track.label}</b> ${esc(model.outcome.narrativeSummary || model.execution.error?.message || '待返回')}</p>`).join('')}</div></a>`;
     }).join('');
-    host.innerHTML = `<header class="experience-report-head"><div><div class="experience-kicker">GAMEPLAY REVIEW · ${esc(result.input?.evaluationMode === 'regression' ? '链路回归' : '剧情体验')}</div><h1>${esc(result.input?.title || input?.title)}</h1><p>${esc(status[result.status] || result.status)} · ${array(result.turns).length} / ${array(result.input?.playerActions).length} 轮 · 总墙钟 ${duration(result.durationMs)}</p></div><div class="experience-source"><span>Source ${esc(result.scenario?.worldDraftRevisionId || '待创建')}</span><span>Experiment ${esc(result.experiment?.experimentId || '待创建')}</span></div></header>
+    host.innerHTML = `<header class="experience-report-head"><div><div class="experience-kicker">GAMEPLAY REVIEW · ${esc(result.input?.evaluationMode === 'regression' ? '链路回归' : '剧情体验')}</div><h1>${esc(result.input?.title || input?.title)}</h1><p>${esc(status[result.status] || result.status)} · ${array(result.turns).length}${result.adaptiveAcceptance ? ' 轮 · 按当前局面继续验收' : ` / ${array(result.input?.playerActions).length} 轮`} · 总墙钟 ${duration(result.durationMs)}</p></div><div class="experience-source"><span>Source ${esc(result.scenario?.worldDraftRevisionId || '待创建')}</span><span>Experiment ${esc(result.experiment?.experimentId || '待创建')}</span></div></header>
       ${result.error ? `<p role="alert" class="experience-warning">${esc(result.error.code)} · ${esc(result.error.message)}</p>` : ''}
       ${result.stoppedReason ? `<p class="experience-warning">${result.stoppedReason === 'user_requested' ? '已在回合边界停止；已接受的请求没有撤销。' : '命令未成功应用，已停止后续行动，避免把不连续的状态当成完整玩法。'}</p>` : ''}
       <div class="experience-total">${usageHtml(usage(allCalls), result.durationMs)}<small>仅本次 Preview Run 与编译调用，按 callRef 去重；不累计旧试玩。未回传不显示为 0；不同币种分别统计。</small></div>
@@ -240,7 +350,7 @@
       <section class="experience-section"><div class="experience-section-title"><span>03</span><h2>逐步体验与消耗</h2></div>${steps.map((step, index) => `<article id="experience-step-${index}" class="experience-step"><header><span>${index === 0 ? 'OPENING' : `TURN ${String(index).padStart(2, '0')}`}</span><h3>${esc(index === 0 ? '确认服务端开场' : step.action)}</h3><small>${esc(step.kind || '')} · 双轨墙钟 ${duration(step.durationMs)}</small></header><div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => stepHtml(stepModel(result, track, step, index))).join('')}</div></article>`).join('')}</section>`;
     [...host.querySelectorAll('details')].forEach((el, index) => { el.dataset.detailKey = String(index); if (detailState.has(String(index))) el.open = detailState.get(String(index)); });
   }
-  const api = Object.freeze({ render, usage, uniqueCalls, stateDiff, numericValues, surfaceChanges, entityChanges, gameplayCoverage, stepModel, esc, duration });
+  const api = Object.freeze({ render, usage, uniqueCalls, stateDiff, numericValues, surfaceChanges, entityChanges, gameplayCoverage, gameplayAcceptance, stepModel, esc, duration });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SliceExperienceReport = api;
 })(typeof window !== 'undefined' ? window : globalThis);
