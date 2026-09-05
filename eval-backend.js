@@ -1,0 +1,1436 @@
+(() => {
+  'use strict';
+
+  const CONTRACT_URLS = location.pathname.includes('/tools/runtime-eval-web/')
+    ? ['../../packages/contracts/backend-contract.lock.json', './capability-contract.json']
+    : ['./capability-contract.json'];
+  const SESSION_KEY = 'slice-system-eval-session-v1';
+  const EXPECTED = Object.freeze({
+    createCompilerRuntimeEvalSession: ['POST', '/eval-api/v1/session', 201, 'compiler_runtime_eval_credential_proof', 'compiler_runtime_eval_login', 'none'],
+    evalCreateWorldDraft: ['POST', '/eval-api/v1/world-drafts', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalCreateWorldDraftRevision: ['POST', '/eval-api/v1/world-drafts/{worldDraftId}/revisions', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalCreateCompilerExperiment: ['POST', '/eval-api/v1/world-draft-revisions/{worldDraftRevisionId}/compiler-experiments', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalGetCompilerExperiment: ['GET', '/eval-api/v1/compiler-experiments/{experimentId}', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    createCompilerExperimentPreviewRun: ['POST', '/eval-api/v1/compiler-experiments/{experimentId}/preview-runs', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    getCompilerRuntimeEvalTrace: ['GET', '/eval-api/v1/compiler-experiments/{experimentId}/trace', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    getCompilerRuntimeEvalPlans: ['GET', '/eval-api/v1/compiler-experiments/{experimentId}/plans', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalGetRun: ['GET', '/eval-api/v1/runs/{runId}', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalSubmitWorldCommand: ['POST', '/eval-api/v1/runs/{runId}/commands', 202, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalGetWorldCommand: ['GET', '/eval-api/v1/runs/{runId}/commands/{commandId}', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalGetOutcomeByCommand: ['GET', '/eval-api/v1/runs/{runId}/commands/{commandId}/outcome', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunFeed: ['GET', '/eval-api/v1/runs/{runId}/feed', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListPostReplies: ['GET', '/eval-api/v1/runs/{runId}/feed/posts/{postId}/replies', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunMilestones: ['GET', '/eval-api/v1/runs/{runId}/milestones', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunRelationships: ['GET', '/eval-api/v1/runs/{runId}/relationships', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalGetRunStats: ['GET', '/eval-api/v1/runs/{runId}/stats', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunHighlightScenes: ['GET', '/eval-api/v1/runs/{runId}/highlight-scenes', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalGetRunProgression: ['GET', '/eval-api/v1/runs/{runId}/progression', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunEvents: ['GET', '/eval-api/v1/runs/{runId}/events', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunActivities: ['GET', '/eval-api/v1/runs/{runId}/activities', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunCast: ['GET', '/eval-api/v1/runs/{runId}/cast', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListRunHistory: ['GET', '/eval-api/v1/runs/{runId}/history', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListDmChannels: ['GET', '/eval-api/v1/runs/{runId}/dm-channels', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalCreateDmChannel: ['POST', '/eval-api/v1/runs/{runId}/dm-channels', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalListDmMessages: ['GET', '/eval-api/v1/runs/{runId}/dm-channels/{channelId}/messages', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+  });
+  const OPERATION_STAGES = Object.freeze({
+    evalCreateWorldDraft: 'scenario',
+    evalCreateWorldDraftRevision: 'scenario',
+    evalCreateCompilerExperiment: 'compile',
+    evalGetCompilerExperiment: 'compile',
+    createCompilerExperimentPreviewRun: 'preview',
+    evalGetRun: 'runtime',
+    evalSubmitWorldCommand: 'runtime',
+    evalGetWorldCommand: 'runtime',
+    evalGetOutcomeByCommand: 'runtime',
+    evalListRunFeed: 'runtime',
+    evalListPostReplies: 'runtime',
+    evalListRunMilestones: 'runtime',
+    evalListRunRelationships: 'runtime',
+    evalGetRunStats: 'runtime',
+    evalListRunHighlightScenes: 'runtime',
+    evalGetRunProgression: 'runtime',
+    evalListRunEvents: 'runtime',
+    evalListRunActivities: 'runtime',
+    evalListRunCast: 'runtime',
+    evalListRunHistory: 'runtime',
+    evalListDmChannels: 'runtime',
+    evalCreateDmChannel: 'runtime',
+    evalListDmMessages: 'runtime',
+    getCompilerRuntimeEvalTrace: 'trace',
+    getCompilerRuntimeEvalPlans: 'compile',
+  });
+  const state = {
+    contract: null,
+    operations: new Map(),
+    session: readJson(sessionStorage.getItem(SESSION_KEY)),
+    activeTelemetry: null,
+  };
+
+  function readJson(value) { try { return value ? JSON.parse(value) : null; } catch (_) { return null; } }
+  function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+  const PROJECTION_READ_CONCURRENCY = 2;
+  const PROJECTION_TRANSIENT_RETRY_DELAYS_MS = Object.freeze([250, 1000]);
+  const COMMAND_POLL_DELAYS_MS = Object.freeze([1000, 2000, 3000, 5000]);
+  const COMMAND_POLL_BUDGET_MS = 65000;
+  let projectionReadsInFlight = 0;
+  const projectionReadWaiters = [];
+  function idempotency(prefix) { return `${prefix}-${Date.now()}-${crypto.randomUUID()}`; }
+  function cloneEvidence(value) {
+    if (value === undefined) return null;
+    try { return JSON.parse(JSON.stringify(value)); } catch (_) { return { state: 'unserializable' }; }
+  }
+  function telemetryInput(operationId, { params, query, body, key } = {}) {
+    return Object.freeze({
+      params: cloneEvidence(params || {}),
+      query: cloneEvidence(query || {}),
+      body: safeOperationBody(operationId, body),
+      idempotencyKeyPresent: Boolean(key),
+    });
+  }
+  function beginOperation(operation, path, options) {
+    const telemetry = state.activeTelemetry;
+    if (!telemetry) return null;
+    const record = {
+      sequence: telemetry.records.length + 1,
+      stage: OPERATION_STAGES[operation.operationId] || 'system',
+      operationId: operation.operationId,
+      method: operation.httpMethod.toUpperCase(),
+      routePath: operation.routePath,
+      resolvedPath: path,
+      status: 'running',
+      httpStatus: null,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      durationMs: null,
+      input: telemetryInput(operation.operationId, options),
+      output: null,
+      error: null,
+    };
+    telemetry.records.push(record);
+    telemetry.onProgress({ kind: 'operation-start', operation: cloneEvidence(record) });
+    return { record, startedAtMs: performance.now() };
+  }
+  function finishOperation(active, { response, data, error } = {}) {
+    if (!active) return;
+    active.record.status = error ? 'failed' : 'succeeded';
+    active.record.httpStatus = response?.status ?? error?.status ?? null;
+    active.record.completedAt = new Date().toISOString();
+    active.record.durationMs = Math.max(0, Math.round(performance.now() - active.startedAtMs));
+    active.record.output = error ? null : safeOperationOutput(active.record.operationId, data);
+    active.record.error = error ? Object.freeze({
+      code: String(error.code || 'SLICE_EVAL_BACKEND_REQUEST_FAILED'),
+      backendCode: error.backendCode || null,
+      retryability: error.retryability || null,
+      message: String(error.message || error).slice(0, 500),
+      response: safeOperationOutput(active.record.operationId, data),
+    }) : null;
+    state.activeTelemetry?.onProgress({
+      kind: error ? 'operation-error' : 'operation-complete',
+      operation: cloneEvidence(active.record),
+    });
+  }
+  function messageFrom(data, response) {
+    return data?.error?.message || data?.error?.messageKey || data?.message
+      || data?.error?.code || data?.code || `${response.status} ${response.statusText}`;
+  }
+  function backendRouteError(operation, data, response) {
+    const code = data?.error?.code || data?.code;
+    if (response.status !== 404 || code !== 'ROUTE_NOT_FOUND') return null;
+    const error = new Error(
+      `staging 后端还没有部署 Eval API route：${operation.httpMethod.toUpperCase()} ${operation.routePath} 返回 404 ROUTE_NOT_FOUND。` +
+      '这不是账号密码错误；需要发布包含 quality.runtime-ai-evaluation.1 Eval routes 的 slice-api。',
+    );
+    error.code = 'SLICE_EVAL_ROUTE_NOT_DEPLOYED';
+    error.status = response.status;
+    error.operationId = operation.operationId;
+    error.routePath = operation.routePath;
+    return error;
+  }
+  function authenticationError(operation, data, response, useSession) {
+    if (response.status !== 401) return null;
+    const backendCode = data?.error?.code || data?.code || 'SLICE_AUTH_REQUIRED';
+    const isCredentialProof = !useSession
+      && operation.operationId === 'createCompilerRuntimeEvalSession';
+    const error = new Error(isCredentialProof
+      ? 'Eval 账号或密码不正确（POST /eval-api/v1/session → 401）。'
+      : `Eval Session 已过期或被撤销（${operation.httpMethod.toUpperCase()} ${operation.routePath} → 401），请重新登录。`);
+    error.code = isCredentialProof ? 'SLICE_EVAL_CREDENTIAL_INVALID' : 'SLICE_EVAL_SESSION_EXPIRED';
+    error.backendCode = backendCode;
+    error.status = response.status;
+    return error;
+  }
+  function connected() {
+    const valid = Boolean(state.session?.accessToken
+      && new Date(state.session.expiresAt).getTime() > Date.now());
+    if (!valid && state.session) disconnect();
+    return valid;
+  }
+  function apiOrigin() {
+    const value = String(window.SLICE_EVAL_AUTH?.backendApiOrigin || '').replace(/\/$/, '');
+    let url;
+    try { url = new URL(value); } catch (_) { throw new Error('部署包缺少有效 backendApiOrigin'); }
+    if (url.protocol !== 'https:' || url.origin !== value) throw new Error('backendApiOrigin 必须是精确 HTTPS Origin');
+    return value;
+  }
+  function validateContract(contract) {
+    if (contract?.schemaVersion !== 3 || contract?.capabilityScope?.scopeId !== 'slice.real-mvp-staging.v1') {
+      throw new Error('不是 Slice staging capability-scoped handoff');
+    }
+    const required = new Set(contract.capabilityScope.requiredOperationIds || []);
+    const operations = new Map((contract.operations || []).map((operation) => [operation.operationId, operation]));
+    for (const [operationId, [method, path, status, authClass, audience, idempotency]] of Object.entries(EXPECTED)) {
+      const operation = operations.get(operationId);
+      if (!required.has(operationId) || operation?.implementationStatus !== 'implemented'
+        || operation.httpMethod?.toUpperCase() !== method || operation.routePath !== path
+        || operation.successStatus !== status || operation.authClass !== authClass
+        || operation.audience !== audience || operation.idempotency !== idempotency) {
+        throw new Error(`Eval operation 未通过 exact handoff gate：${operationId}`);
+      }
+    }
+  }
+  async function loadContract() {
+    if (state.contract) return state.contract;
+    let lastError;
+    for (const url of CONTRACT_URLS) {
+      try {
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const contract = await response.json();
+        validateContract(contract);
+        state.contract = contract;
+        state.operations = new Map(contract.operations.map((operation) => [operation.operationId, operation]));
+        return contract;
+      } catch (error) { lastError = error; }
+    }
+    throw lastError || new Error('Eval capability handoff 不可用');
+  }
+  function operationPath(operation, params = {}, query = {}) {
+    let path = operation.routePath.replace(/\{([A-Za-z0-9]+)\}/gu, (_, key) => {
+      if (!params[key]) throw new Error(`${operation.operationId} 缺少 ${key}`);
+      return encodeURIComponent(params[key]);
+    });
+    const entries = Object.entries(query).filter(([, value]) => value !== undefined && value !== null && value !== '');
+    if (entries.length) path += `?${new URLSearchParams(entries.map(([key, value]) => [key, String(value)]))}`;
+    return path;
+  }
+  function safeOperationBody(operationId, body) {
+    if (body === undefined) return null;
+    if (operationId === 'createCompilerRuntimeEvalSession') {
+      return { username: String(body?.username || ''), password: '[redacted]' };
+    }
+    return omitSourceDocumentBody(cloneEvidence(body));
+  }
+  function omitSourceDocumentBody(value) {
+    if (!value || typeof value !== 'object') return value;
+    for (const document of [value.sourceDocument, value.content?.sourceDocument]) {
+      if (document && typeof document === 'object' && Object.hasOwn(document, 'body')) {
+        delete document.body;
+        document.omittedFromEvidence = true;
+      }
+    }
+    return value;
+  }
+  function safeOperationOutput(operationId, data) {
+    if (operationId !== 'createCompilerRuntimeEvalSession' || !data || typeof data !== 'object') {
+      return omitSourceDocumentBody(cloneEvidence(data));
+    }
+    const safe = cloneEvidence(data) || {};
+    if (Object.hasOwn(safe, 'accessToken')) safe.accessToken = '[redacted]';
+    return safe;
+  }
+  async function call(operationId, { params, query, body, key, useSession = true } = {}) {
+    await loadContract();
+    const operation = state.operations.get(operationId);
+    if (!operation || !EXPECTED[operationId]) throw new Error(`未授权 operation：${operationId}`);
+    if (operation.idempotency === 'required' && !key) {
+      throw new Error(operationId + ' 缺少 Idempotency-Key');
+    }
+    const path = operationPath(operation, params, query);
+    const activeOperation = beginOperation(operation, path, { params, query, body, key });
+    if (useSession && !connected()) {
+      const error = new Error('Eval Session 已过期，请重新登录');
+      error.code = 'SLICE_EVAL_SESSION_EXPIRED';
+      error.status = 401;
+      error.operationId = operation.operationId;
+      error.routePath = operation.routePath;
+      disconnect();
+      finishOperation(activeOperation, { error });
+      throw error;
+    }
+    const hasBody = body !== undefined;
+    let response;
+    let data = {};
+    try {
+      response = await fetch(`${apiOrigin()}${path}`, {
+        method: operation.httpMethod.toUpperCase(), mode: 'cors', cache: 'no-store',
+        headers: {
+          Accept: 'application/json',
+          ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+          ...(useSession ? { Authorization: `Bearer ${state.session.accessToken}` } : {}),
+          ...(key ? { 'Idempotency-Key': key } : {}),
+        },
+        body: hasBody ? JSON.stringify(body) : undefined,
+      });
+      data = await response.json().catch(() => ({}));
+    } catch (cause) {
+      const error = new Error(`Eval API 网络请求失败：${operation.httpMethod.toUpperCase()} ${path}`);
+      error.code = 'SLICE_EVAL_NETWORK_FAILED';
+      error.status = null;
+      error.operationId = operation.operationId;
+      error.routePath = operation.routePath;
+      error.cause = cause;
+      finishOperation(activeOperation, { error });
+      throw error;
+    }
+    if (response.status !== operation.successStatus) {
+      const routeError = backendRouteError(operation, data, response);
+      const authError = authenticationError(operation, data, response, useSession);
+      const error = routeError || authError || new Error(messageFrom(data, response));
+      error.code ||= data?.error?.code || data?.code || 'SLICE_EVAL_BACKEND_REQUEST_FAILED';
+      error.backendCode ||= data?.error?.code || data?.code || null;
+      error.retryability = data?.error?.retryability || null;
+      error.status = response.status;
+      error.operationId = operation.operationId;
+      error.routePath = operation.routePath;
+      error.currentRevision = data?.error?.currentRevision ?? null;
+      error.requestId = response.headers.get('x-request-id') || data?.requestId || null;
+      error.traceId = response.headers.get('x-trace-id') || data?.traceId || null;
+      error.diagnosticPhase = response.headers.get('x-slice-diagnostic-phase') || null;
+      error.internalErrorCode = response.headers.get('x-slice-internal-error-code') || null;
+      error.internalErrorDetail = response.headers.get('x-slice-internal-error-detail') || null;
+      if (useSession && response.status === 401) disconnect();
+      finishOperation(activeOperation, { response, data, error });
+      throw error;
+    }
+    finishOperation(activeOperation, { response, data });
+    return data;
+  }
+  async function connect({ username, password }) {
+    const session = await call('createCompilerRuntimeEvalSession', {
+      useSession: false,
+      body: { username: String(username || '').trim(), password: String(password || '') },
+    });
+    if (!session?.accessToken || !session?.expiresAt || !session?.workspaceId) throw new Error('后端没有返回 typed Eval Session');
+    state.session = session;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    return { workspaceId: session.workspaceId, expiresAt: session.expiresAt };
+  }
+  function disconnect() {
+    state.session = null;
+    sessionStorage.removeItem(SESSION_KEY);
+  }
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  const ZERO_CAST_POLICY = 'institutional_zero_cast';
+
+  function readCharacterVersionIds(input) {
+    if (input?.characterVersionIds !== undefined && !Array.isArray(input.characterVersionIds)) {
+      throw new Error('CharacterVersion 必须以数组提供');
+    }
+    const raw = Array.isArray(input?.characterVersionIds)
+      ? input.characterVersionIds
+      : String(input?.characterVersionId ?? '').trim() === '' ? [] : [input.characterVersionId];
+    if (raw.length > 8) throw new Error('CharacterVersion 最多选择 8 个');
+    const ids = raw.map((value) => String(value ?? '').trim());
+    if (ids.some((value) => !value)) throw new Error('CharacterVersion 不能包含空值');
+    if (new Set(ids).size !== ids.length) throw new Error('CharacterVersion 不能重复');
+    for (const characterVersionId of ids) {
+      if (!UUID_RE.test(characterVersionId)) {
+        throw new Error('CharacterVersion 必须是 staging CharacterVersion UUID');
+      }
+    }
+    return ids;
+  }
+
+  function normalizeInputCharacters(value, characterVersionIds) {
+    const allowed = new Set(characterVersionIds);
+    const rows = Array.isArray(value) ? value.slice(0, 8) : [];
+    const seen = new Set();
+    return Object.freeze(rows.flatMap((row, index) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return [];
+      const displayName = String(row.displayName || '').trim();
+      const characterVersionId = String(
+        row.characterVersionId || characterVersionIds[index] || '',
+      ).trim();
+      if (!displayName || [...displayName].length > 160
+          || !allowed.has(characterVersionId) || seen.has(characterVersionId)) return [];
+      seen.add(characterVersionId);
+      return [Object.freeze({ displayName, characterVersionId })];
+    }));
+  }
+
+  function normalizeSourceDocument(value) {
+    if (value == null) return null;
+    if (typeof value !== 'object' || Array.isArray(value)
+      || value.schemaVersion !== 'slice.long-form-world-source.v1' || value.mediaType !== 'text/markdown'
+      || typeof value.body !== 'string' || !value.body.trim() || [...value.body].length > 65536
+      || typeof value.fileName !== 'string' || !value.fileName || [...value.fileName].length > 191
+      || typeof value.title !== 'string' || !value.title || [...value.title].length > 160
+      || !/^[a-f0-9]{64}$/.test(value.contentDigest || '')) throw new Error('完整剧本原文格式不符合 LongFormWorldSourceV1 合同');
+    return Object.freeze({ schemaVersion: value.schemaVersion, mediaType: value.mediaType, body: value.body, fileName: value.fileName, title: value.title, contentDigest: value.contentDigest });
+  }
+
+  function validateInput(input = {}) {
+    const characterVersionIds = readCharacterVersionIds(input);
+    const normalized = {
+      title: String(input.title || '').trim(),
+      description: String(input.description || '').trim(),
+      setting: String(input.setting || '').trim(),
+      goal: String(input.goal || '').trim(),
+      characterVersionIds,
+      // 数组是权威来源；首项仅保留给旧报告读取兼容。
+      characterVersionId: characterVersionIds[0] || '',
+      zeroCastPolicy: characterVersionIds.length ? null : ZERO_CAST_POLICY,
+      highlightDescription: String(input.highlightDescription || '').trim() || null,
+      evaluationInstruction: String(input.evaluationInstruction || '').trim(),
+      evaluationMode: input.evaluationMode === 'regression' ? 'regression' : 'experience',
+      playerActions: (Array.isArray(input.playerActions) ? input.playerActions : []).map((item) => String(item).trim()).filter(Boolean),
+      sourceScenarioId: String(input.sourceScenarioId || '').trim() || null,
+      sourceFile: String(input.sourceFile || '').trim() || null,
+      sourceDigest: String(input.sourceDigest || '').trim().toLowerCase() || null,
+      sourceWorldDraftRevisionId: String(input.sourceWorldDraftRevisionId || '').trim() || null,
+      topicTags: Array.isArray(input.topicTags)
+        ? input.topicTags.map((item) => String(item).trim()).filter(Boolean).slice(0, 20) : [],
+      personaOptions: Array.isArray(input.personaOptions)
+        ? input.personaOptions.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+      selectedPersona: String(input.selectedPersona || '').trim() || null,
+      characters: normalizeInputCharacters(input.characters, characterVersionIds),
+      sourceDocument: normalizeSourceDocument(input.sourceDocument),
+    };
+    for (const field of ['title', 'description', 'setting', 'goal']) {
+      if (!normalized[field]) throw new Error(field + ' 不能为空');
+    }
+    if (normalized.title.length > 160) throw new Error('世界标题不能超过 160 字');
+    if (!normalized.playerActions.length) throw new Error('至少填写一个玩家行动');
+    if (normalized.playerActions.length > 24) throw new Error('一次最多运行 24 轮；不会静默截断行动');
+    if (normalized.playerActions.some((action) => [...action].length > 4000)) throw new Error('每轮行动不能超过 4000 字');
+    if (normalized.evaluationMode === 'experience') normalized.playerActions.forEach(parseJourneyAction);
+    if (normalized.description.length > 4000 || normalized.setting.length > 4000) {
+      throw new Error('世界简介和世界观设定不能超过 4000 字');
+    }
+    if (normalized.goal.length > 160) throw new Error('世界目标不能超过 160 字');
+    if (normalized.highlightDescription && normalized.highlightDescription.length > 4000) {
+      throw new Error('高光时刻描述不能超过 4000 字');
+    }
+    if (normalized.evaluationInstruction.length > 2000) throw new Error('中间提示词不能超过 2000 字');
+    if (normalized.sourceWorldDraftRevisionId && normalized.sourceDocument) throw new Error('附加原文时必须建立新 Revision，不能同时复用内置 Revision');
+    if (normalized.sourceWorldDraftRevisionId) {
+      if (!UUID_RE.test(normalized.sourceWorldDraftRevisionId)
+        || !normalized.sourceScenarioId
+        || !/^[a-f0-9]{64}$/.test(normalized.sourceDigest || '')) {
+        throw new Error('内置剧本缺少可信的 immutable Revision/source digest');
+      }
+    }
+    return normalized;
+  }
+
+  function buildWorldSeed(input) {
+    const characterVersionIds = readCharacterVersionIds(input);
+    return {
+      description: input.description,
+      setting: input.setting,
+      goal: input.goal,
+      characterVersionIds,
+    };
+  }
+
+  function buildWorldDraftContent(input) {
+    const characterVersionIds = readCharacterVersionIds(input);
+    return {
+      schemaVersion: 'slice.world-draft-content.v6',
+      worldCore: {
+        schemaVersion: 'slice.world-core-source.v1',
+        worldName: input.title,
+        worldDescription: input.description,
+        worldSetting: input.setting,
+        worldGoal: input.goal,
+      },
+      primaryWorldTagId: null,
+      topicTags: input.topicTags || [],
+      coverAssetId: null,
+      highlightDescription: input.highlightDescription || null,
+      characterBindings: characterVersionIds.map((characterVersionId, index) => ({
+        characterVersionId,
+        playable: true,
+        starterRecommended: index === 0,
+        starterPriority: index + 1,
+      })),
+      extendedLoreRefs: [],
+      ...(input.sourceDocument ? { sourceDocument: input.sourceDocument } : {}),
+    };
+  }
+  function buildCreateWorldDraftRequest(input) {
+    return {
+      title: input.title,
+      targetVisibility: 'private',
+      seed: buildWorldSeed(input),
+    };
+  }
+  function buildCreateWorldDraftRevisionRequest(draft, input) {
+    return {
+      expectedDraftRevision: Number.isInteger(draft.currentRevisionNumber)
+        ? draft.currentRevisionNumber
+        : Number.isInteger(draft.revision) ? draft.revision : 0,
+      content: buildWorldDraftContent(input),
+    };
+  }
+  function buildCreateCompilerExperimentRequest(input) {
+    return input.evaluationInstruction ? { evaluationInstruction: input.evaluationInstruction } : {};
+  }
+  async function createScenario(input) {
+    if (input.sourceWorldDraftRevisionId) {
+      return {
+        imported: true,
+        draft: null,
+        revision: {
+          worldDraftRevisionId: input.sourceWorldDraftRevisionId,
+          sourceScenarioId: input.sourceScenarioId,
+          sourceFile: input.sourceFile,
+          sourceDigest: input.sourceDigest,
+          immutable: true,
+        },
+        worldDraftId: null,
+        worldDraftRevisionId: input.sourceWorldDraftRevisionId,
+      };
+    }
+    const draft = await call('evalCreateWorldDraft', {
+      key: idempotency('eval-draft'),
+      body: buildCreateWorldDraftRequest(input),
+    });
+    const worldDraftId = draft.worldDraftId || draft.draftId;
+    if (!worldDraftId) throw new Error('CreateWorldDraft 没有返回 worldDraftId');
+    const revision = await call('evalCreateWorldDraftRevision', {
+      params: { worldDraftId }, key: idempotency('eval-revision'),
+      body: buildCreateWorldDraftRevisionRequest(draft, input),
+    });
+    const worldDraftRevisionId = revision.worldDraftRevisionId || revision.draftRevisionId || revision.revisionId;
+    if (!worldDraftRevisionId) throw new Error('CreateWorldDraftRevision 没有返回 revision ID');
+    return { imported: false, draft, revision, worldDraftId, worldDraftRevisionId };
+  }
+  function compactError(error) {
+    return Object.freeze({
+      code: String(error?.code || 'SLICE_EVAL_RUNTIME_FAILED'),
+      backendCode: error?.backendCode || null,
+      status: Number.isInteger(error?.status) ? error.status : null,
+      retryability: error?.retryability || null,
+      message: String(error?.message || error || 'Runtime 执行失败').slice(0, 500),
+      operationId: error?.operationId || null,
+      routePath: error?.routePath || null,
+      currentRevision: Number.isInteger(error?.currentRevision) ? error.currentRevision : null,
+      requestId: error?.requestId || null,
+      traceId: error?.traceId || null,
+      diagnosticPhase: error?.diagnosticPhase || null,
+      internalErrorCode: error?.internalErrorCode || null,
+      internalErrorDetail: error?.internalErrorDetail || null,
+    });
+  }
+  async function waitForOutcome(runId, commandId) {
+    try {
+      return await call('evalGetOutcomeByCommand', { params: { runId, commandId } });
+    } catch (cause) {
+      if (cause?.status !== 404) throw cause;
+      const error = new Error(
+        `Command ${commandId} 已进入 applied，但原子 Outcome 仍返回 404；这是后端状态合同不一致，不应继续盲轮询。`,
+      );
+      error.code = 'SLICE_EVAL_OUTCOME_MISSING_AFTER_APPLY';
+      error.backendCode = cause.code || cause.backendCode || null;
+      error.retryability = cause.retryability || null;
+      error.status = 404;
+      error.operationId = 'evalGetOutcomeByCommand';
+      error.routePath = '/eval-api/v1/runs/{runId}/commands/{commandId}/outcome';
+      error.cause = cause;
+      throw error;
+    }
+  }
+  function readOpeningBody(run) {
+    const opening = run?.opening;
+    const candidates = [
+      opening?.firstPostDraft,
+      opening?.playerPost?.body, opening?.playerPost?.text,
+      opening?.post?.body, opening?.post?.text,
+      opening?.draft?.body, opening?.draft?.text,
+      opening?.body, opening?.text,
+      opening?.openingHook,
+    ];
+    const body = candidates.find((value) => typeof value === 'string' && value.trim().length >= 1);
+    if (!body) {
+      const error = new Error('Preview Run 没有返回可确认的服务端 Opening Post');
+      error.code = 'SLICE_EVAL_OPENING_MISSING';
+      throw error;
+    }
+    return body.trim();
+  }
+  function pageItems(value) {
+    return Array.isArray(value?.items) ? value.items : [];
+  }
+  function resourceUnavailable(code, message, evidence = null) {
+    const error = new Error(message);
+    error.code = code;
+    error.resourceEvidence = cloneEvidence(evidence);
+    return error;
+  }
+  function transientProjectionFailure(error) {
+    return [502, 503, 504].includes(Number(error?.status));
+  }
+  async function withProjectionReadSlot(task) {
+    if (projectionReadsInFlight >= PROJECTION_READ_CONCURRENCY) {
+      await new Promise((resolve) => projectionReadWaiters.push(resolve));
+    }
+    projectionReadsInFlight += 1;
+    try {
+      return await task();
+    } finally {
+      projectionReadsInFlight -= 1;
+      projectionReadWaiters.shift()?.();
+    }
+  }
+  async function readProjection(operationId, params) {
+    let attempt = 0;
+    while (true) {
+      try {
+        const value = await withProjectionReadSlot(() => call(operationId, { params }));
+        return Object.freeze({ status: 'succeeded', value, error: null });
+      } catch (error) {
+        if (error?.status === 401) throw error;
+        const delay = PROJECTION_TRANSIENT_RETRY_DELAYS_MS[attempt];
+        if (delay !== undefined && transientProjectionFailure(error)) {
+          attempt += 1;
+          await sleep(delay);
+          continue;
+        }
+        return Object.freeze({ status: 'failed', value: null, error: compactError(error) });
+      }
+    }
+  }
+  async function mapWithConcurrency(items, limit, mapper) {
+    const values = Array.from(items || []);
+    const results = new Array(values.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(1, Number(limit) || 1), values.length);
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(values[index], index);
+      }
+    }));
+    return results;
+  }
+  const FULL_PROJECTION_REQUESTS = Object.freeze({
+    run: ['evalGetRun'],
+    feed: ['evalListRunFeed'],
+    milestones: ['evalListRunMilestones'],
+    relationships: ['evalListRunRelationships'],
+    stats: ['evalGetRunStats'],
+    highlights: ['evalListRunHighlightScenes'],
+    progression: ['evalGetRunProgression'],
+    events: ['evalListRunEvents'],
+    activities: ['evalListRunActivities'],
+    cast: ['evalListRunCast'],
+    history: ['evalListRunHistory'],
+    dmChannels: ['evalListDmChannels'],
+  });
+  const COMMAND_PROJECTION_NAMES = Object.freeze({
+    confirm_opening_post: Object.freeze(['feed']),
+    comment: Object.freeze(['feed']),
+    event_action: Object.freeze(['events']),
+    dm_message: Object.freeze(['dmChannels']),
+    free_act: Object.freeze(['feed']),
+  });
+  async function readRunProjectionSubset(runId, names, preferredChannelId = null) {
+    const requestedNames = [...new Set(Array.from(names || []))]
+      .filter((name) => Object.hasOwn(FULL_PROJECTION_REQUESTS, name));
+    const entries = await mapWithConcurrency(
+      requestedNames.map((name) => [name, FULL_PROJECTION_REQUESTS[name]]),
+      PROJECTION_READ_CONCURRENCY,
+      async ([name, [operationId]]) => [name, await readProjection(operationId, { runId })],
+    );
+    const projections = Object.fromEntries(entries);
+    if (requestedNames.includes('dmChannels') || preferredChannelId) {
+      const channelId = preferredChannelId
+        || pageItems(projections.dmChannels?.value).find((item) => item?.channelId)?.channelId
+        || null;
+      projections.dmMessages = channelId
+        ? await readProjection('evalListDmMessages', { runId, channelId })
+        : Object.freeze({
+          status: 'skipped', value: null, error: null,
+          reason: 'no_direct_message_channel',
+        });
+    }
+    return Object.freeze(projections);
+  }
+  async function readRunProjections(runId, preferredChannelId = null) {
+    return readRunProjectionSubset(runId, Object.keys(FULL_PROJECTION_REQUESTS), preferredChannelId);
+  }
+  async function readCommandProjections(runId, payload) {
+    return readRunProjectionSubset(
+      runId,
+      COMMAND_PROJECTION_NAMES[payload?.type] || ['feed'],
+      payload?.channelId || null,
+    );
+  }
+  function projectionIssues(projections) {
+    return Object.entries(projections || {})
+      .filter(([, result]) => result?.status === 'failed')
+      .map(([name, result]) => Object.freeze({ name, error: result.error }));
+  }
+  function firstFeedPost(feed) {
+    return pageItems(feed).find((item) => item?.postId) || null;
+  }
+  function selectableEvent(events) {
+    return pageItems(events).find((item) => ['active', 'available'].includes(item?.state)
+      && Array.isArray(item?.choices) && item.choices.some((choice) => choice?.choiceId)) || null;
+  }
+  function regexpEscape(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  }
+  function resolveScenarioDmTarget(input, action) {
+    const body = String(action || '');
+    const characters = Array.isArray(input?.characters) ? input.characters : [];
+    const addressed = characters.map((character) => {
+      const name = String(character.displayName || '');
+      if (!name || !body.includes(name)) return null;
+      const escaped = regexpEscape(name);
+      const patterns = [
+        new RegExp(`(?:私下|单独|悄悄)?(?:询问|问|告诉)\\s*${escaped}(?=[：:，,。！？!?\\s]|$)`, 'u'),
+        new RegExp(`(?:私下|单独|悄悄)?(?:对|向)\\s*${escaped}(?:说|询问|问|表示|解释)?(?=[：:，,。！？!?\\s]|$)`, 'u'),
+        new RegExp(`${escaped}\\s*[：:]`, 'u'),
+      ];
+      const indexes = patterns.map((pattern) => body.search(pattern)).filter((index) => index >= 0);
+      return indexes.length ? { character, index: Math.min(...indexes), length: [...name].length } : null;
+    }).filter(Boolean).sort((left, right) => left.index - right.index || right.length - left.length);
+    const matched = addressed[0]?.character || characters
+      .filter((character) => body.includes(String(character.displayName || '')))
+      .sort((left, right) => [...String(right.displayName)].length - [...String(left.displayName)].length)[0];
+    const fallback = matched || characters[0] || (input?.characterVersionIds?.[0]
+      ? { displayName: null, characterVersionId: input.characterVersionIds[0] } : null);
+    if (!fallback?.characterVersionId) throw resourceUnavailable(
+      'SLICE_EVAL_DM_TARGET_MISSING',
+      '评测输入没有可绑定的 CharacterVersion，无法创建同角色私聊。',
+      { action: body },
+    );
+    return Object.freeze({
+      displayName: fallback.displayName || null,
+      characterVersionId: String(fallback.characterVersionId),
+    });
+  }
+  function actorIdForCharacterVersion(preview, target) {
+    const entry = (preview?.castSnapshot?.entries || []).find((row) => (
+      String(row?.characterVersionId || '') === String(target?.characterVersionId || '')
+    ));
+    if (!entry?.actorId) throw resourceUnavailable(
+      'SLICE_EVAL_DM_TARGET_MISSING',
+      'Preview Cast 没有目标 CharacterVersion 对应的 Actor。',
+      { runId: preview?.runId || null, target },
+    );
+    return String(entry.actorId);
+  }
+  function directMessageChannel(channels, preferredChannelId = null, targetActorId = null) {
+    const rows = pageItems(channels);
+    if (targetActorId) {
+      const targeted = rows.find((item) => Array.isArray(item?.participantActorIds)
+        && item.participantActorIds.map(String).includes(String(targetActorId)));
+      if (targeted?.channelId) return targeted;
+    }
+    // 指定目标时绝不落到别人的会话；否则会把同一段私聊发送给错误角色。
+    if (targetActorId) return null;
+    if (preferredChannelId) return rows.find((item) => item?.channelId === preferredChannelId) || null;
+    return rows.find((item) => item?.channelId) || null;
+  }
+  async function ensureDirectDmChannel(runId, preview, target) {
+    const actorId = actorIdForCharacterVersion(preview, target);
+    const channels = await call('evalListDmChannels', { params: { runId } });
+    const existing = directMessageChannel(channels, null, actorId);
+    if (existing?.channelId) return Object.freeze({
+      channelId: String(existing.channelId), actorId,
+      characterVersionId: target.characterVersionId,
+      displayName: target.displayName,
+      operation: 'existing',
+    });
+    const receipt = await call('evalCreateDmChannel', {
+      params: { runId }, key: idempotency(`eval-dm-channel-${target.characterVersionId}`),
+      body: { channelType: 'direct', participantActorIds: [actorId] },
+    });
+    if (!receipt?.channelId) throw resourceUnavailable(
+      'SLICE_EVAL_DM_CHANNEL_MISSING',
+      'CreateDmChannel 没有返回 channelId。',
+      { runId, actorId, target, receipt },
+    );
+    return Object.freeze({
+      channelId: String(receipt.channelId), actorId,
+      characterVersionId: target.characterVersionId,
+      displayName: target.displayName,
+      operation: String(receipt.operation || 'created'),
+      receiptId: receipt.receiptId || null,
+    });
+  }
+  async function executeRunCommand(runId, run, payload) {
+    const startedAtMs = performance.now();
+    let accepted = null;
+    let command = null;
+    try {
+      accepted = await call('evalSubmitWorldCommand', {
+        params: { runId }, key: idempotency(`eval-${payload.type}`),
+        body: { expectedRunRevision: run.revision, payload },
+      });
+      if (!accepted?.commandId) throw new Error('Runtime 没有返回 commandId');
+      let attempt = 0;
+      while (performance.now() - startedAtMs < COMMAND_POLL_BUDGET_MS) {
+        command = await call('evalGetWorldCommand', { params: { runId, commandId: accepted.commandId } });
+        if (command.status === 'rejected') {
+          return {
+            status: 'rejected', payload: cloneEvidence(payload),
+            durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+            runBefore: run, accepted, command, outcome: null, feed: null,
+            projections: null, projectionIssues: [],
+            error: compactError(Object.assign(new Error('Runtime Command 被 Worker 拒绝'), {
+              code: command.errorCode || 'SLICE_RUNTIME_COMMAND_REJECTED',
+            })),
+          };
+        }
+        if (command.status === 'applied') {
+          const outcome = await waitForOutcome(runId, accepted.commandId);
+          const projections = await readCommandProjections(runId, payload);
+          const issues = projectionIssues(projections);
+          const feed = projections.feed?.value || null;
+          if (outcome.status === 'rejected') {
+            return {
+              status: 'rejected', payload: cloneEvidence(payload),
+              durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+              runBefore: run, accepted, command, outcome, feed, projections,
+              projectionIssues: issues,
+              error: compactError(Object.assign(new Error(
+                outcome.rejectionCode || outcome.narrativeSummary || 'Runtime Outcome 被拒绝',
+              ), { code: outcome.rejectionCode || 'SLICE_RUNTIME_OUTCOME_REJECTED' })),
+            };
+          }
+          return {
+            status: 'applied', payload: cloneEvidence(payload),
+            durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+            runBefore: run, accepted, command, outcome, feed, projections,
+            projectionIssues: issues, error: null,
+          };
+        }
+        if (!['accepted', 'processing'].includes(command.status)) {
+          throw new Error(`未知 Command 状态：${command.status}`);
+        }
+        const delay = COMMAND_POLL_DELAYS_MS[Math.min(attempt, COMMAND_POLL_DELAYS_MS.length - 1)];
+        attempt += 1;
+        const remaining = COMMAND_POLL_BUDGET_MS - (performance.now() - startedAtMs);
+        if (remaining <= 0) break;
+        await sleep(Math.min(delay, remaining));
+      }
+      throw new Error('Runtime 在 65 秒轮询预算内没有完成');
+    } catch (error) {
+      error.runtimeEvidence = { runBefore: run, accepted, command, payload: cloneEvidence(payload) };
+      error.runtimeDurationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
+      throw error;
+    }
+  }
+  async function executeOpeningRun(runId) {
+    const run = await call('evalGetRun', { params: { runId } });
+    return executeRunCommand(runId, run, { type: 'confirm_opening_post', body: readOpeningBody(run) });
+  }
+  async function executeCommentRun(runId, body) {
+    const [run, feed] = await Promise.all([
+      call('evalGetRun', { params: { runId } }),
+      call('evalListRunFeed', { params: { runId } }),
+    ]);
+    const post = firstFeedPost(feed);
+    if (!post?.postId) throw resourceUnavailable(
+      'SLICE_EVAL_COMMENT_TARGET_MISSING',
+      'Opening 没有生成可评论的正式 Feed Post',
+      { runId, feed },
+    );
+    return executeRunCommand(runId, run, {
+      type: 'comment', rootPostId: post.postId, body,
+    });
+  }
+  async function executeEventRun(runId) {
+    const [run, events] = await Promise.all([
+      call('evalGetRun', { params: { runId } }),
+      call('evalListRunEvents', { params: { runId } }),
+    ]);
+    const event = selectableEvent(events);
+    const choice = event?.choices?.find((item) => item?.choiceId) || null;
+    if (!event?.eventId || !choice?.choiceId) throw resourceUnavailable(
+      'SLICE_EVAL_EVENT_CHOICE_MISSING',
+      'Opening 没有生成可选择的正式 Event Choice',
+      { runId, events },
+    );
+    return executeRunCommand(runId, run, {
+      type: 'event_action', eventId: event.eventId, choiceId: choice.choiceId,
+    });
+  }
+  async function executeDmRun(runId, body, preferredChannelId = null) {
+    const [run, channels] = await Promise.all([
+      call('evalGetRun', { params: { runId } }),
+      call('evalListDmChannels', { params: { runId } }),
+    ]);
+    const channel = directMessageChannel(channels, preferredChannelId);
+    if (!channel?.channelId) throw resourceUnavailable(
+      'SLICE_EVAL_DM_CHANNEL_MISSING',
+      'Opening 没有生成可用的 Direct Message Channel',
+      { runId, channels, preferredChannelId },
+    );
+    return executeRunCommand(runId, run, {
+      type: 'dm_message', channelId: channel.channelId, body,
+    });
+  }
+  async function executeRun(runId, action) {
+    const run = await call('evalGetRun', { params: { runId } });
+    return executeRunCommand(runId, run, { type: 'free_act', body: action });
+  }
+  function failedExecution(error, fallbackPayload = null) {
+    return {
+      status: 'failed',
+      payload: error.runtimeEvidence?.payload || cloneEvidence(fallbackPayload),
+      durationMs: error.runtimeDurationMs ?? null,
+      runBefore: error.runtimeEvidence?.runBefore || null,
+      accepted: error.runtimeEvidence?.accepted || null,
+      command: error.runtimeEvidence?.command || null,
+      outcome: null,
+      feed: null,
+      projections: null,
+      projectionIssues: [],
+      error: compactError(error),
+    };
+  }
+  async function safeExecuteOpeningRun(runId) {
+    try {
+      return await executeOpeningRun(runId);
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      return failedExecution(error, { type: 'confirm_opening_post' });
+    }
+  }
+  async function safeExecuteCommentRun(runId, body) {
+    try {
+      return await executeCommentRun(runId, body);
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      return failedExecution(error, { type: 'comment', body });
+    }
+  }
+  async function safeExecuteEventRun(runId) {
+    try {
+      return await executeEventRun(runId);
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      return failedExecution(error, { type: 'event_action' });
+    }
+  }
+  async function safeExecuteDmRun(runId, body, preferredChannelId = null) {
+    try {
+      return await executeDmRun(runId, body, preferredChannelId);
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      return failedExecution(error, { type: 'dm_message', channelId: preferredChannelId, body });
+    }
+  }
+  async function safeExecuteRun(runId, action) {
+    try {
+      return await executeRun(runId, action);
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      return failedExecution(error, { type: 'free_act', body: action });
+    }
+  }
+  function latestCharacterDmReply(projections) {
+    const playerActorId = pageItems(projections?.cast?.value)
+      .find((item) => item?.kind === 'player' && item?.actorId)?.actorId || null;
+    if (!playerActorId) return null;
+    return [...pageItems(projections?.dmMessages?.value)]
+      .filter((item) => typeof item?.text === 'string' && item.text.trim()
+        && item?.senderActorId && item.senderActorId !== playerActorId)
+      .sort((left, right) => new Date(left.createdAt || 0).getTime()
+        - new Date(right.createdAt || 0).getTime())
+      .at(-1) || null;
+  }
+  function verifyMemoryRecall(projections, memoryCode) {
+    const latest = latestCharacterDmReply(projections);
+    const playerActorId = pageItems(projections?.cast?.value)
+      .find((item) => item?.kind === 'player' && item?.actorId)?.actorId || null;
+    return Object.freeze({
+      passed: Boolean(latest && String(latest.text).includes(memoryCode)),
+      playerActorId,
+      latestMessageId: latest?.messageId || null,
+      latestSenderActorId: latest?.senderActorId || null,
+      latestText: latest?.text || null,
+      expectedMemoryCode: memoryCode,
+      verificationScope: 'latest_non_player_reply_in_same_direct_channel',
+    });
+  }
+  function commandBody(primary, fallback, suffix = '') {
+    const base = String(primary || '').trim() || fallback;
+    const suffixChars = [...String(suffix || '')];
+    const baseLimit = Math.max(0, 4000 - suffixChars.length);
+    return `${[...base].slice(0, baseLimit).join('')}${suffixChars.slice(0, 4000).join('')}`;
+  }
+  async function createCompilerExperimentWithRecovery(input, revisionId, onProgress) {
+    // The owner stores a unique (revision,inputDigest) experiment and resumes missing
+    // tracks; retain the exact HTTP idempotency key across uncertain gateway replies.
+    const options = { params: { worldDraftRevisionId: revisionId }, key: idempotency('eval-compile'), body: buildCreateCompilerExperimentRequest(input) };
+    const started = performance.now();
+    for (let attempt = 0; ; attempt += 1) {
+      try { return await call('evalCreateCompilerExperiment', options); }
+      catch (error) {
+        if (![502, 503, 504].includes(error?.status) || attempt >= 4 || performance.now() - started > 360000) throw error;
+        checkExperienceStop(input);
+        onProgress({ kind: 'checkpoint', step: 'compile', message: '网关响应暂未确定，使用原请求身份恢复同一编译实验；不会新建另一组编译' });
+        await sleep(Math.min(5000 * (attempt + 1), 15000));
+      }
+    }
+  }
+
+  async function waitForExperiment(experimentId, onProgress, options = {}) {
+    const now = options.now || (() => performance.now());
+    const pause = options.pause || sleep;
+    const budgetMs = options.budgetMs ?? 600000;
+    const started = now();
+    let lastTraceAt = Number.NEGATIVE_INFINITY;
+    let failures = 0;
+    for (let attempt = 0; now() - started < budgetMs; attempt += 1) {
+      if (options.input) checkExperienceStop(options.input);
+      let experiment;
+      try {
+        experiment = await call('evalGetCompilerExperiment', { params: { experimentId } });
+        failures = 0;
+      } catch (error) {
+        if (![502, 503, 504].includes(error?.status) || ++failures > 3) throw error;
+        onProgress({ kind: 'checkpoint', step: 'compile', message: '编译任务已持久保存；读取进度暂时失败，稍后读取同一实验' });
+        await pause(3000); continue;
+      }
+      if (options.result) {
+        options.result.experiment = experiment;
+        if (now() - lastTraceAt >= 15000 || experiment.status !== 'running') {
+          await refreshTrace(options.result); lastTraceAt = now();
+        }
+      }
+      const tracks = Array.isArray(experiment.tracks) ? experiment.tracks : [];
+      if (['succeeded', 'partial', 'failed'].includes(experiment.status)) {
+        if (!['current', 'v2_candidate'].every((code) => tracks.some((track) => track.trackCode === code && track.status === 'succeeded'))) {
+          const error = new Error(`Compiler Experiment 已结束：${experiment.status}；${tracks.filter((track) => track.status !== 'succeeded').map((track) => track.errorCode || track.status).join(' / ')}`);
+          error.code = 'SLICE_EVAL_COMPILER_FAILED'; error.experiment = experiment; throw error;
+        }
+        return experiment;
+      }
+      if (experiment.status !== 'running') throw new Error(`未知 Compiler Experiment 状态：${experiment.status}`);
+      const job = experiment.execution;
+      if (['dead_letter', 'cancelled', 'succeeded'].includes(job?.status)) {
+        const error = new Error(`Compiler Job ${job.status}，Experiment 尚未完成：${job.errorCode || '状态不一致'}`);
+        error.code = 'SLICE_EVAL_COMPILER_JOB_FAILED'; error.experiment = experiment; throw error;
+      }
+      const stage = job?.status === 'queued' ? (job.attemptCount ? '等待恢复重试' : '排队中')
+        : job?.status === 'running' || job?.status === 'leased' ? 'Worker 编译中' : '等待 Worker';
+      onProgress({ kind: 'checkpoint', step: 'compile', message: `${stage} · ${tracks.filter((track) => track.status === 'succeeded').length}/2 轨已完成${job ? ` · 尝试 ${job.attemptCount}/${job.maxAttempts}` : ''}${job?.errorCode ? ` · ${job.errorCode}` : ''}` });
+      await pause(Math.min(attempt < 5 ? 1000 : 3000, Math.max(0, budgetMs - (now() - started))));
+    }
+    const error = new Error('页面等待预算已用完；编译任务仍在后端。已保留实验身份，可继续等待同一实验，不会重新编译计费。');
+    error.code = 'SLICE_EVAL_COMPILER_WAIT_PENDING'; error.experimentId = experimentId; throw error;
+  }
+  async function refreshTrace(result) {
+    const experimentId = result?.experiment?.experimentId;
+    if (!experimentId) return null;
+    try {
+      const trace = await call('getCompilerRuntimeEvalTrace', { params: { experimentId } });
+      result.trace = trace;
+      result.traceError = null;
+      return trace;
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      result.traceError = compactError(error);
+      return null;
+    }
+  }
+  let stopRequested = false;
+  function requestStop() { stopRequested = true; }
+  function checkExperienceStop(input) {
+    if (input.evaluationMode === 'experience' && stopRequested) {
+      const error = new Error('已停止提交后续阶段');
+      error.code = 'SLICE_EVAL_STOP_REQUESTED';
+      throw error;
+    }
+  }
+
+  function parseJourneyAction(value) {
+    const action = String(value || '').trim();
+    const comment = action.match(/^评论\s*[：:]\s*([\s\S]+)$/u);
+    if (comment) return { type: 'comment', body: comment[1].trim() };
+    const dm = action.match(/^私聊\s+([^：:]+)[：:]\s*([\s\S]+)$/u);
+    if (dm) return { type: 'dm_message', targetName: dm[1].trim(), body: dm[2].trim() };
+    const event = action.match(/^事件\s*[：:]\s*(\S+)$/u);
+    if (event) return { type: 'event_action', choiceId: event[1] };
+    if (/^(评论|私聊|事件)\s*[：:]/u.test(action) || /^私聊\s/u.test(action)) {
+      throw new Error('行动格式：评论：正文 / 私聊 角色名：正文 / 事件：choiceId；其他文字按自由行动提交');
+    }
+    return { type: 'free_act', body: action };
+  }
+
+  async function executeJourneyAction(preview, input, action) {
+    const payload = parseJourneyAction(action);
+    try {
+      if (payload.type === 'comment') return await executeCommentRun(preview.runId, payload.body);
+      if (payload.type === 'dm_message') {
+        const matches = input.characters.filter((character) => character.displayName === payload.targetName);
+        if (matches.length !== 1) throw resourceUnavailable('SLICE_EVAL_DM_TARGET_MISSING', `私聊目标「${payload.targetName}」必须唯一匹配本次已选择的人物卡`);
+        const target = await ensureDirectDmChannel(preview.runId, preview, matches[0]);
+        return await executeDmRun(preview.runId, payload.body, target.channelId);
+      }
+      if (payload.type === 'event_action') {
+        const [run, events] = await Promise.all([
+          call('evalGetRun', { params: { runId: preview.runId } }),
+          call('evalListRunEvents', { params: { runId: preview.runId } }),
+        ]);
+        const event = pageItems(events).find((item) => ['active', 'available'].includes(item.state)
+          && item.choices?.some((choice) => choice.choiceId === payload.choiceId));
+        if (!event) throw resourceUnavailable('SLICE_EVAL_EVENT_CHOICE_MISSING', `当前轨道没有可用的事件选项 ${payload.choiceId}；未替换为第一项`, { events });
+        return await executeRunCommand(preview.runId, run, { type: 'event_action', eventId: event.eventId, choiceId: payload.choiceId });
+      }
+      return await executeRun(preview.runId, payload.body);
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      return failedExecution(error, payload);
+    }
+  }
+
+  async function readExperienceProjections(runId) {
+    const projections = { ...await readRunProjections(runId) };
+    const posts = pageItems(projections.feed?.value).filter((item) => item?.postId && item.replyCount > 0);
+    const replies = await mapWithConcurrency(posts.slice(0, 12), PROJECTION_READ_CONCURRENCY,
+      async (post) => ({ postId: post.postId, ...await readProjection('evalListPostReplies', { runId, postId: post.postId }) }));
+    projections.replies = {
+      status: projections.feed?.status !== 'succeeded' || replies.some((item) => item.status === 'failed') ? 'failed' : 'succeeded',
+      value: { items: replies, truncated: posts.length > 12 || Boolean(projections.feed?.value?.pageInfo?.hasMore || projections.feed?.value?.pageInfo?.nextCursor) },
+      error: projections.feed?.status !== 'succeeded' || replies.some((item) => item.status === 'failed') ? { code: 'SLICE_EVAL_REPLY_PROJECTION_PARTIAL', message: '评论读取不完整，不能推断没有评论' } : null,
+    };
+    const channels = pageItems(projections.dmChannels?.value).filter((item) => item?.channelId);
+    const messages = await mapWithConcurrency(channels.slice(0, 8), PROJECTION_READ_CONCURRENCY,
+      async (channel) => ({ channelId: channel.channelId, ...await readProjection('evalListDmMessages', { runId, channelId: channel.channelId }) }));
+    projections.dmThreads = {
+      status: projections.dmChannels?.status !== 'succeeded' || messages.some((item) => item.status === 'failed') ? 'failed' : 'succeeded',
+      value: { items: messages, truncated: channels.length > 8 || Boolean(projections.dmChannels?.value?.pageInfo?.hasMore || projections.dmChannels?.value?.pageInfo?.nextCursor) },
+      error: projections.dmChannels?.status !== 'succeeded' || messages.some((item) => item.status === 'failed') ? { code: 'SLICE_EVAL_DM_PROJECTION_PARTIAL', message: '部分私聊读取失败，不能推断没有消息' } : null,
+    };
+    return cloneEvidence(projections);
+  }
+
+  async function resumeCompilation(previous, onProgress = () => {}) {
+    if (!previous?.input || !UUID_RE.test(previous?.experiment?.experimentId || '')
+      || !UUID_RE.test(previous?.scenario?.worldDraftRevisionId || '')
+      || previous.previewRuns?.current || previous.previewRuns?.v2Candidate) {
+      throw new Error('只能恢复已经持久保存、尚未创建试玩 Run 的编译实验');
+    }
+    return runFullEvaluation({ ...previous.input, sourceDocument: null }, onProgress, previous);
+  }
+
+  async function runFullEvaluation(rawInput, onProgress = () => {}, resume = null) {
+    if (!connected()) {
+      const error = new Error('请先登录 Eval Backend');
+      error.code = 'SLICE_EVAL_SESSION_EXPIRED';
+      error.status = 401;
+      throw error;
+    }
+    if (state.activeTelemetry) throw new Error('已有评测正在运行，请等待当前轮收束');
+    const input = validateInput(rawInput);
+    stopRequested = false;
+    const startedAtMs = performance.now();
+    const result = {
+      schemaVersion: 'slice.system-eval-run.v2',
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      durationMs: 0,
+      input: { ...input, sourceDocument: input.sourceDocument ? { fileName: input.sourceDocument.fileName, contentDigest: input.sourceDocument.contentDigest, omittedFromEvidence: true } : null },
+      scenario: null,
+      experiment: null,
+      compiledPlans: null,
+      previewRuns: { current: null, v2Candidate: null },
+      opening: { current: null, v2Candidate: null, durationMs: null },
+      initialProjections: { current: null, v2Candidate: null },
+      stoppedReason: null,
+      turns: [],
+      memoryCode: null,
+      dmTargets: { target: null, current: null, v2Candidate: null },
+      memoryVerification: null,
+      finalProjections: { current: null, v2Candidate: null },
+      finalProjectionIssues: { current: [], v2Candidate: [] },
+      trace: null,
+      traceError: null,
+      operations: [],
+      error: null,
+    };
+    const publish = (event) => {
+      // Full snapshots are emitted only at review checkpoints. Cloning the growing
+      // history for every projection/poll request makes long journeys quadratic.
+      const checkpoint = ['checkpoint', 'complete', 'failed'].includes(event.kind);
+      onProgress({
+        ...event,
+        ...(checkpoint ? { partialResult: cloneEvidence({
+          ...result,
+          durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+        }) } : {}),
+      });
+    };
+    state.activeTelemetry = { records: result.operations, onProgress: publish };
+    try {
+      publish({
+        kind: 'checkpoint', step: 'scenario',
+        message: input.sourceWorldDraftRevisionId ? '加载内置 immutable 剧本 Revision' : '保存临时剧本与 Revision',
+      });
+      result.scenario = resume ? cloneEvidence(resume.scenario) : await createScenario(input);
+      checkExperienceStop(input);
+      publish({ kind: 'checkpoint', step: 'compile', message: '运行 Current / V2 Candidate 双轨编译' });
+      const createdExperiment = resume ? cloneEvidence(resume.experiment)
+        : await createCompilerExperimentWithRecovery(input, result.scenario.worldDraftRevisionId, publish);
+      if (!createdExperiment?.experimentId) throw new Error('编译接口没有返回 experimentId');
+      result.experiment = createdExperiment;
+      publish({ kind: 'checkpoint', step: 'compile', message: resume ? '恢复同一持久编译任务；不重新创建 Source 或 Compiler 调用' : '编译任务已保存；开始读取 Worker 进度' });
+      result.experiment = await waitForExperiment(createdExperiment.experimentId, publish, { result, input });
+      await refreshTrace(result);
+      checkExperienceStop(input);
+      publish({ kind: 'checkpoint', step: 'compile', message: '读取双轨完整 Plan 正文与冻结规则' });
+      result.compiledPlans = await call('getCompilerRuntimeEvalPlans', { params: { experimentId: result.experiment.experimentId } });
+      if (result.compiledPlans?.schemaVersion !== 'slice.compiler-runtime-eval-plans.v1'
+        || result.compiledPlans.experimentId !== result.experiment.experimentId
+        || result.compiledPlans.worldDraftRevisionId !== result.scenario.worldDraftRevisionId
+        || !['current', 'v2_candidate'].every((trackCode) => result.compiledPlans.tracks?.some((track) => track.trackCode === trackCode && track.status === 'available' && track.planJson))) {
+        const error = new Error('完整 Plan 的 Experiment/Source 绑定或双轨正文不完整，已停止后续运行');
+        error.code = 'SLICE_EVAL_PLAN_PIN_MISMATCH'; throw error;
+      }
+      publish({ kind: 'checkpoint', step: 'compile', message: '完整 Plan 已读取，可查看四块正文；开始创建试玩 Run' });
+      checkExperienceStop(input);
+      publish({ kind: 'checkpoint', step: 'preview', message: '创建双 Preview Run' });
+      const [current, candidate] = await Promise.all([
+        call('createCompilerExperimentPreviewRun', { params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-current'), body: { track: 'current' } }),
+        call('createCompilerExperimentPreviewRun', { params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-v2'), body: { track: 'v2_candidate' } }),
+      ]);
+      result.previewRuns = { current, v2Candidate: candidate };
+      checkExperienceStop(input);
+
+      publish({ kind: 'checkpoint', step: 'opening', message: '确认双轨服务端 Opening Post' });
+      if (input.evaluationMode === 'experience') {
+        result.initialProjections.current = await readExperienceProjections(current.runId);
+        result.initialProjections.v2Candidate = await readExperienceProjections(candidate.runId);
+      }
+      checkExperienceStop(input);
+      const openingStartedAtMs = performance.now();
+      const [currentOpening, candidateOpening] = await Promise.all([
+        safeExecuteOpeningRun(current.runId), safeExecuteOpeningRun(candidate.runId),
+      ]);
+      result.opening = {
+        current: currentOpening,
+        v2Candidate: candidateOpening,
+        durationMs: Math.max(0, Math.round(performance.now() - openingStartedAtMs)),
+      };
+      if (input.evaluationMode === 'experience') {
+        currentOpening.projectionsBefore = result.initialProjections.current;
+        candidateOpening.projectionsBefore = result.initialProjections.v2Candidate;
+        currentOpening.projections = await readExperienceProjections(current.runId);
+        candidateOpening.projections = await readExperienceProjections(candidate.runId);
+        currentOpening.projectionIssues = projectionIssues(currentOpening.projections);
+        candidateOpening.projectionIssues = projectionIssues(candidateOpening.projections);
+      }
+      await refreshTrace(result);
+      publish({ kind: 'checkpoint', step: 'opening', message: '双轨 Opening 已返回终态，Trace 已刷新' });
+      if ([currentOpening, candidateOpening].some((execution) => execution.status !== 'applied')) {
+        const error = new Error('至少一条 Preview Track 的 Opening Command 未成功 Apply，后续 Runtime 已停止。');
+        error.code = 'SLICE_EVAL_OPENING_FAILED';
+        error.opening = cloneEvidence(result.opening);
+        throw error;
+      }
+
+      if (input.evaluationMode === 'experience') {
+        let previous = { current: currentOpening.projections, v2Candidate: candidateOpening.projections };
+        for (let index = 0; index < input.playerActions.length; index += 1) {
+          if (stopRequested) { result.stoppedReason = 'user_requested'; break; }
+          const action = input.playerActions[index];
+          publish({ kind: 'checkpoint', step: 'runtime', index, message: `剧情体验 ${index + 1}/${input.playerActions.length}：提交同一玩家行动` });
+          const turnStarted = performance.now();
+          const [left, right] = await Promise.all([
+            executeJourneyAction(current, input, action), executeJourneyAction(candidate, input, action),
+          ]);
+          // 当前步骤的投影必须在下一步命令前读取、复制，不能事后用最终快照回填。
+          left.projectionsBefore = previous.current;
+          right.projectionsBefore = previous.v2Candidate;
+          left.projections = await readExperienceProjections(current.runId);
+          right.projections = await readExperienceProjections(candidate.runId);
+          left.projectionIssues = projectionIssues(left.projections);
+          right.projectionIssues = projectionIssues(right.projections);
+          result.turns.push({ kind: parseJourneyAction(action).type, action, current: left, v2Candidate: right, durationMs: Math.round(performance.now() - turnStarted) });
+          previous = { current: left.projections, v2Candidate: right.projections };
+          await refreshTrace(result);
+          publish({ kind: 'checkpoint', step: 'runtime', index, message: `第 ${index + 1} 轮已完成：剧情、角色回应与数值快照已保存` });
+          if ([left, right].some((execution) => execution.status !== 'applied')) {
+            result.stoppedReason = 'command_not_applied'; break;
+          }
+        }
+        result.finalProjections = previous;
+        result.finalProjectionIssues = { current: projectionIssues(previous.current), v2Candidate: projectionIssues(previous.v2Candidate) };
+        const executions = [currentOpening, candidateOpening, ...result.turns.flatMap((turn) => [turn.current, turn.v2Candidate])];
+        const issues = result.traceError || executions.some((execution) => execution.status !== 'applied' || execution.projectionIssues?.length);
+        result.status = result.stoppedReason === 'user_requested' ? 'stopped' : issues ? 'completed_with_issues' : 'completed';
+        result.completedAt = new Date().toISOString();
+        result.durationMs = Math.round(performance.now() - startedAtMs);
+        publish({ kind: 'complete', step: 'complete', message: result.status === 'stopped' ? '已在回合边界停止，保留全部已完成证据' : '剧情体验已结束' });
+        return result;
+      }
+
+      result.memoryCode = `蓝鲸-${String(result.experiment.experimentId).slice(-8)}`;
+      const appendTypedTurn = async ({ kind, action, currentTask, candidateTask }) => {
+        const index = result.turns.length;
+        publish({
+          kind: 'checkpoint', step: 'runtime', index,
+          message: `执行第 ${index + 1} 轮双 Runtime：${kind}`,
+        });
+        const turnStartedAtMs = performance.now();
+        const [currentResult, candidateResult] = await Promise.all([currentTask(), candidateTask()]);
+        result.turns.push({
+          kind, action,
+          current: currentResult,
+          v2Candidate: candidateResult,
+          durationMs: Math.max(0, Math.round(performance.now() - turnStartedAtMs)),
+        });
+        await refreshTrace(result);
+        publish({
+          kind: 'checkpoint', step: 'runtime', index,
+          message: `第 ${index + 1} 轮 ${kind} 已返回终态，Trace 已刷新`,
+        });
+        return result.turns.at(-1);
+      };
+
+      const commentBody = commandBody(
+        input.playerActions[0],
+        '我先确认这条公开信息里，哪些是事实，哪些只是推测。',
+      );
+      await appendTypedTurn({
+        kind: 'comment', action: commentBody,
+        currentTask: () => safeExecuteCommentRun(current.runId, commentBody),
+        candidateTask: () => safeExecuteCommentRun(candidate.runId, commentBody),
+      });
+
+      const dmTarget = resolveScenarioDmTarget(input, input.playerActions[1]);
+      publish({
+        kind: 'checkpoint', step: 'runtime',
+        message: `为双轨绑定同一角色私聊：${dmTarget.displayName || dmTarget.characterVersionId}`,
+      });
+      const [currentDmTarget, candidateDmTarget] = await Promise.all([
+        ensureDirectDmChannel(current.runId, current, dmTarget),
+        ensureDirectDmChannel(candidate.runId, candidate, dmTarget),
+      ]);
+      result.dmTargets = {
+        target: dmTarget,
+        current: currentDmTarget,
+        v2Candidate: candidateDmTarget,
+      };
+
+      const dmWriteBody = commandBody(
+        input.playerActions[1],
+        '请记住我接下来告诉你的评测代号。',
+        `\n本轮评测代号是「${result.memoryCode}」。稍后我会再次问你。`,
+      );
+      const dmWriteTurn = await appendTypedTurn({
+        kind: 'dm_message_write', action: dmWriteBody,
+        currentTask: () => safeExecuteDmRun(current.runId, dmWriteBody, currentDmTarget.channelId),
+        candidateTask: () => safeExecuteDmRun(candidate.runId, dmWriteBody, candidateDmTarget.channelId),
+      });
+      const currentChannelId = dmWriteTurn.current?.payload?.channelId || null;
+      const candidateChannelId = dmWriteTurn.v2Candidate?.payload?.channelId || null;
+
+      const eventActionLabel = commandBody(
+        input.playerActions[2],
+        '选择 Opening 生成的第一条正式 Event Choice。',
+      );
+      await appendTypedTurn({
+        kind: 'event_action', action: eventActionLabel,
+        currentTask: () => safeExecuteEventRun(current.runId),
+        candidateTask: () => safeExecuteEventRun(candidate.runId),
+      });
+
+      const dmRecallBody = commandBody(
+        input.playerActions[3],
+        '请回忆我们刚才的私聊。',
+        '\n上一条私聊里，我让你记住的评测代号是什么？只回答你实际记得的内容。',
+      );
+      await appendTypedTurn({
+        kind: 'dm_message_recall', action: dmRecallBody,
+        currentTask: () => safeExecuteDmRun(current.runId, dmRecallBody, currentChannelId),
+        candidateTask: () => safeExecuteDmRun(candidate.runId, dmRecallBody, candidateChannelId),
+      });
+      publish({ kind: 'checkpoint', step: 'runtime', message: '读取双轨最终完整产品表面快照' });
+      result.finalProjections = {
+        current: await readRunProjections(current.runId, currentChannelId),
+        v2Candidate: await readRunProjections(candidate.runId, candidateChannelId),
+      };
+      result.finalProjectionIssues = {
+        current: projectionIssues(result.finalProjections.current),
+        v2Candidate: projectionIssues(result.finalProjections.v2Candidate),
+      };
+      result.memoryVerification = {
+        current: verifyMemoryRecall(result.finalProjections.current, result.memoryCode),
+        v2Candidate: verifyMemoryRecall(result.finalProjections.v2Candidate, result.memoryCode),
+      };
+
+      publish({ kind: 'checkpoint', step: 'trace', message: '刷新最终 Compiler + Runtime 受限 Trace' });
+      await refreshTrace(result);
+      const executions = [
+        result.opening.current, result.opening.v2Candidate,
+        ...result.turns.flatMap((turn) => [turn.current, turn.v2Candidate]),
+      ];
+      const hasIssues = Boolean(result.traceError)
+        || executions.some((execution) => execution?.status !== 'applied'
+          || (execution?.projectionIssues || []).length > 0)
+        || Object.values(result.finalProjectionIssues || {}).some((issues) => (issues || []).length > 0)
+        || Object.values(result.memoryVerification || {}).some((verification) => !verification?.passed);
+      result.status = hasIssues ? 'completed_with_issues' : 'completed';
+      result.completedAt = new Date().toISOString();
+      result.durationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
+      publish({
+        kind: 'complete', step: 'complete',
+        message: hasIssues ? '全链路完成，存在可定位问题' : '全链路执行成功',
+      });
+      return result;
+    } catch (error) {
+      if (error?.status !== 401 && result.experiment?.experimentId) {
+        try { await refreshTrace(result); } catch {}
+      }
+      if (error?.code === 'SLICE_EVAL_STOP_REQUESTED') {
+        result.status = 'stopped'; result.stoppedReason = 'user_requested';
+        result.completedAt = new Date().toISOString();
+        result.durationMs = Math.round(performance.now() - startedAtMs);
+        publish({ kind: 'complete', step: 'complete', message: '已停止，保留已完成阶段的证据' });
+        return result;
+      }
+      result.status = 'failed';
+      result.completedAt = new Date().toISOString();
+      result.durationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
+      result.error = compactError(error);
+      error.partialResult = cloneEvidence(result);
+      publish({
+        kind: 'failed',
+        step: OPERATION_STAGES[error.operationId] || (error.code === 'SLICE_EVAL_OPENING_FAILED' ? 'opening' : 'system'),
+        message: error.message || String(error),
+      });
+      throw error;
+    } finally {
+      state.activeTelemetry = null;
+    }
+  }
+
+  window.SliceEvalBackend = Object.freeze({
+    loadContract, connect, disconnect, connected, runFullEvaluation, resumeCompilation, requestStop,
+    __testing: Object.freeze({
+      validateInput, normalizeSourceDocument, normalizeInputCharacters, buildWorldSeed, buildWorldDraftContent,
+      parseJourneyAction, executeJourneyAction, readExperienceProjections, directMessageChannel,
+      waitForExperiment,
+      buildCreateWorldDraftRequest, buildCreateWorldDraftRevisionRequest,
+      buildCreateCompilerExperimentRequest, backendRouteError, compactError,
+      executeOpeningRun, executeCommentRun, executeEventRun, executeDmRun, executeRun,
+      safeExecuteOpeningRun, safeExecuteCommentRun, safeExecuteEventRun, safeExecuteDmRun, safeExecuteRun,
+      readOpeningBody, readRunProjectionSubset, readRunProjections, readCommandProjections,
+      projectionIssues, verifyMemoryRecall,
+      resolveScenarioDmTarget, actorIdForCharacterVersion, ensureDirectDmChannel,
+      refreshTrace, waitForOutcome, createCompilerExperimentWithRecovery, safeOperationBody, safeOperationOutput, ZERO_CAST_POLICY,
+    }),
+  });
+})();

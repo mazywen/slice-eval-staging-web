@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f5f6f8" />
+  <title>Slice · 剧情体验评估</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="stylesheet" href="./styles.css?v=20260905-experience-1" />
+  <link rel="stylesheet" href="./experience-report.css?v=20260905-plans-2" />
+</head>
+<body data-view-mode="actual" data-workbench="experience">
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark">S</div>
+        <div>
+          <div class="brand-name">SLICE</div>
+          <div class="brand-subtitle">GAMEPLAY EVAL LAB</div>
+        </div>
+      </div>
+
+      <div class="run-context">
+        <label class="compact-field world-field">
+          <span>测试剧本</span>
+          <select id="scenario-select" aria-label="内置评测剧本">
+            <option value="">加载剧本库…</option>
+          </select>
+        </label>
+        <div class="context-divider"></div>
+        <label class="compact-field persona-field">
+          <span title="仅作评审标签，不会改变后端 Preview Player 身份">评审标签</span>
+          <select id="persona-select" aria-label="评测视角">
+            <option>默认 Preview Player</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="run-summary">
+        <div id="backend-health" class="health-pill waiting" data-backend-api-origin="auth-config.js"><i></i><span>Backend</span><strong>未登录</strong></div>
+        <div class="summary-metric"><small>节点</small><strong id="node-count">49</strong></div>
+        <div class="summary-metric"><small>问题</small><strong id="issue-count" class="danger-text">—</strong></div>
+        <div class="summary-metric"><small>总耗时</small><strong id="duration-value">—</strong></div>
+        <div class="summary-metric"><small>Trace</small><strong id="trace-value">等待</strong></div>
+      </div>
+
+      <div class="top-actions">
+        <input id="file-input" type="file" accept="application/json" hidden />
+        <button id="import-run" class="button ghost" type="button">导入 Run</button>
+        <button id="export-run" class="button ghost" type="button">导出报告</button>
+        <button id="edit-input" class="button ghost" type="button">编辑输入</button>
+        <button id="auth-action" class="button ghost" type="button">登录</button>
+        <button id="resume-compile" class="button ghost" type="button" hidden>继续等待同一编译</button>
+        <button id="stop-run" class="button ghost" type="button" hidden>本轮后停止</button>
+        <button id="run-all" class="button primary" type="button">连续模拟</button>
+      </div>
+    </header>
+
+    <nav class="workbench-tabs" aria-label="评估工作面">
+      <div role="group" aria-label="工作面"><button type="button" data-workbench-view="experience" aria-pressed="true">玩法报告</button><button type="button" data-workbench-view="canvas" aria-pressed="false">技术诊断画布</button></div>
+      <label>对比轨道 <select id="experience-track"><option value="both">Current / V2 并排</option><option value="current">只看 Current</option><option value="v2_candidate">只看 V2 Candidate</option></select></label>
+      <span id="experience-progress" role="status" aria-live="polite">选择剧本，配置人物与行动，然后运行。</span>
+    </nav>
+    <main id="experience-report" class="experience-report" aria-label="玩法体验报告"></main>
+    <div class="workspace">
+      <aside class="toolrail" aria-label="画布工具">
+        <button class="rail-tool active" data-tool="select" title="选择节点" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l12 8-6 1.5L10 19z"/></svg>
+          <span>选择</span>
+        </button>
+        <button class="rail-tool" data-tool="pan" title="拖动画布" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V6a2 2 0 114 0v4-6a2 2 0 114 0v6-4a2 2 0 114 0v5-2a2 2 0 114 0v4c0 5-3 8-8 8H9c-3 0-5-2-6-5l-1-4a2 2 0 013-2z"/></svg>
+          <span>拖动</span>
+        </button>
+        <div class="rail-separator"></div>
+        <button id="zoom-in" class="rail-tool icon-only" title="放大" type="button">＋</button>
+        <button id="zoom-out" class="rail-tool icon-only" title="缩小" type="button">−</button>
+        <button id="fit-canvas" class="rail-tool icon-only" title="适应全画布" type="button">⌗</button>
+        <button id="reset-zoom" class="rail-tool zoom-label" title="恢复 100%" type="button">100%</button>
+        <div class="rail-separator"></div>
+        <button id="toggle-minimap" class="rail-tool icon-only" title="显示或隐藏小地图" type="button">▦</button>
+        <button id="toggle-connections" class="rail-tool icon-only active" title="显示或隐藏连线" type="button">⌁</button>
+      </aside>
+
+      <main class="canvas-area">
+        <section class="canvas-header">
+          <div class="stage-jump" aria-label="快速跳转">
+            <button class="stage-chip active" data-focus-stage="compiler" type="button"><span>01</span>剧本编译</button>
+            <button class="stage-chip" data-focus-stage="bootstrap" type="button"><span>02</span>开局生成</button>
+            <button class="stage-chip" data-focus-stage="journey" type="button"><span>03</span>玩家旅程</button>
+          </div>
+
+          <div class="canvas-filters">
+            <label class="node-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+              <input id="node-search" placeholder="搜索节点、输入、输出…" />
+            </label>
+            <button id="issue-only" class="filter-button" type="button"><i></i>只看异常</button>
+            <div class="view-segment" role="group" aria-label="显示模式">
+              <button class="active" data-view="actual" type="button">实际</button>
+              <button data-view="expected" type="button">期望</button>
+              <button data-view="diff" type="button">差异</button>
+            </div>
+          </div>
+        </section>
+
+        <div id="viewport" class="viewport" tabindex="0">
+          <div id="canvas" class="canvas">
+            <svg id="connections" class="connections" width="4300" height="2580" viewBox="0 0 4300 2580" aria-hidden="true">
+              <defs>
+                <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#7182ff"/></marker>
+                <marker id="arrow-violet" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9b75ff"/></marker>
+                <marker id="arrow-amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#e3a73b"/></marker>
+                <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#3aaf83"/></marker>
+              </defs>
+              <g id="connection-layer"></g>
+            </svg>
+            <div id="stage-layer"></div>
+            <div id="row-layer"></div>
+            <div id="node-layer"></div>
+          </div>
+        </div>
+
+        <div class="canvas-legend">
+          <span><i class="legend-line blue"></i>结构化数据</span>
+          <span><i class="legend-line violet"></i>Context / Prompt</span>
+          <span><i class="legend-line amber"></i>决策与触发</span>
+          <span><i class="legend-line green"></i>玩家可见输出</span>
+        </div>
+
+        <div id="minimap" class="minimap">
+          <div class="minimap-title"><span>全链路</span><strong id="zoom-readout">58%</strong></div>
+          <svg id="minimap-svg" viewBox="0 0 4300 2580" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="minimap-viewport" class="minimap-viewport"></div>
+        </div>
+      </main>
+
+      <aside id="inspector" class="inspector">
+        <div class="inspector-head">
+          <div>
+            <div id="inspector-stage" class="inspector-kicker">01 · 世界编译</div>
+            <h2 id="inspector-title">World Core Compiler</h2>
+            <div id="inspector-id" class="node-id">compile.world_core</div>
+          </div>
+          <button id="close-inspector" class="icon-button" type="button" aria-label="收起详情">×</button>
+        </div>
+
+        <div id="inspector-status" class="inspector-status waiting">
+          <span><i></i>等待真实执行</span>
+          <strong>—</strong>
+          <em>— tokens</em>
+          <em>—</em>
+        </div>
+
+        <div id="inspector-summary" class="inspector-summary">把长剧本文本压缩成 Runtime 可以稳定引用的世界骨架。</div>
+
+        <div class="inspector-tabs" role="tablist">
+          <button class="active" data-tab="input" type="button">输入</button>
+          <button data-tab="output" type="button">输出</button>
+          <button data-tab="rules" type="button">Prompt / 规则</button>
+          <button data-tab="deps" type="button">依赖</button>
+          <button data-tab="eval" type="button">评测</button>
+        </div>
+
+        <div class="inspector-body">
+          <section id="inspector-content" class="inspector-content"></section>
+        </div>
+      </aside>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="auth-dialog" class="eval-dialog">
+      <form id="auth-form" method="dialog" autocomplete="off">
+        <div class="dialog-head"><div><small>SHARED BACKEND</small><h2>登录 Eval 工作区</h2></div><button value="cancel" class="icon-button" aria-label="关闭">×</button></div>
+        <p>账号密码只发送给原有 Slice staging Eval Session API，不写入网页部署包。</p>
+        <p id="auth-status" class="dialog-status" role="status" aria-live="polite" hidden></p>
+        <label>账号<input id="auth-username" name="username" autocomplete="off" autocapitalize="none" spellcheck="false" required /></label>
+        <label>密码<input id="auth-password" name="eval-password" type="password" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" required /></label>
+        <div class="dialog-actions"><button value="cancel" class="button ghost">取消</button><button id="auth-submit" value="default" class="button primary">连接后端</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="input-dialog" class="eval-dialog wide">
+      <form id="input-form" method="dialog">
+        <div class="dialog-head"><div><small>IMMUTABLE WORLD SOURCE</small><h2>本次评测输入</h2></div><button value="cancel" class="icon-button" aria-label="关闭">×</button></div>
+        <p id="eval-source-meta" class="dialog-note source-meta"></p>
+        <div class="form-grid">
+          <label>世界名称<input id="eval-title" required /></label>
+          <label>执行方式<select id="eval-mode"><option value="experience">剧情体验 · 按填写的行动连续运行</option><option value="regression">链路回归 · 评论 / 私聊 / 事件 / 记忆</option></select></label>
+          <details class="full"><summary>高级：手动填写 CharacterVersion UUID</summary><label>每行一个，最多 8 个<textarea id="eval-character-version-id" rows="4" autocomplete="off" data-zero-cast-policy="institutional_zero_cast" aria-describedby="eval-character-version-help"></textarea><small id="eval-character-version-help">只接受当前 Eval 工作区真实 UUID。下面勾选卡片会自动填写；留空表示零角色。</small></label></details>
+          <section class="eval-cast-section full" aria-labelledby="eval-cast-title">
+            <div class="eval-cast-head"><div><small>AUTHORITATIVE CAST</small><strong id="eval-cast-title">本次运行的人物卡</strong></div><span id="eval-scenario-character-count">0 / 8 已绑定</span></div>
+            <div class="eval-character-tools"><label>基础角色卡<input id="eval-character-search" type="search" placeholder="搜索姓名、设定或来源剧本" /></label><button id="eval-cast-reset" class="button ghost" type="button">恢复本剧本角色</button></div>
+            <p class="dialog-note">勾选 0–8 张真实角色卡。已选卡优先显示；保存后会进入编译 Source，而非只更换显示名。</p>
+            <div id="eval-scenario-characters" class="eval-character-grid"></div>
+          </section>
+          <label class="full">世界简介<textarea id="eval-description" rows="3" required></textarea></label>
+          <label class="full">世界观设定<textarea id="eval-setting" rows="3" required></textarea></label>
+          <label class="full">世界目标<textarea id="eval-goal" rows="3" required></textarea></label>
+          <label class="full">高光时刻描述（可选，单段）<textarea id="eval-highlight-description" rows="3" maxlength="4000" placeholder="可选：描述希望开场出现的冲突、揭示、重逢、转折或抉择。"></textarea><small>写入单一 highlightDescription；留空则不附带。</small></label>
+          <label class="full">中间提示词 / V2 实验指令<textarea id="eval-instruction" rows="4" maxlength="2000" required></textarea><small id="instruction-count">0 / 2000</small></label>
+          <label class="full">玩家行动（每行一轮，1–24 轮）<textarea id="eval-actions" rows="8" required></textarea><small>普通文字作为自由行动；明确指定渠道可写“评论：正文”“私聊 唐晶：正文”“事件：choiceId”。不会自动改选第一条事件，也不会加入记忆测试代号。</small></label>
+          <p id="eval-source-change-warning" class="experience-warning full" hidden>人物或四字段已改：将创建自定义 Source，仅含当前四字段与人物卡，不再复用内置完整长文 Revision。需要完整原文时，请在下方附上原始 Markdown。</p>
+          <label class="full">附加完整剧本原文（可选；仅随本次 Source 提交后端）<input id="eval-source-document" type="file" accept=".md,text/markdown,text/plain" /><small id="eval-source-document-status">未附加；内置剧本不改 Source 时仍使用后端完整长文。</small></label>
+        </div>
+        <p class="dialog-note">点击“连续模拟”后，按已填写的行动依次推进，不保证这组行动一定抵达结局。同一条 immutable Source Revision 和同一组玩家行动会同时进入 current 与 v2_candidate，并各自创建独立 Preview Run。修改世界正文或 CharacterVersion 会建立临时 Revision；只修改评测指令或玩家行动仍复用内置 Revision。</p>
+        <div class="dialog-actions"><button value="cancel" class="button ghost">取消</button><button id="input-save" value="default" class="button primary">保存输入</button></div>
+      </form>
+    </dialog>
+  </div>
+
+  <script src="./scenario-library.js?v=20260905-experience-1"></script>
+  <script src="./auth-config.js?v=20260905-experience-1"></script>
+  <script src="./eval-backend.js?v=20260905-durable-3"></script>
+  <script src="./compiled-plan-view.js?v=20260905-plans-2"></script>
+  <script src="./cost-estimate.js?v=20260905-plans-2"></script>
+  <script src="./experience-report.js?v=20260905-durable-3"></script>
+  <script src="./app.js?v=20260905-durable-3"></script>
+</body>
+</html>
