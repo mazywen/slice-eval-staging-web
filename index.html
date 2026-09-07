@@ -205,7 +205,7 @@
           <label class="full">世界目标<textarea id="eval-goal" rows="3" required></textarea></label>
           <label class="full">高光时刻描述（可选，单段）<textarea id="eval-highlight-description" rows="3" maxlength="4000" placeholder="可选：描述希望开场出现的冲突、揭示、重逢、转折或抉择。"></textarea><small>写入单一 highlightDescription；留空则不附带。</small></label>
           <label class="full">中间提示词 / V2 实验指令<textarea id="eval-instruction" rows="4" maxlength="2000" required></textarea><small id="instruction-count">0 / 2000</small></label>
-          <label class="full">玩家行动（每行一轮，1–24 轮）<textarea id="eval-actions" rows="8" required></textarea><small>普通文字作为自由行动；明确指定渠道可写“评论：正文”“私聊 唐晶：正文”“事件：choiceId”。不会自动改选第一条事件，也不会加入记忆测试代号。</small></label>
+          <label class="full">玩家行动（每行一轮，1–24 轮）<textarea id="eval-actions" rows="8" required></textarea><small>普通文字作为自由行动；指定渠道可写“发帖：正文”“回复评论：正文”“评论：正文”“私聊 唐晶：正文”“事件：choiceId”。回复评论会选取真实可见的最新 NPC 评论。不会自动改选第一条事件，也不会加入记忆测试代号。</small></label>
           <p id="eval-source-change-warning" class="experience-warning full" hidden>人物或四字段已改：将创建自定义 Source，仅含当前四字段与人物卡，不再复用内置完整长文 Revision。需要完整原文时，请在下方附上原始 Markdown。</p>
           <label class="full">附加完整剧本原文（可选；仅随本次 Source 提交后端）<input id="eval-source-document" type="file" accept=".md,text/markdown,text/plain" /><small id="eval-source-document-status">未附加；内置剧本不改 Source 时仍使用后端完整长文。</small></label>
         </div>

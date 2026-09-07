@@ -145,6 +145,13 @@
     const token = (item) => item === null ? '—' : item.toLocaleString();
     return `<div class="experience-usage"><span>输入 <b>${token(value.input)}</b></span><span>输出 <b>${token(value.output)}</b></span><span>模型 <b>${duration(value.latencyMs)}</b></span><span>命令 <b>${duration(elapsed)}</b></span><span>账本费用 <b>${esc(value.cost || '未回传')}${value.unknownCost && value.cost ? '（不完整）' : ''}</b></span></div>`;
   }
+  function stageTimingsHtml(value) {
+    if (value?.schemaVersion !== 'slice.runtime-stage-timings.v1') return '<p class="experience-muted">独立阶段耗时未采集；不从命令总时长反推。</p>';
+    const stages = [['directorMs', '导演'], ['retrievalMs', '记忆召回与排序'], ['privatePovMs', 'Private POV'],
+      ['mainRuntimeMs', '主 Runtime'], ['validationMs', '绑定与校验'], ['finalizationMs', '规则结算'],
+      ['materializationMs', '内容物化'], ['persistenceMs', '数据库事务提交']];
+    return `<details class="experience-raw"><summary>执行阶段耗时</summary><div class="experience-usage">${stages.map(([key, label]) => `<span>${label} <b>${duration(number(value[key]))}</b></span>`).join('')}</div><p class="experience-muted">服务端单调时钟实测。记忆组装总计 ${duration(number(value.memoryAssemblyMs))}，包含召回与 Private POV，不重复加总。事务提交耗时未采集时保留未知；各阶段之和不冒充命令总时长。</p></details>`;
+  }
   function stepHtml(model) {
     if (!model) return '<p class="experience-muted">等待该轨道的真实结果。</p>';
     const { execution, outcome, director, effects, diff, surfaces, names } = model;
@@ -172,6 +179,7 @@
       ${stateRows ? `<div class="experience-table-wrap"><table><thead><tr><th>指标</th><th>前</th><th>后</th><th>变化</th></tr></thead><tbody>${stateRows}</tbody></table></div>` : '<p class="experience-muted">完整可比的指标中，未观测到数值变化。</p>'}
       ${diff.gaps.length ? `<p class="experience-warning">缺少前后快照：${esc(diff.gaps.join('、'))}，无法计算这些指标。</p>` : ''}
       ${usageHtml(model.usage, execution.durationMs)}
+      ${stageTimingsHtml(outcome.stageTimings)}
       ${raw('本步实际请求 / Outcome / Director / 模型调用', { input: execution.payload, command: execution.command, outcome, aiCalls: model.trace?.aiCalls || [], errors: execution.error, projectionIssues: execution.projectionIssues })}
       ${raw('本步状态前后快照', { before: execution.projectionsBefore || null, after: execution.projections || null })}
     </section>`;
@@ -236,10 +244,16 @@
       const target = flattenSurface(model.execution.projectionsBefore, 'replies').find((row) =>
         row.replyId === payload.parentContentId && row.rootPostId === payload.rootPostId
         && row.author?.actorId && row.author.actorId !== playerId);
-      return Boolean(target) && model.surfaces.rows.some((row) => row.surface === '评论'
-        && row.actorId === playerId && row.rootPostId === payload.rootPostId
-        && row.parentContentId === payload.parentContentId && sameText(row, payload.body))
-        && realNpc(model, '评论').some((row) => row.rootPostId === payload.rootPostId);
+      if (!target) return false;
+      // ReplyView uses parentReplyId; parentContentId belongs to the Command.
+      // Verify the actual player -> NPC child chain, not any comment on the
+      // same root post (which could belong to an unrelated conversation).
+      const playerReplies = model.surfaces.rows.filter((row) => row.surface === '评论'
+        && row.isDelta && row.replyId && row.actorId === playerId && row.rootPostId === payload.rootPostId
+        && row.parentReplyId === payload.parentContentId && sameText(row, payload.body));
+      return realNpc(model, '评论').some((row) => row.rootPostId === payload.rootPostId
+        && row.actorId === target.author.actorId
+        && playerReplies.some((playerReply) => row.parentReplyId === playerReply.replyId));
     }), '缺少正确 root/parent 引用、玩家回复与后续 NPC 评论的回读');
     const proactive = models.filter((model) => model.execution.payload?.type !== 'dm_message'
       && completeSurfaces(model) && realNpc(model, '私聊').some((row) => row.channelId && row.messageId));

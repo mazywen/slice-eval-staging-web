@@ -5,17 +5,17 @@
   "sourceRepository": "https://github.com/mazywen/starlet_whole.git",
   "sourceState": "git-commit",
   "sourceTreeState": "clean",
-  "sourceBaseCommit": "060c55d0325e38e85488d520d6b063e87aea2c34",
-  "generatedAt": "2026-09-05T13:25:57.000Z",
+  "sourceBaseCommit": "4e9604a6f612e3c6684347b79e8fccc6aa123fa0",
+  "generatedAt": "2026-09-06T02:04:28.000Z",
   "openApiInfoVersion": "4.0.0",
   "generator": {
     "name": "slice-capability-contract-generator",
-    "sourceSha256": "389635ff7e32e6143c6673616fefc34e6d5267c76966a7b1e6ff13dec88e2862",
+    "sourceSha256": "1adf31cd5ea78ac514055a5c02c91b8a99dff41ae930c7c96fc7a7e0e63081f4",
     "version": "1.0.0"
   },
-  "contractGraphSha256": "ce4747c8c01a3a5f68e776792b4ba286091f295d9aeb9bd76b471220ba2bfc83",
-  "routeRegistrySha256": "83f0f7e725fc1ccaf29f26adca8ab360564174f8009d9f220bdd385399547851",
-  "artifactSha256": "e6c42a72ec4312199ef8cd67c283d182f34d9b3e1fdacc33e2b9b9a211edd5c6",
+  "contractGraphSha256": "0996341ac9ba3876c83fc6da1fc43bb9460a860196deb39baee125d0d3a127e5",
+  "routeRegistrySha256": "10ef4ef416f70ad317bd65b5871a96e2bca399522f6ca8c2abbb5dc4f71685ca",
+  "artifactSha256": "5bfd4b014179babf3180486f93a6580278b10ab2563893cedcb591b9bb22955d",
   "changeClassification": "additive",
   "operations": [
     {
@@ -5388,6 +5388,37 @@
       "idempotency": "none",
       "idempotencyRetention": "not_applicable",
       "implementationStatus": "implemented",
+      "operationId": "getWorldAppState",
+      "ownerDomain": "world_sites",
+      "privacyClass": "run_private",
+      "queryType": null,
+      "releaseTarget": "slice-backend",
+      "requestHashPolicy": "none",
+      "routePath": "/site-api/v4/state",
+      "sourceModule": "products/slice/world-sites",
+      "successStatus": 200
+    },
+    {
+      "audience": "world_site_player",
+      "authClass": "world_site_cookie",
+      "authScope": "world_sites:read",
+      "cachePolicy": "private_revalidate",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_SITE_ACCESS_DENIED",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "featureId": "world.sites-v4.1",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "implementationStatus": "implemented",
       "operationId": "getWorldAppResource",
       "ownerDomain": "world_sites",
       "privacyClass": "run_private",
@@ -6653,6 +6684,7 @@
     "playerWebGetRunWorldAppProjection",
     "getWorldAppBootstrap",
     "getWorldAppArtifact",
+    "getWorldAppState",
     "getWorldAppResource",
     "applyWorldAppAction",
     "markWorldAppTargetSeen",
@@ -6693,10 +6725,10 @@
   "handoffMode": "capability_scoped",
   "capabilityScope": {
     "excludedOperationCount": 27,
-    "fullOperationCount": 227,
-    "fullRouteRegistrySha256": "83f0f7e725fc1ccaf29f26adca8ab360564174f8009d9f220bdd385399547851",
-    "includedOperationCount": 200,
-    "operationSetSha256": "26a7cf549130320e700f80d2d26c1993b538c1c2de9d85b6535563ba0d862af0",
+    "fullOperationCount": 228,
+    "fullRouteRegistrySha256": "10ef4ef416f70ad317bd65b5871a96e2bca399522f6ca8c2abbb5dc4f71685ca",
+    "includedOperationCount": 201,
+    "operationSetSha256": "815e1429d1966e35fd721c89a4b3a22d962ddeeda85f47b08608883642968561",
     "requiredOperationIds": [
       "registerPhonePassword",
       "changePhonePassword",
@@ -6863,6 +6895,7 @@
       "playerWebGetRunWorldAppProjection",
       "getWorldAppBootstrap",
       "getWorldAppArtifact",
+      "getWorldAppState",
       "getWorldAppResource",
       "applyWorldAppAction",
       "markWorldAppTargetSeen",
@@ -6900,29 +6933,29 @@
       "evalListDmMessages"
     ],
     "scopeId": "slice.real-mvp-staging.v1",
-    "scopeRevision": 29
+    "scopeRevision": 31
   },
   "files": {
-    "generated/command-v4.schema.json": "e5ef076f57c4c869bc070fea5f06ed84438a8deed8dbfe6edbce2add55f077c6",
+    "generated/command-v4.schema.json": "23cfe2b1840a9ed3d54056dcc1269b6737b0e02eeb28686ae3cbf87404071a7d",
     "generated/commerce-v4.schema.json": "944a895e61a207c345d2c76c994a0f43f4a362c9f32dfef75f68720779df0064",
-    "generated/creator-platform-v4.schema.json": "c3b2722480e0b99e551cdee357564bce38e876bfc0156aaf3acdc166ddea6b36",
+    "generated/creator-platform-v4.schema.json": "13d566278cc790897ac0d4e21c35918c91300763076ec918f0562b092112e91b",
     "generated/error-catalog-v4.json": "3ac659cc1ae4d579deaa054da186bbf15af75b3d888d7374d149d820571995bf",
     "generated/event-catalog-v4.json": "d3f46984c5a2959979c25044b2a55298691301736c988964db12d47d5d83a503",
-    "generated/integration-event-v4.schema.json": "e853d7fa5c77567c92459548578092dba76df628a8b087458dfcd3cae8b29355",
+    "generated/integration-event-v4.schema.json": "8f2a75640d7b51579cca234fd0af1096ec46c151a089344d2c648303723eb4b8",
     "generated/integration-mapping-catalog-v4.json": "d07250c8d9bd7352bb15f288d17df8eec77d741a4f05c1fb40b51b194784bfe1",
     "generated/job-catalog-v4.json": "f0dd01473a161dac3a5a828cbb0239c1e83bfe439974a68ea616ebc1ef8091a5",
-    "generated/job-v4.schema.json": "9038d32aec38a73e96a50040e747ab7ae269fc04ef28004ff4e49f3619e25e2a",
-    "generated/openapi-v4.yaml": "5c0badb0ee63bf289cd3b00dcbb00dec76a051c67aa9b4646ab2332a1eebf421",
-    "generated/outcome-v4.schema.json": "507fec4d2c626909535e0c241baa0374fb777a9e203fd085674ee857e6d4c6bd",
-    "generated/persona-character-v4.schema.json": "5e917f163523d74e65c67944017cb3d6ef39b009c978a547fb5943b2259eb4dd",
-    "generated/route-registry-v4.json": "a7c8d6a44e53d3cadf37d8797995e83dcceca5e8ffc53608c696eb8557eeec09",
-    "generated/sse-event-v4.schema.json": "632bb5ae7cd44da2c7722084d2b2009e42ff679a1dab23c744ae9f059d57c59b",
+    "generated/job-v4.schema.json": "e3a6422f0d22a3996674e4e6a21efb4a6edeb1e89b4d416d49de648c330969d0",
+    "generated/openapi-v4.yaml": "7d2b78700299b173643ef4eaa40e7ded84b99039a7d09d3352b29b4c6e5471bf",
+    "generated/outcome-v4.schema.json": "7aee9e905cacb43a228256db119eac02cfeb44c6320e8a17002e941adf657d50",
+    "generated/persona-character-v4.schema.json": "54f9b206685c44acdb5cad3683bc8d04d6027ad72d2c046e03c03053d89ab3e2",
+    "generated/route-registry-v4.json": "efcefa12e0f5b7da624af4ebaf52daa37b8e7529245ad15c7fe86deff24a90e1",
+    "generated/sse-event-v4.schema.json": "37c925da2fc674aa6dabcb20e895c143ea807337a88ac00e04e8db37c37ba394",
     "generated/trust-rights-media-notification-v4.schema.json": "e1f1a6762d969130a7abc5bccd969b206ca4817438c5370d6d961e5fbe65eeea",
-    "generated/world-platform-v4.schema.json": "5939b7402dc935704813b50ba0d6793999146fc54aab02e147069965ca4e9b48",
-    "generated/world-runtime-v4.schema.json": "9b81c9085d91f1bfbecec08d209d55baca055904864f907d6e6cd428d640b007",
-    "generated/world-sites-v4.schema.json": "98ef93e93b695fd4c93ed7857c094c5db1ed7384ab2370aabd19a7928538d519"
+    "generated/world-platform-v4.schema.json": "f30694e9df06808d557ece3188aa948705a224add472180239ce0802fec179de",
+    "generated/world-runtime-v4.schema.json": "cb28effa2cf509e3cdd744190508ae9ba4de6dc006e4f1b1cb1c609899004d88",
+    "generated/world-sites-v4.schema.json": "5ccf1f1a99cb62a4e09de4098a98d1b1c2e463f7d969534c5e3111df550b090f"
   },
   "clientContractFiles": {
-    "lib/src/generated/slice_client_contract_v4.g.dart": "f727c1ea3d18b9a7d0cb4efc74cd97526eab38a6ddad989ec0534ca4447c5160"
+    "lib/src/generated/slice_client_contract_v4.g.dart": "1b4268eac65443196440cc2d9f76ce7a73fa97c15ed54c92bc098a6e6e69f081"
   }
 }
