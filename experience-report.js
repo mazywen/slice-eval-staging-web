@@ -9,6 +9,7 @@
   const labels = { xp: '经验', level: '等级', affinity: '好感度', trust: '信任', intimacy: '亲密度', respect: '尊重', value: '数值', tension: '张力', followerCount: '粉丝', score: '分数', progress: '进度', statValue: '数值', currentValue: '当前值', totalXp: '总经验' };
   const narrative = { OPENING_HOOK: '开场钩子', BOND: '关系推进', INVESTIGATE: '调查', NEGOTIATE: '协商', PUBLIC_CHALLENGE: '公开挑战', PRIVATE_TEST: '私下试探', COMPLICATION: '矛盾升级', REVEAL: '揭示', REVERSAL: '反转', BETRAYAL: '背叛', RESCUE: '救援', REUNION: '重逢', BREAKTHROUGH: '突破', CRISIS_CHOICE: '危机抉择', AFTERMATH: '余波', RECOVERY: '恢复', ENDING_GATE: '结局条件', EPILOGUE: '尾声' };
   const tension = { QUIET: '平静', BUILD: '铺垫', PRESSURE: '施压', PEAK: '高潮', RELEASE: '释放', RECOVERY: '恢复' };
+  const chapterEffects = { RELATIONSHIP: '关系', KNOWLEDGE: '知识', RESOURCE: '资源', ACTIVE_CONFLICT: '冲突', OPEN_LOOP: '未决线索', MILESTONE_PATH: '阶段推进', ENDING_EVIDENCE: '结局证据' };
   const status = { running: '执行中', completed: '流程执行结束', coverage_incomplete: '流程结束，玩法覆盖未通过', verified: '玩法覆盖通过', completed_with_issues: '流程结束，有问题', stopped: '已停止', failed: '失败', applied: '已生效', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
   function duration(ms) { return number(ms) === null ? '未回传' : ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`; }
   function uniqueCalls(calls) {
@@ -130,6 +131,12 @@
       usage: usage(trace?.aiCalls),
       director: outcome.directorDecision,
       effects: outcome.narrativeEffects,
+      chapterDirective: outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive || null,
+      chapterStateEffectCodes: array(outcome.chapterStateEffectCodes || outcome.gameplayEvidence?.chapter?.committedStateEffectCodes),
+      gameplayEvidence: outcome.gameplayEvidence || null,
+      narrativeProjection: outcome.narrativeProjection || null,
+      chapterState: outcome.chapterState || outcome.gameplayEvidence?.chapter?.state || null,
+      chapterSettlement: outcome.chapterSettlement || outcome.gameplayEvidence?.chapter?.settlement || null,
       diff: stateDiff(execution.projectionsBefore, execution.projections),
       surfaces, npcMessages, playerActorId,
       entities: entityChanges(execution.projectionsBefore, execution.projections),
@@ -152,6 +159,157 @@
       ['materializationMs', '内容物化'], ['persistenceMs', '数据库事务提交']];
     return `<details class="experience-raw"><summary>执行阶段耗时</summary><div class="experience-usage">${stages.map(([key, label]) => `<span>${label} <b>${duration(number(value[key]))}</b></span>`).join('')}</div><p class="experience-muted">服务端单调时钟实测。记忆组装总计 ${duration(number(value.memoryAssemblyMs))}，包含召回与 Private POV，不重复加总。事务提交耗时未采集时保留未知；各阶段之和不冒充命令总时长。</p></details>`;
   }
+  function chapterHtml(model) {
+    const state = model?.chapterState;
+    const settlement = model?.chapterSettlement;
+    const directive = model?.chapterDirective;
+    if (!state && !settlement && !directive) return '<p class="experience-muted">本轮未回传 Chapter State；无法判断宏观章节是否推进。</p>';
+    const active = state?.activeChapter || directive?.activeChapter || null;
+    const evidence = array(state?.evidenceStateEffectCodes);
+    const required = array(active?.requiredStateEffectCodes || directive?.requiredStateEffectCodes);
+    const missing = required.filter((code) => !evidence.includes(code));
+    const queue = array(state?.queuedChapters);
+    const committed = array(model?.chapterStateEffectCodes);
+    return `<div class="experience-director chapter-director">
+      ${directive ? `<div class="experience-authority-line"><span>本轮前仍缺：<b>${esc(array(directive.missingStateEffectCodes).map((code) => chapterEffects[code] || code).join('、') || '无')}</b></span><span>Director 偏好 Surface：<b>${esc(directive.preferredSurface || 'any')}</b></span><span>语义判定：<b>${directive.semanticEvaluationRequested ? '本轮请求' : '未到门槛'}</b></span><span>重规划：<b>${directive.planningRequested ? '若结算则生成下一窗口' : '本轮不请求'}</b></span></div>` : ''}
+      ${committed.length ? `<p class="experience-authority-note">Finalizer 本轮实际提交的 Chapter 结构证据：<strong>${esc(committed.map((code) => chapterEffects[code] || code).join('、'))}</strong></p>` : '<p class="experience-muted">本轮没有提交新的 Chapter 结构证据，或旧 Outcome 未记录该字段。</p>'}
+      ${settlement ? `<p class="experience-summary"><strong>Chapter ${esc(settlement.ordinal)} 已结算</strong> · ${esc(settlement.resolution || settlement.chapterRef)}${settlement.nextChapterRef ? ` → 下一章 ${esc(settlement.nextChapterRef)}` : ''}</p>` : ''}
+      ${active ? `<strong>当前 Chapter ${esc(active.ordinal)} · ${esc(active.title || active.chapterRef)}</strong><p>${esc(active.narrativeObjective || '')}</p><small>有效 Outcome ${esc(state?.meaningfulOutcomeCount ?? directive?.meaningfulOutcomeCount ?? 0)} / ${esc(active.minimumMeaningfulOutcomes ?? directive?.minimumMeaningfulOutcomes ?? '—')} · 已有结构证据 ${esc(evidence.map((code) => chapterEffects[code] || code).join('、') || '无')} · 仍缺 ${esc(missing.map((code) => chapterEffects[code] || code).join('、') || '无')}</small><p class="experience-muted">完成后：${esc(active.resolution || '未回传')} · 下一问题：${esc(active.nextQuestion || '未回传')}</p>` : '<strong>全部 Chapter 已结算</strong>'}
+      ${queue.length ? `<small>滚动窗口：${esc(queue.map((chapter) => `Ch.${chapter.ordinal} ${chapter.title}`).join(' → '))}</small>` : ''}
+    </div>`;
+  }
+  function signed(value) { return number(value) === null ? '—' : `${value > 0 ? '+' : ''}${value}`; }
+  function authoritativeEvidenceHtml(model) {
+    const evidence = model?.gameplayEvidence;
+    if (!evidence) return '<p class="experience-muted">该 Outcome 来自旧 Trace，尚未回传 Finalizer Gameplay Evidence；下方仍保留产品表面前后快照。</p>';
+    const names = model.names;
+    const surfaceRows = array(evidence.surfaces).map((row) => `<tr><td>${esc(row.kind === 'dm_message' ? '私信' : row.kind)}</td><td>${esc(names.get(row.authorActorId) || row.authorActorId)}</td><td>${esc(row.origin === 'runtime_ai' ? 'AI 角色' : '玩家')}</td><td>${esc(row.channelId || row.rootPostId || row.contentId)}</td></tr>`).join('');
+    const relationRows = array(evidence.relationshipChanges).flatMap((row) => Object.keys(row.after || {}).filter((axis) => number(row.before?.[axis]) !== null && number(row.after?.[axis]) !== null && row.before[axis] !== row.after[axis]).map((axis) => `<tr><td>${esc(`${names.get(row.fromActorId) || row.fromActorId} → ${names.get(row.toActorId) || row.toActorId} / ${labels[axis] || axis}`)}</td><td>${esc(row.before[axis])}</td><td>${esc(row.after[axis])}</td><td>${esc(signed(row.after[axis] - row.before[axis]))} · ${esc(row.reasonCode)}</td></tr>`)).join('');
+    const numericRows = [...array(evidence.statChanges), ...array(evidence.skillChanges)].map((row) => `<tr><td>${esc(`${row.kind === 'skill' ? '技能' : 'Stat'} / ${names.get(row.actorId) || row.actorId || '玩家'} / ${row.code}`)}</td><td>${esc(row.before)}</td><td>${esc(row.after)}</td><td>${esc(signed(row.delta))} · ${esc(row.reasonCode)}</td></tr>`).join('');
+    const growthRows = array(evidence.growth).map((row) => `<tr><td>经验 / ${esc(names.get(row.actorId) || row.actorId)}</td><td>${esc(row.beforeXp)} · Lv.${esc(row.beforeLevel)}</td><td>${esc(row.afterXp)} · Lv.${esc(row.afterLevel)}</td><td>${esc(signed(row.delta))} · ${esc(row.reasonCode)}</td></tr>`).join('');
+    const entities = [...array(evidence.events), ...array(evidence.activities)].map((row) => `${row.type === 'event' ? 'Event' : 'Activity'} ${row.entityId}${row.familyCode ? ` · ${row.familyCode}` : ''}`);
+    const dmChannels = array(evidence.proactiveDmChannels).map((row) => `${names.get(row.createdByActorId) || row.createdByActorId} → ${row.channelId}`);
+    return `<div class="experience-authority"><div class="experience-authority-title"><strong>Finalizer 实际结算</strong><small>只展示已物化并进入 Outcome 的写入；不把 Candidate 声明当事实。</small></div>
+      ${surfaceRows ? `<div class="experience-table-wrap"><table><thead><tr><th>Surface</th><th>作者</th><th>身份</th><th>绑定 ID</th></tr></thead><tbody>${surfaceRows}</tbody></table></div>` : '<p class="experience-muted">本轮没有物化新的 Feed/Comment/DM 内容。</p>'}
+      ${dmChannels.length ? `<p class="experience-authority-note">主动私信频道：${esc(dmChannels.join('；'))}</p>` : ''}
+      ${(relationRows || numericRows || growthRows) ? `<div class="experience-table-wrap"><table><thead><tr><th>结算项</th><th>前</th><th>后</th><th>变化 / 原因</th></tr></thead><tbody>${relationRows}${numericRows}${growthRows}</tbody></table></div>` : '<p class="experience-muted">本轮没有关系、Stat、Skill 或 XP 的实际账本变化。</p>'}
+      ${entities.length ? `<p class="experience-authority-note">新物化玩法实体：${esc(entities.join('；'))}</p>` : ''}
+      ${array(evidence.eventResolutions).length ? `<p class="experience-authority-note">Event 结算：${esc(array(evidence.eventResolutions).map((row) => `${row.eventId}@r${row.resolvedRevision}`).join('；'))}</p>` : ''}
+      ${array(evidence.activityTurns).length ? `<p class="experience-authority-note">Activity 回合：${esc(array(evidence.activityTurns).map((row) => `${row.activityId} #${row.turnOrdinal}${row.completed ? ' 完成' : ''}`).join('；'))}</p>` : ''}
+    </div>`;
+  }
+  function runtimeProcessHtml(model) {
+    const outcome = model?.outcome || {};
+    const attempt = outcome.attemptInterpretation;
+    const memory = outcome.memoryEvidence;
+    const projection = model?.narrativeProjection;
+    const claims = attempt ? [...array(attempt.claimedNpcStates), ...array(attempt.claimedWorldChanges)] : [];
+    const lanes = array(memory?.lanes).map((row) => `${row.lane}:${row.status}/${row.candidateCount}`).join(' · ');
+    return `<div class="experience-process-grid">
+      <div><span>Attempt Resolution</span>${attempt ? `<strong>${esc(attempt.selfAction || '未回传')}</strong><p>玩家想要：${esc(attempt.desiredOutcome || '未回传')}</p><small>${claims.length ? `需抵抗/核验的玩家主张 ${esc(claims.join('；'))}` : '没有把玩家对 NPC / 世界的主张直接当成事实'}</small>` : '<p class="experience-muted">旧 Outcome 未回传 Attempt Interpretation。</p>'}</div>
+      <div><span>Memory / POV</span>${memory ? `<strong>召回 ${esc(memory.selectedItemCount)} 条</strong><p>${esc(memory.strategy)}</p><small>${esc(lanes || 'lane 证据未回传')} · Private POV ${esc(memory.privatePovCallCount)} 次</small>` : '<p class="experience-muted">本轮没有可展示的记忆召回证据。</p>'}</div>
+      <div><span>Narrative Projection</span>${projection ? `<strong>${esc(projection.arcPhase || '—')} · ${esc(tension[projection.tensionBand] || projection.tensionBand || '—')}</strong><p>已使用 Seed：${esc(array(projection.usedSeedRefs).join('、') || '无')}</p><small>Open Loops ${array(projection.activeOpenLoops).length} · Recent Beats ${array(projection.recentBeats).length}</small>` : '<p class="experience-muted">旧 Trace 未回传 Narrative Projection 摘要。</p>'}</div>
+    </div>`;
+  }
+  function planSummary(result, track) {
+    const compiled = array(result?.compiledPlans?.tracks).find((row) => row.trackCode === track.code);
+    const plan = root.SliceCompiledPlanView?.parse(compiled?.planJson);
+    if (!plan) return null;
+    const spine = plan.experienceSpine || {};
+    const selection = root.SliceCompiledPlanView?.parse(compiled?.selectionTraceJson);
+    return {
+      digest: compiled?.planDigest || null,
+      compilerVersion: compiled?.compilerVersion || null,
+      seeds: array(plan.narrativeSeeds).length,
+      functions: new Set(array(plan.narrativeSeeds).map((row) => row.functionCode)).size,
+      actors: array(plan.agencyGraph?.actors).length,
+      targetChapters: spine.chapterPlan?.targetChapterCount ?? null,
+      initialChapters: array(spine.chapterPlan?.initialWindow).length,
+      selectedDesignCodes: array(selection?.selectedCodes),
+    };
+  }
+  function countBy(values, picker) {
+    const counts = new Map();
+    for (const value of values) { const key = picker(value); if (key) counts.set(key, (counts.get(key) || 0) + 1); }
+    return counts;
+  }
+  function journeyAggregate(result, track) {
+    const models = [{ ...result?.opening }, ...array(result?.turns)]
+      .map((step, index) => stepModel(result, track, step, index)).filter(Boolean);
+    const applied = models.filter((model) => model.execution.status === 'applied');
+    const evidence = applied.map((model) => model.gameplayEvidence).filter(Boolean);
+    const surfaces = evidence.flatMap((row) => array(row.surfaces));
+    const aiSurfaces = surfaces.filter((row) => row.origin === 'runtime_ai');
+    const relationships = evidence.flatMap((row) => array(row.relationshipChanges));
+    const stats = evidence.flatMap((row) => array(row.statChanges));
+    const skills = evidence.flatMap((row) => array(row.skillChanges));
+    const growth = evidence.flatMap((row) => array(row.growth));
+    const directors = applied.map((model) => model.director).filter(Boolean);
+    const seedCounts = countBy(directors, (row) => row.seedRef);
+    const functionCounts = countBy(directors, (row) => row.narrativeFunction);
+    const actorCounts = countBy(aiSurfaces, (row) => row.authorActorId);
+    const surfaceCounts = countBy(surfaces, (row) => row.kind === 'dm_message' ? '私信' : row.kind);
+    const relationshipAxisTotals = {};
+    for (const row of relationships) for (const [axis, after] of Object.entries(row.after || {})) {
+      if (number(after) === null || number(row.before?.[axis]) === null) continue;
+      relationshipAxisTotals[axis] = (relationshipAxisTotals[axis] || 0) + after - row.before[axis];
+    }
+    const settlements = applied.filter((model) => model.chapterSettlement).map((model) => model.chapterSettlement);
+    const last = applied.at(-1) || models.at(-1) || null;
+    const plan = planSummary(result, track);
+    const peakSeed = [...seedCounts.entries()].sort((a, b) => b[1] - a[1])[0] || [null, 0];
+    const peakActor = [...actorCounts.entries()].sort((a, b) => b[1] - a[1])[0] || [null, 0];
+    const observations = [];
+    if (applied.length >= 10 && applied.filter((model) => model.noVisibleFeedback).length / applied.length >= 0.35) observations.push('超过三分之一已应用回合没有观测到新增 NPC 可见反馈');
+    if (directors.length >= 10 && peakSeed[1] / directors.length >= 0.5) observations.push(`剧情种子 ${peakSeed[0]} 占 Director 决策 ${Math.round(peakSeed[1] / directors.length * 100)}%，建议检查重复选择`);
+    if (aiSurfaces.length >= 10 && actorCounts.size <= 1 && (plan?.actors || 0) >= 3) observations.push('长局 AI 可见输出几乎只来自一个角色，角色轮转不足');
+    const active = last?.chapterState?.activeChapter || null;
+    if (applied.length >= 10 && active && last.chapterState.meaningfulOutcomeCount >= (active.minimumMeaningfulOutcomes || 0) + 3
+        && !settlements.length) observations.push('有效 Outcome 已明显超过当前 Chapter 最低门槛但仍未结算，需检查结构证据或语义完成判定');
+    return {
+      trackCode: track.code, configuredTurns: array(result?.input?.playerActions).length,
+      executedTurns: array(result?.turns).length, appliedCommands: applied.length, failedCommands: models.length - applied.length,
+      plan, surfaceCounts: Object.fromEntries(surfaceCounts), npcActorCount: actorCounts.size, peakActorId: peakActor[0], peakActorCount: peakActor[1],
+      relationshipMoments: relationships.length, relationshipAxisTotals, statWrites: stats.length, skillWrites: skills.length,
+      xpDelta: growth.reduce((sum, row) => sum + (number(row.delta) || 0), 0),
+      levelStart: growth[0]?.beforeLevel ?? null, levelEnd: growth.at(-1)?.afterLevel ?? null,
+      eventsCreated: evidence.reduce((sum, row) => sum + array(row.events).length, 0),
+      activitiesCreated: evidence.reduce((sum, row) => sum + array(row.activities).length, 0),
+      eventResolutions: evidence.reduce((sum, row) => sum + array(row.eventResolutions).length, 0),
+      activityTurns: evidence.reduce((sum, row) => sum + array(row.activityTurns).length, 0),
+      uniqueSeeds: seedCounts.size, peakSeedRef: peakSeed[0], peakSeedCount: peakSeed[1],
+      narrativeFunctions: Object.fromEntries(functionCounts),
+      noVisibleFeedback: applied.filter((model) => model.noVisibleFeedback).length,
+      summaryCopies: applied.reduce((sum, model) => sum + model.summaryCopies.length, 0),
+      chaptersSettled: settlements.length, completedChapterCount: array(last?.chapterState?.completedChapters).length,
+      activeChapter: active ? { chapterRef: active.chapterRef, ordinal: active.ordinal, title: active.title,
+        meaningfulOutcomeCount: last.chapterState?.meaningfulOutcomeCount ?? 0,
+        minimumMeaningfulOutcomes: active.minimumMeaningfulOutcomes,
+        evidence: array(last.chapterState?.evidenceStateEffectCodes),
+        missing: array(active.requiredStateEffectCodes).filter((code) => !array(last.chapterState?.evidenceStateEffectCodes).includes(code)) } : null,
+      observations,
+    };
+  }
+  function aggregateHtml(result, track) {
+    const value = journeyAggregate(result, track);
+    const names = actorNames(result, track, [{ projections: result.finalProjections?.[track.key] }][0]);
+    const surfaceText = Object.entries(value.surfaceCounts).map(([key, count]) => `${key} ${count}`).join(' · ') || '无 Outcome Surface 写入证据';
+    const functionText = Object.entries(value.narrativeFunctions).sort((a, b) => b[1] - a[1]).map(([key, count]) => `${narrative[key] || key} ${count}`).join(' · ') || '无';
+    const relationText = Object.entries(value.relationshipAxisTotals).map(([key, delta]) => `${labels[key] || key} ${signed(delta)}`).join(' · ') || '无';
+    return `<section class="experience-track experience-aggregate"><div class="experience-track-head"><strong>${track.label} · 长局轨迹</strong><span>${value.executedTurns} / ${value.configuredTurns} 玩家行动</span></div>
+      <div class="experience-metric-grid"><div><span>已应用 Command</span><strong>${value.appliedCommands}</strong><small>失败/拒绝 ${value.failedCommands}</small></div><div><span>XP</span><strong>${signed(value.xpDelta)}</strong><small>${value.levelStart == null ? '等级证据未回传' : `Lv.${value.levelStart} → Lv.${value.levelEnd}`}</small></div><div><span>Chapter</span><strong>${value.chaptersSettled} 次结算</strong><small>${value.completedChapterCount} 章已完成</small></div><div><span>AI 角色轮转</span><strong>${value.npcActorCount} 人</strong><small>${value.peakActorId ? `最高频 ${esc(names.get(value.peakActorId) || value.peakActorId)} · ${value.peakActorCount} 条` : '暂无 AI Surface 证据'}</small></div><div><span>Event / Activity</span><strong>${value.eventsCreated} / ${value.activitiesCreated}</strong><small>Event 结算 ${value.eventResolutions} · Activity 回合 ${value.activityTurns}</small></div><div><span>剧情种子</span><strong>${value.uniqueSeeds} 个</strong><small>${value.peakSeedRef ? `最高频 ${esc(value.peakSeedRef)} · ${value.peakSeedCount} 次` : '暂无 Director 证据'}</small></div></div>
+      <div class="experience-aggregate-lines"><p><b>Surface Mix</b> ${esc(surfaceText)}</p><p><b>关系累计净变化</b> ${esc(relationText)}</p><p><b>Director 功能分布</b> ${esc(functionText)}</p><p><b>Stat / Skill 实际写入</b> ${value.statWrites} / ${value.skillWrites} · <b>无可见 NPC 反馈</b> ${value.noVisibleFeedback} · <b>摘要复制</b> ${value.summaryCopies}</p></div>
+      ${value.activeChapter ? `<div class="experience-director"><strong>当前 Chapter ${esc(value.activeChapter.ordinal)} · ${esc(value.activeChapter.title || value.activeChapter.chapterRef)}</strong><p>有效 Outcome ${esc(value.activeChapter.meaningfulOutcomeCount)} / ${esc(value.activeChapter.minimumMeaningfulOutcomes)} · 已有 ${esc(value.activeChapter.evidence.map((code) => chapterEffects[code] || code).join('、') || '无')} · 仍缺 ${esc(value.activeChapter.missing.map((code) => chapterEffects[code] || code).join('、') || '无')}</p></div>` : '<p class="experience-muted">当前没有 Active Chapter。</p>'}
+      ${value.plan ? `<p class="experience-muted">编译计划：${value.plan.seeds} seeds / ${value.plan.functions} 种叙事功能 / ${value.plan.actors} actors / 目标 ${value.plan.targetChapters ?? '—'} 章 / 初始窗口 ${value.plan.initialChapters}${value.plan.selectedDesignCodes.length ? ` · V2 设计策略 ${esc(value.plan.selectedDesignCodes.join('、'))}` : ''}</p>` : ''}
+      ${value.observations.length ? `<div class="experience-observations"><strong>Eval 派生观察（不是 Runtime Authority）</strong>${value.observations.map((text) => `<p>${esc(text)}</p>`).join('')}</div>` : '<p class="experience-muted">当前未触发长局异常观察阈值；这不等于剧情质量自动通过。</p>'}
+    </section>`;
+  }
+  function comparisonHtml(result) {
+    const left = journeyAggregate(result, tracks[0]), right = journeyAggregate(result, tracks[1]);
+    if (!left.plan || !right.plan) return '';
+    const samePlan = left.plan.digest && left.plan.digest === right.plan.digest;
+    return `<div class="experience-comparison"><strong>Current ↔ V2 对照</strong><span>Plan ${samePlan ? '摘要相同' : '摘要不同'}</span><span>Seeds ${left.plan.seeds} ↔ ${right.plan.seeds}</span><span>叙事功能 ${left.plan.functions} ↔ ${right.plan.functions}</span><span>XP ${signed(left.xpDelta)} ↔ ${signed(right.xpDelta)}</span><span>Chapter 结算 ${left.chaptersSettled} ↔ ${right.chaptersSettled}</span><span>AI 角色轮转 ${left.npcActorCount} ↔ ${right.npcActorCount}</span><small>这里只陈列同输入下的差异，不自动判定哪一轨更好。</small></div>`;
+  }
   function stepHtml(model) {
     if (!model) return '<p class="experience-muted">等待该轨道的真实结果。</p>';
     const { execution, outcome, director, effects, diff, surfaces, names } = model;
@@ -164,8 +322,14 @@
       <div class="experience-track-head"><strong>${model.track.label}</strong><span class="experience-status ${execution.status === 'applied' ? '' : 'has-issue'}">${esc(status[execution.status] || execution.status)}</span></div>
       <p class="experience-summary">${esc(outcome.narrativeSummary || execution.error?.message || '后端尚未返回剧情摘要')}</p>
       ${model.noVisibleFeedback ? '<p class="experience-warning">玩法观察：命令已生效，但完整快照中没有新增 NPC 回应。玩家自己的帖子、经验奖励和剧情摘要均不能替代 NPC 互动。</p>' : ''}
+      <h4>本轮 Runtime 调度链</h4>
+      ${runtimeProcessHtml(model)}
       ${director ? `<div class="experience-director"><strong>${esc(narrative[director.narrativeFunction] || director.narrativeFunction)} · ${esc(tension[director.tensionBand] || director.tensionBand)}</strong><p>${esc(director.reason)}</p><small>聚焦：${esc(array(director.spotlightActorIds).map((id) => names.get(id) || id).join('、') || '无')} · 剧情种子 ${esc(director.seedRef || '未回传')}</small></div>` : '<p class="experience-muted">本轮 Director 决策未回传；不从生成文字推测。</p>'}
-      ${effects ? `<div class="experience-effects"><span>结果 ${esc(effects.outcomeBandCode)}</span><span>影响 ${esc(array(effects.stateEffectCodes).join(' / '))}</span>${effects.endingProfileCode ? `<strong>结局证据 ${esc(effects.endingProfileCode)}</strong>` : ''}${array(effects.openLoopChanges).map((loop) => `<small>伏笔 ${esc(loop.loopRef)} · ${esc(loop.kind)} · ${esc(loop.operation)}</small>`).join('')}</div>` : ''}
+      ${effects ? `<div class="experience-effects"><span>模型 Candidate 结果 ${esc(effects.outcomeBandCode)}</span><span>模型声明影响 ${esc(array(effects.stateEffectCodes).join(' / '))}</span>${effects.endingProfileCode ? `<strong>结局证据 ${esc(effects.endingProfileCode)}</strong>` : ''}${array(effects.openLoopChanges).map((loop) => `<small>伏笔 ${esc(loop.loopRef)} · ${esc(loop.kind)} · ${esc(loop.operation)}</small>`).join('')}</div>` : ''}
+      <h4>真实结算 · Outcome Authority</h4>
+      ${authoritativeEvidenceHtml(model)}
+      <h4>章节推进 · Chapter Director</h4>
+      ${chapterHtml(model)}
       ${model.seedEvidence || ''}
       <p class="experience-muted">AI 调用记录 ${model.usage.count || '未回传'} · 命令 ${esc(status[execution.status] || execution.status)} · 新增 NPC 消息 ${model.playerActorId && !surfaces.gaps.length ? model.npcMessages.length : '证据不完整'}</p>
       ${model.summaryCopies.length ? '<p class="experience-warning">有 NPC 消息与剧情摘要完全相同，需要核查是否仍在复制旁白，而非生成角色台词。</p>' : ''}
@@ -202,6 +366,10 @@
             .some((skill) => item.path.startsWith(`skills.${skill.actorId ? `${skill.actorId}.` : ''}${skill.skillId || skill.skillCode || skill.code || skill.key}.`)))) },
       { label: '里程碑完成', observed: entities.some((item) => item.scope === 'milestones' && item.isDelta
         && (item.row.resolution === 'completed' || item.row.state === 'completed') && item.previous?.resolution !== 'completed' && item.previous?.state !== 'completed') },
+      { label: '章节推进', observed: models.some((model) => model.chapterState?.activeChapter
+        && (model.chapterState.meaningfulOutcomeCount > 0 || array(model.chapterState.evidenceStateEffectCodes).length > 0
+          || model.chapterSettlement)) },
+      { label: '章节结算', observed: models.some((model) => Boolean(model.chapterSettlement)) },
       { label: '经验增长', observed: models.some((model) => model.execution.payload?.type !== 'dm_message'
         && model.diff.changes.some((item) => item.scope === 'progression' && /^(progression\.)?(xp|totalXp)$/.test(item.path) && item.delta > 0)) },
     ];
@@ -360,11 +528,12 @@
       <div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => coverageHtml(result, track)).join('')}</div>
       ${result.compiledPlans?.tracks?.length === 2 && result.compiledPlans.tracks[0].planDigest && result.compiledPlans.tracks[0].planDigest === result.compiledPlans.tracks[1].planDigest ? '<p class="experience-warning">本次 Current / V2 的完整 Plan 摘要相同。请核对是否复用历史编译基线；本次双轨结果不足以证明两套编译器的质量差异。</p>' : ''}
       <section class="experience-section"><div class="experience-section-title"><span>01</span><h2>世界编译与剧情依据</h2></div><p class="experience-goal">源目标：${esc(result.input?.goal || '未提供')}</p><div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => compileHtml(result, track)).join('')}</div></section>
-      <section class="experience-section"><div class="experience-section-title"><span>02</span><h2>本次剧情走向</h2></div><div class="experience-outline">${outline}</div></section>
-      <section class="experience-section"><div class="experience-section-title"><span>03</span><h2>逐步体验与消耗</h2></div>${steps.map((step, index) => `<article id="experience-step-${index}" class="experience-step"><header><span>${index === 0 ? 'OPENING' : `TURN ${String(index).padStart(2, '0')}`}</span><h3>${esc(index === 0 ? '确认服务端开场' : step.action)}</h3><small>${esc(step.kind || '')} · 双轨墙钟 ${duration(step.durationMs)}</small></header><div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => stepHtml(stepModel(result, track, step, index))).join('')}</div></article>`).join('')}</section>`;
+      <section class="experience-section"><div class="experience-section-title"><span>02</span><h2>长局轨迹与双轨对照</h2></div>${selected.length === 2 ? comparisonHtml(result) : ''}<div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => aggregateHtml(result, track)).join('')}</div></section>
+      <section class="experience-section"><div class="experience-section-title"><span>03</span><h2>本次剧情走向</h2></div><div class="experience-outline">${outline}</div></section>
+      <section class="experience-section"><div class="experience-section-title"><span>04</span><h2>逐步体验、Director 与结算</h2></div>${steps.map((step, index) => `<article id="experience-step-${index}" class="experience-step"><header><span>${index === 0 ? 'OPENING' : `TURN ${String(index).padStart(2, '0')}`}</span><h3>${esc(index === 0 ? '确认服务端开场' : step.action)}</h3><small>${esc(step.kind || '')} · 双轨墙钟 ${duration(step.durationMs)}</small></header><div class="experience-columns ${selected.length === 1 ? 'single' : ''}">${selected.map((track) => stepHtml(stepModel(result, track, step, index))).join('')}</div></article>`).join('')}</section>`;
     [...host.querySelectorAll('details')].forEach((el, index) => { el.dataset.detailKey = String(index); if (detailState.has(String(index))) el.open = detailState.get(String(index)); });
   }
-  const api = Object.freeze({ render, usage, uniqueCalls, stateDiff, numericValues, surfaceChanges, entityChanges, gameplayCoverage, gameplayAcceptance, stepModel, esc, duration });
+  const api = Object.freeze({ render, usage, uniqueCalls, stateDiff, numericValues, surfaceChanges, entityChanges, gameplayCoverage, gameplayAcceptance, stepModel, journeyAggregate, planSummary, esc, duration });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SliceExperienceReport = api;
 })(typeof window !== 'undefined' ? window : globalThis);

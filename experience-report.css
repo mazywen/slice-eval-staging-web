@@ -78,6 +78,29 @@ body[data-workbench="canvas"] .experience-report { display: none; }
 .experience-director p { font-size: 13px; line-height: 1.75; margin: 8px 0; }
 .experience-director small { font-size: 11px; color: var(--muted); line-height: 1.65; overflow-wrap: anywhere; }
 .experience-effects { display: flex; flex-direction: column; gap: 8px; font-size: 11px; color: #5c6961; line-height: 1.7; overflow-wrap: anywhere; }
+.experience-authority { margin: 12px 0 18px; padding: 14px; border: 1px solid #dfe8e1; border-radius: 7px; background: #f8fbf9; }
+.experience-authority-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
+.experience-authority-title strong { font-size: 12px; color: #285d45; }
+.experience-authority-title small, .experience-authority-note { color: #65746a; font-size: 10px; line-height: 1.75; overflow-wrap: anywhere; }
+.experience-authority-note { margin: 9px 0; }
+.experience-authority-line { display: flex; gap: 8px 16px; flex-wrap: wrap; margin: 4px 0 10px; font-size: 10px; color: #68756d; }
+.experience-authority-line b { color: #365c49; font-weight: 650; }
+.experience-process-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 16px; }
+.experience-process-grid > div { min-width: 0; padding: 12px; border: 1px solid #e8ece9; border-radius: 6px; background: #fbfcfb; }
+.experience-process-grid span { display: block; margin-bottom: 7px; color: #718077; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
+.experience-process-grid strong { color: #315d46; font-size: 12px; overflow-wrap: anywhere; }
+.experience-process-grid p, .experience-process-grid small { display: block; margin: 6px 0 0; color: #5f6c64; font-size: 10px; line-height: 1.7; overflow-wrap: anywhere; }
+.experience-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+.experience-metric-grid > div { padding: 12px; border: 1px solid #e7ece8; border-radius: 6px; min-width: 0; }
+.experience-metric-grid span, .experience-metric-grid small { display: block; color: var(--muted); font-size: 9px; line-height: 1.55; overflow-wrap: anywhere; }
+.experience-metric-grid strong { display: block; margin: 4px 0; font-size: 16px; font-weight: 650; color: #304a3b; overflow-wrap: anywhere; }
+.experience-aggregate-lines { border-top: 1px solid #edf0ed; border-bottom: 1px solid #edf0ed; padding: 9px 0; margin: 10px 0 16px; }
+.experience-aggregate-lines p { margin: 6px 0; font-size: 11px; line-height: 1.75; color: #59665e; overflow-wrap: anywhere; }
+.experience-observations { margin-top: 14px; padding: 12px 14px; border-radius: 6px; background: #fcf5e9; color: #79542e; font-size: 11px; line-height: 1.75; }
+.experience-observations p { margin: 7px 0 0; }
+.experience-comparison { display: flex; gap: 8px 18px; align-items: center; flex-wrap: wrap; padding: 14px 18px; margin: 0 0 16px; border: 1px solid #e2e8e3; border-radius: 7px; background: white; font-size: 11px; color: #5a675f; }
+.experience-comparison strong { color: #315d46; }
+.experience-comparison small { flex-basis: 100%; color: var(--muted); }
 .experience-track h4 { margin: 22px 0 12px; font-size: 13px; font-weight: 650; }
 .experience-track h4 small { display: block; margin-top: 5px; color: var(--muted); font-weight: 400; font-size: 11px; }
 .experience-message { border-bottom: 1px solid #f0f2f0; padding: 12px 0; }
@@ -121,6 +144,6 @@ body[data-workbench="canvas"] .experience-report { display: none; }
 .eval-dialog select { min-height: 40px; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: white; }
 @media (max-width: 1280px) { .topbar { grid-template-columns: 140px minmax(220px, 1fr) auto; gap: 12px; } .persona-field, .context-divider { display: none; } .top-actions { gap: 5px; } .top-actions .button { padding: 0 9px; } .experience-columns { gap: 16px; } }
 @media (max-width: 1050px) { .workspace .inspector { top: 0; bottom: 0; } }
-@media (max-width: 850px) { .topbar { grid-template-columns: 125px minmax(0, 1fr); padding: 12px 16px; } .top-actions { grid-column: 1 / -1; justify-content: flex-start; } .workbench-tabs { gap: 8px 14px; padding: 8px 16px; } #experience-progress { margin: 0; width: 100%; max-width: none; font-size: 11px; } .experience-columns { grid-template-columns: minmax(0, 1fr); } .experience-report { padding: 24px 16px 60px; } .experience-report-head { flex-direction: column; gap: 6px; } .experience-source { max-width: 100%; } .experience-track { padding: 18px; } .experience-welcome { margin: 3vh 0; } }
-@media (max-width: 480px) { .brand-subtitle { font-size: 8px; } .top-actions .button { min-height: 40px; font-size: 11px; } .workbench-tabs > div { width: 100%; } .experience-report-head h1 { font-size: 23px; } .experience-track { padding: 15px; } .experience-usage { gap: 10px 16px; } .eval-character-tools { flex-wrap: wrap; } .eval-character-tools label { flex-basis: 100%; } }
+@media (max-width: 850px) { .topbar { grid-template-columns: 125px minmax(0, 1fr); padding: 12px 16px; } .top-actions { grid-column: 1 / -1; justify-content: flex-start; } .workbench-tabs { gap: 8px 14px; padding: 8px 16px; } #experience-progress { margin: 0; width: 100%; max-width: none; font-size: 11px; } .experience-columns { grid-template-columns: minmax(0, 1fr); } .experience-process-grid { grid-template-columns: minmax(0, 1fr); } .experience-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .experience-report { padding: 24px 16px 60px; } .experience-report-head { flex-direction: column; gap: 6px; } .experience-source { max-width: 100%; } .experience-track { padding: 18px; } .experience-welcome { margin: 3vh 0; } }
+@media (max-width: 480px) { .brand-subtitle { font-size: 8px; } .top-actions .button { min-height: 40px; font-size: 11px; } .workbench-tabs > div { width: 100%; } .experience-report-head h1 { font-size: 23px; } .experience-track { padding: 15px; } .experience-usage { gap: 10px 16px; } .experience-metric-grid { grid-template-columns: minmax(0, 1fr); } .eval-character-tools { flex-wrap: wrap; } .eval-character-tools label { flex-basis: 100%; } }
 @media (prefers-reduced-motion: reduce) { .experience-report { scroll-behavior: auto; } * { transition: none !important; } }

@@ -69,7 +69,7 @@
         && typeof character.displayName === 'string' && character.displayName.length >= 1
         && String(character.characterVersionId || '') === String((item.characterVersionIds || [])[index] || ''))
       && Array.isArray(item.playerActions)
-      && item.playerActions.length >= 1 && item.playerActions.length <= 4)
+      && item.playerActions.length >= 1 && item.playerActions.length <= 24)
     : [];
   const initialScenario = scenarioLibrary[0] || FALLBACK_SCENARIO;
   const sourceScript = {
@@ -1095,17 +1095,21 @@
         boundCharacterCount: characterVersionIds.length,
       }, `${characterVersionIds.length} 个真实 CharacterVersion`, { durationMs: scenarioDurationMs });
     }
+    const configuredTurns = result.input.evaluationMode === 'experience'
+      ? (result.input.playerActions?.length || 0) : 4;
     setNodeEvidence(nodesById.get('source_test_plan'), {
       sourceActions: result.input.playerActions,
       typedPath: result.input.evaluationMode === 'experience'
         ? (result.turns || []).map((turn) => turn.kind)
         : ['comment', 'dm_message_write', 'event_action', 'dm_message_recall'],
     }, {
-      configuredTurns: 4,
+      configuredTurns,
       completedTurns: result.turns?.length || 0,
+      technicalCanvasTurns: Math.min(4, result.turns?.length || 0),
+      gameplayReportTurns: result.turns?.length || 0,
       status: result.status,
       memoryVerification: result.memoryVerification,
-    }, `${result.turns?.length || 0} / 4 个 typed 节点已返回`);
+    }, `${result.turns?.length || 0} / ${configuredTurns} 轮已返回 · Canvas 展前 4 轮，Gameplay Review 展完整旅程`);
 
     if (result.experiment) {
       const traceTracks = result.trace?.tracks || [];
@@ -1120,6 +1124,14 @@
         evaluationInstructionDigest: result.experiment.evaluationInstructionDigest,
       };
       const availableArtifacts = compileArtifactEvidence(result);
+      const planRows = result.compiledPlans?.tracks || [];
+      const parsedPlanByTrack = Object.fromEntries(planRows.map((track) => [track.trackCode,
+        window.SliceCompiledPlanView?.parse(track.planJson) || null]));
+      const parsedConfigByTrack = Object.fromEntries(planRows.map((track) => [track.trackCode,
+        window.SliceCompiledPlanView?.parse(track.gameConfigJson) || null]));
+      const planProjection = (project) => Object.fromEntries(['current', 'v2_candidate'].map((trackCode) => [trackCode,
+        project(parsedPlanByTrack[trackCode], parsedConfigByTrack[trackCode],
+          planRows.find((row) => row.trackCode === trackCode) || null)]));
       const compilerOutputs = {
         compile_normalize: {
           evidenceScope: 'experiment input + immutable revision',
@@ -1129,34 +1141,60 @@
           operationCalls: operationRecords(result, ['evalCreateCompilerExperiment', 'evalGetCompilerExperiment']),
         },
         compile_world_core: {
-          evidenceScope: 'compiler artifact metadata',
-          tracks: compileArtifactEvidence(result, (artifact) => /world|definition|config|core/iu.test(artifact.artifactType || '')),
+          evidenceScope: '完整 Plan / GameConfig 正文（Shared Backend owner read）',
+          tracks: planProjection((plan, config, row) => ({
+            planDigest: row?.planDigest || null,
+            experienceSpine: plan?.experienceSpine || null,
+            displayProjection: window.SliceCompiledPlanView?.parse(row?.displayJson) || null,
+            opening: window.SliceCompiledPlanView?.parse(row?.openingJson) || null,
+            gameConfig: config,
+          })),
         },
         compile_cast: {
-          evidenceScope: 'immutable source bindings + preview cast projection',
+          evidenceScope: 'Agency Graph + immutable CharacterVersion bindings',
           characterVersionIds: result.input.characterVersionIds
             || (result.input.characterVersionId ? [result.input.characterVersionId] : []),
+          tracks: planProjection((plan) => ({ agencyGraph: plan?.agencyGraph || null })),
           currentCast: result.previewRuns?.current?.castSnapshot || null,
           v2CandidateCast: result.previewRuns?.v2Candidate?.castSnapshot || null,
-          artifactMetadata: compileArtifactEvidence(result, (artifact) => /cast|character/iu.test(artifact.artifactType || '')),
         },
         compile_narrative: {
-          evidenceScope: 'narrative artifacts are immutable; bodies remain backend-owned',
-          tracks: compileArtifactEvidence(result, (artifact) => /narrative|seed|milestone|definition/iu.test(artifact.artifactType || '')),
-          selectionTrace: Object.fromEntries(tracks.map((track) => [track.trackCode, track.selectionTrace || null])),
+          evidenceScope: '完整 Narrative Plan 正文；Chapter rolling window / Seeds / Endings 均为真实编译产物',
+          tracks: planProjection((plan, _config, row) => ({
+            planDigest: row?.planDigest || null,
+            chapterPlan: plan?.experienceSpine?.chapterPlan || null,
+            endingProfiles: plan?.experienceSpine?.endingProfiles || [],
+            narrativeSeeds: plan?.narrativeSeeds || [],
+            selectionTrace: window.SliceCompiledPlanView?.parse(row?.selectionTraceJson) || null,
+          })),
         },
         compile_social: {
-          evidenceScope: 'social planning artifact metadata',
-          tracks: compileArtifactEvidence(result, (artifact) => /social|surface|definition|config/iu.test(artifact.artifactType || '')),
+          evidenceScope: '从真实 Plan / GameConfig 投影可见 Surface 约束，不生成第二套计划',
+          tracks: planProjection((plan, config) => ({
+            seedVisibility: (plan?.narrativeSeeds || []).map((seed) => ({ seedRef: seed.seedId, visibility: seed.visibility,
+              actorRefs: seed.actorRefs, functionCode: seed.functionCode })),
+            eventFamilies: config?.eventFamilies || null,
+            activityFamilies: config?.activityFamilies || null,
+            budgets: config?.budgets || null,
+          })),
         },
         compile_memory: {
-          evidenceScope: 'memory/relationship artifact metadata',
-          tracks: compileArtifactEvidence(result, (artifact) => /memory|relationship|definition|config/iu.test(artifact.artifactType || '')),
+          evidenceScope: 'Compiler 只定义角色改变条件和规则 Pin；真实记忆/关系状态属于 Runtime World State',
+          tracks: planProjection((plan, config) => ({
+            actorChangeGates: (plan?.agencyGraph?.actors || []).map((actor) => ({ actorRef: actor.actorRef,
+              want: actor.want, boundary: actor.boundary, changeGates: actor.changeGates })),
+            relationshipPolicyPin: config?.narrativePolicyPins || config?.rulePins || null,
+          })),
         },
         compile_guardrails: {
-          evidenceScope: 'diagnostics + policy/config artifacts',
+          evidenceScope: '编译诊断 + Experience Spine guards + GameConfig policy pins',
           diagnostics: Object.fromEntries(tracks.map((track) => [track.trackCode, track.diagnostics || []])),
-          tracks: compileArtifactEvidence(result, (artifact) => /guard|policy|config|safety/iu.test(artifact.artifactType || '')),
+          tracks: planProjection((plan, config) => ({
+            toneGuards: plan?.experienceSpine?.toneGuards || [],
+            cheapPayoffGuards: plan?.experienceSpine?.cheapPayoffGuards || [],
+            narrativePolicyPins: config?.narrativePolicyPins || null,
+            budgets: config?.budgets || null,
+          })),
         },
         compile_bundle: {
           evidenceScope: 'complete typed Compiler Experiment response',
@@ -1165,6 +1203,7 @@
           traceSchemaVersion: result.trace?.schemaVersion || null,
           traceError: result.traceError,
           artifacts: availableArtifacts,
+          completePlans: result.compiledPlans || null,
         },
       };
       for (const item of NODES.filter((candidate) => candidate.stage === 'compiler')) {
@@ -1277,10 +1316,13 @@
               expectedRunRevision: pair.trace?.expectedRunRevision
                 ?? pair.execution?.runBefore?.revision ?? null,
             })),
-            output: pairMap((_pair, outcome) => outcome?.directorDecision || {
-              state: 'not_exposed_or_command_rejected',
-            }),
-            short: '服务端约束后的 Opening Director Decision',
+            output: pairMap((_pair, outcome) => outcome ? {
+              attemptInterpretation: outcome.attemptInterpretation || null,
+              directorDecision: outcome.directorDecision || null,
+              chapterDirective: outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive || null,
+              chapterStateBeforeEffects: outcome.chapterDirective?.evidenceStateEffectCodes || null,
+            } : { state: 'not_exposed_or_command_rejected' }),
+            short: 'Opening Director + Chapter Directive',
             durationMs: processingDurationMs,
             calls: [],
           },
@@ -1332,6 +1374,10 @@
               resultingRunRevision: outcome?.resultingRunRevision
                 ?? pair.execution?.command?.finalizedRunRevision ?? null,
               writeCounts: outcome?.writeCounts || null,
+              gameplayEvidence: outcome?.gameplayEvidence || null,
+              chapterStateEffectCodes: outcome?.chapterStateEffectCodes || null,
+              chapterState: outcome?.chapterState || null,
+              chapterSettlement: outcome?.chapterSettlement || null,
             })),
             short: openingIssues.length ? 'Opening 产品表面未全部可用' : 'Opening Feed / Outcome 已读取',
             durationMs: commandDurationMs,
@@ -1417,10 +1463,13 @@
             commandInputDigest: pair.trace?.inputDigest || null,
             expectedRunRevision: pair.trace?.expectedRunRevision ?? null,
           })),
-          output: pairMap((_pair, outcome) => outcome?.directorDecision || {
-            state: 'not_exposed_or_command_rejected',
-          }),
-          short: 'Director Decision',
+          output: pairMap((_pair, outcome) => outcome ? {
+            attemptInterpretation: outcome.attemptInterpretation || null,
+            directorDecision: outcome.directorDecision || null,
+            chapterDirective: outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive || null,
+            narrativeProjection: outcome.narrativeProjection || null,
+          } : { state: 'not_exposed_or_command_rejected' }),
+          short: 'Attempt Resolution + Director + Chapter Directive',
           durationMs: processingDurationMs || commandDurationMs,
           calls: [],
         },
@@ -1464,6 +1513,10 @@
             resultingRunRevision: outcome?.resultingRunRevision
               ?? pair.execution?.command?.finalizedRunRevision ?? null,
             writeCounts: outcome?.writeCounts || null,
+            gameplayEvidence: outcome?.gameplayEvidence || null,
+            chapterStateEffectCodes: outcome?.chapterStateEffectCodes || null,
+            chapterState: outcome?.chapterState || null,
+            chapterSettlement: outcome?.chapterSettlement || null,
             finalizedAt: pair.trace?.finalizedAt || pair.execution?.command?.finalizedAt || null,
           })),
           short: rowIssues.length ? '终态已保留，未全部 Apply' : 'Canon 已原子写入',
