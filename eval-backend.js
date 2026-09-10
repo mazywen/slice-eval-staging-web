@@ -467,10 +467,10 @@
       schemaVersion: 'slice.world-draft-content.v6',
       worldCore: {
         schemaVersion: 'slice.world-core-source.v1',
-        worldName: input.title,
-        worldDescription: input.description,
-        worldSetting: input.setting,
-        worldGoal: input.goal,
+        title: input.title,
+        description: input.description,
+        setting: input.setting,
+        goal: input.goal,
       },
       primaryWorldTagId: null,
       topicTags: input.topicTags || [],
@@ -501,8 +501,11 @@
       content: buildWorldDraftContent(input),
     };
   }
-  function buildCreateCompilerExperimentRequest(input) {
-    return input.evaluationInstruction ? { evaluationInstruction: input.evaluationInstruction } : {};
+  function buildCreateCompilerExperimentRequest(input, evaluationAttemptId = null) {
+    return {
+      ...(input.evaluationInstruction ? { evaluationInstruction: input.evaluationInstruction } : {}),
+      ...(evaluationAttemptId ? { evaluationAttemptId: String(evaluationAttemptId) } : {}),
+    };
   }
   async function createScenario(input) {
     if (input.sourceWorldDraftRevisionId) {
@@ -998,9 +1001,15 @@
     return `${[...base].slice(0, baseLimit).join('')}${suffixChars.slice(0, 4000).join('')}`;
   }
   async function createCompilerExperimentWithRecovery(input, revisionId, onProgress) {
-    // The owner stores a unique (revision,inputDigest) experiment and resumes missing
-    // tracks; retain the exact HTTP idempotency key across uncertain gateway replies.
-    const options = { params: { worldDraftRevisionId: revisionId }, key: idempotency('eval-compile'), body: buildCreateCompilerExperimentRequest(input) };
+    // Each explicit Eval run owns one non-model-visible attempt identity. HTTP/network
+    // retries reuse it, while a later user-initiated run can compile the same immutable
+    // Source and unchanged instruction again without being pinned to an old terminal failure.
+    const evaluationAttemptId = crypto.randomUUID();
+    const options = {
+      params: { worldDraftRevisionId: revisionId },
+      key: idempotency('eval-compile'),
+      body: buildCreateCompilerExperimentRequest(input, evaluationAttemptId),
+    };
     const started = performance.now();
     for (let attempt = 0; ; attempt += 1) {
       try { return await call('evalCreateCompilerExperiment', options); }
