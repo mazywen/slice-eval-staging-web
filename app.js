@@ -1702,15 +1702,24 @@
       });
   }
 
+  function canContinueEvaluation(result) {
+    return Boolean(
+      result?.previewRuns?.current?.runId
+      && result?.previewRuns?.v2Candidate?.runId
+      && result?.opening?.current?.status === 'applied'
+      && result?.opening?.v2Candidate?.status === 'applied'
+    );
+  }
+
   function renderExperience() {
     window.SliceExperienceReport?.render($('#experience-report'), state.lastRun, state.evalInput, state.experienceTrack);
     const result = state.lastRun;
     const continuePanel = $('#continue-panel');
-    const hasLiveRuns = Boolean(result?.previewRuns?.current?.runId && result?.previewRuns?.v2Candidate?.runId);
+    const canContinue = canContinueEvaluation(result);
     const running = document.body.classList.contains('run-active');
-    continuePanel.hidden = !hasLiveRuns || running;
-    $('#continue-submit').disabled = running;
-    if (hasLiveRuns) {
+    continuePanel.hidden = !canContinue || running;
+    $('#continue-submit').disabled = running || !canContinue;
+    if (canContinue) {
       const role = (state.evalInput.characters || []).find((card) =>
         card.characterVersionId === state.evalInput.playerCharacterVersionId)?.displayName || 'Preview Player';
       $('#continue-meta').textContent = `${role} · 已有 ${result.turns?.length || 0} 轮行为 · Current / V2 都沿用现有 Run，不会重新编译`;
@@ -1946,8 +1955,8 @@
   async function runContinuation(action) {
     const backend = window.SliceEvalBackend;
     if (!backend?.connected()) { openAuthDialog(); return; }
-    if (!state.lastRun?.previewRuns?.current?.runId || !state.lastRun?.previewRuns?.v2Candidate?.runId) {
-      showToast('当前没有可继续的双轨 Preview Run');
+    if (!canContinueEvaluation(state.lastRun)) {
+      showToast('当前双轨 Opening 尚未全部成功，不能继续提交下一轮');
       return;
     }
     const body = String(action || '').trim();

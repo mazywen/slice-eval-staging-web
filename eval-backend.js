@@ -501,10 +501,9 @@
       content: buildWorldDraftContent(input),
     };
   }
-  function buildCreateCompilerExperimentRequest(input, evaluationAttemptId = null) {
+  function buildCreateCompilerExperimentRequest(input) {
     return {
       ...(input.evaluationInstruction ? { evaluationInstruction: input.evaluationInstruction } : {}),
-      ...(evaluationAttemptId ? { evaluationAttemptId: String(evaluationAttemptId) } : {}),
     };
   }
   async function createScenario(input) {
@@ -1001,14 +1000,13 @@
     return `${[...base].slice(0, baseLimit).join('')}${suffixChars.slice(0, 4000).join('')}`;
   }
   async function createCompilerExperimentWithRecovery(input, revisionId, onProgress) {
-    // Each explicit Eval run owns one non-model-visible attempt identity. HTTP/network
-    // retries reuse it, while a later user-initiated run can compile the same immutable
-    // Source and unchanged instruction again without being pinned to an old terminal failure.
-    const evaluationAttemptId = crypto.randomUUID();
+    // HTTP/network retries reuse the same idempotency key for one explicit Eval run.
+    // The public CreateCompilerExperimentRequest contract currently accepts only
+    // evaluationInstruction; do not send frontend-only attempt identities.
     const options = {
       params: { worldDraftRevisionId: revisionId },
       key: idempotency('eval-compile'),
-      body: buildCreateCompilerExperimentRequest(input, evaluationAttemptId),
+      body: buildCreateCompilerExperimentRequest(input),
     };
     const started = performance.now();
     for (let attempt = 0; ; attempt += 1) {
