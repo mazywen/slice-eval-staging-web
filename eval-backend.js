@@ -1172,6 +1172,120 @@
     return cloneEvidence(projections);
   }
 
+  async function continueEvaluation(previous, rawAction, onProgress = () => {}) {
+    if (!connected()) {
+      const error = new Error('请先登录 Eval Backend');
+      error.code = 'SLICE_EVAL_SESSION_EXPIRED';
+      error.status = 401;
+      throw error;
+    }
+    if (state.activeTelemetry) throw new Error('已有评测正在运行，请等待当前轮收束');
+    if (!previous?.input || !previous?.previewRuns?.current?.runId
+      || !previous?.previewRuns?.v2Candidate?.runId) {
+      throw new Error('当前报告没有可继续的双轨 Preview Run');
+    }
+    const action = String(rawAction || '').trim();
+    if (!action) throw new Error('请输入这一轮玩家行为');
+    const input = validateInput({
+      ...previous.input,
+      sourceDocument: null,
+      evaluationMode: 'experience',
+      playerActions: [action],
+    });
+    const result = cloneEvidence(previous);
+    const startedAtMs = performance.now();
+    const previousDurationMs = Number.isFinite(Number(result.durationMs)) ? Number(result.durationMs) : 0;
+    result.status = 'running';
+    result.completedAt = null;
+    result.stoppedReason = null;
+    result.operations = Array.isArray(result.operations) ? result.operations : [];
+    result.turns = Array.isArray(result.turns) ? result.turns : [];
+    const publish = (event) => onProgress({
+      ...event,
+      partialResult: cloneEvidence({
+        ...result,
+        durationMs: previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs)),
+      }),
+    });
+    state.activeTelemetry = { records: result.operations, onProgress: publish };
+    try {
+      const priorTurn = result.turns.at(-1);
+      const previousProjections = {
+        current: result.finalProjections?.current || priorTurn?.current?.projections
+          || result.opening?.current?.projections || result.initialProjections?.current || null,
+        v2Candidate: result.finalProjections?.v2Candidate || priorTurn?.v2Candidate?.projections
+          || result.opening?.v2Candidate?.projections || result.initialProjections?.v2Candidate || null,
+      };
+      publish({
+        kind: 'checkpoint', step: 'runtime', index: result.turns.length,
+        message: `继续同一双轨 Run：第 ${result.turns.length + 1} 轮玩家行为`,
+      });
+      const turnStartedAtMs = performance.now();
+      const [currentExecution, candidateExecution] = await Promise.all([
+        executeJourneyAction(result.previewRuns.current, input, action),
+        executeJourneyAction(result.previewRuns.v2Candidate, input, action),
+      ]);
+      currentExecution.projectionsBefore = previousProjections.current;
+      candidateExecution.projectionsBefore = previousProjections.v2Candidate;
+      currentExecution.projections = await readExperienceProjections(result.previewRuns.current.runId);
+      candidateExecution.projections = await readExperienceProjections(result.previewRuns.v2Candidate.runId);
+      currentExecution.projectionIssues = projectionIssues(currentExecution.projections);
+      candidateExecution.projectionIssues = projectionIssues(candidateExecution.projections);
+      result.turns.push({
+        kind: parseJourneyAction(action).type,
+        action,
+        current: currentExecution,
+        v2Candidate: candidateExecution,
+        durationMs: Math.max(0, Math.round(performance.now() - turnStartedAtMs)),
+        continued: true,
+      });
+      result.finalProjections = {
+        current: currentExecution.projections,
+        v2Candidate: candidateExecution.projections,
+      };
+      result.finalProjectionIssues = {
+        current: projectionIssues(currentExecution.projections),
+        v2Candidate: projectionIssues(candidateExecution.projections),
+      };
+      await refreshTrace(result);
+      const currentRoundHasIssue = [currentExecution, candidateExecution].some((execution) =>
+        execution.status !== 'applied' || (execution.projectionIssues || []).length > 0);
+      const historicalIssue = Boolean(result.error || result.traceError)
+        || result.turns.slice(0, -1).some((turn) => [turn.current, turn.v2Candidate]
+          .some((execution) => execution?.status !== 'applied' || (execution?.projectionIssues || []).length > 0))
+        || [result.opening?.current, result.opening?.v2Candidate]
+          .some((execution) => execution && execution.status !== 'applied');
+      result.status = currentRoundHasIssue || historicalIssue ? 'completed_with_issues' : 'completed';
+      result.lastContinuation = {
+        action,
+        completedAt: new Date().toISOString(),
+        currentStatus: currentExecution.status,
+        v2CandidateStatus: candidateExecution.status,
+      };
+      result.completedAt = result.lastContinuation.completedAt;
+      result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
+      publish({
+        kind: 'complete', step: 'runtime', index: result.turns.length - 1,
+        message: currentRoundHasIssue
+          ? '这一轮已返回并保留双轨状态；存在异常，仍可继续输入下一轮行为'
+          : '这一轮已写入同一双轨 Run，可继续输入下一轮行为',
+      });
+      return result;
+    } catch (error) {
+      if (error?.status !== 401 && result.experiment?.experimentId) {
+        try { await refreshTrace(result); } catch {}
+      }
+      result.status = 'completed_with_issues';
+      result.completedAt = new Date().toISOString();
+      result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
+      result.lastContinuation = { action, completedAt: result.completedAt, error: compactError(error) };
+      error.partialResult = cloneEvidence(result);
+      throw error;
+    } finally {
+      state.activeTelemetry = null;
+    }
+  }
+
   async function resumeCompilation(previous, onProgress = () => {}) {
     if (!previous?.input || !UUID_RE.test(previous?.experiment?.experimentId || '')
       || !UUID_RE.test(previous?.scenario?.worldDraftRevisionId || '')
@@ -1477,7 +1591,7 @@
   }
 
   window.SliceEvalBackend = Object.freeze({
-    loadContract, connect, disconnect, connected, runFullEvaluation, resumeCompilation, requestStop,
+    loadContract, connect, disconnect, connected, runFullEvaluation, continueEvaluation, resumeCompilation, requestStop,
     __testing: Object.freeze({
       validateInput, normalizeSourceDocument, normalizeInputCharacters, previewRunRequest, assertPreviewIdentity, buildWorldSeed, buildWorldDraftContent,
       parseJourneyAction, executeJourneyAction, executeNpcReplyRun, readExperienceProjections, directMessageChannel,

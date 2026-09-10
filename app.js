@@ -48,11 +48,27 @@
   });
   const SCENARIO_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
   const scenarioManifest = window.SLICE_EVAL_SCENARIOS;
+  const roleIndex = window.SLICE_EVAL_ROLE_INDEX;
   const scenarioManifestTrusted = ['slice.eval-scenario-library.v1', 'slice.eval-scenario-library.v2']
     .includes(scenarioManifest?.schemaVersion)
     && scenarioManifest?.backendApiOrigin === window.SLICE_EVAL_AUTH?.backendApiOrigin;
+  const roleIndexTrusted = roleIndex?.schemaVersion === 'slice.eval-role-index.v1'
+    && roleIndex?.backendApiOrigin === window.SLICE_EVAL_AUTH?.backendApiOrigin
+    && roleIndex?.scenarios && typeof roleIndex.scenarios === 'object';
+  const withRoleIndex = (item) => {
+    const roleScenario = roleIndexTrusted ? roleIndex.scenarios[item.id] : null;
+    if (!roleScenario) return item;
+    const characters = Array.isArray(roleScenario.characters)
+      ? roleScenario.characters.map((character) => ({ ...character, sourceTitle: item.title })) : [];
+    return {
+      ...item,
+      worldDraftRevisionId: roleScenario.worldDraftRevisionId,
+      characters,
+      characterVersionIds: characters.map((character) => character.characterVersionId),
+    };
+  };
   const scenarioLibrary = scenarioManifestTrusted && Array.isArray(scenarioManifest.scenarios)
-    ? scenarioManifest.scenarios.filter((item) => item
+    ? scenarioManifest.scenarios.map(withRoleIndex).filter((item) => item
       && /^[a-z0-9][a-z0-9-]{2,63}$/u.test(String(item.id || ''))
       && typeof item.title === 'string' && item.title.length >= 1
       && typeof item.worldDescription === 'string' && item.worldDescription.length >= 1
@@ -516,6 +532,11 @@
   function evalInputFromScenario(scenario) {
     const value = scenario || FALLBACK_SCENARIO;
     const characterVersionIds = [...(value.characterVersionIds || [])].slice(0, 8);
+    const scenarioCharacters = [...(value.characters || [])]
+      .filter((card) => characterVersionIds.includes(card.characterVersionId));
+    const recommendedPlayer = scenarioCharacters.find((card) => card.playable !== false && card.starterRecommended)
+      || scenarioCharacters.find((card) => card.playable !== false)
+      || null;
     return {
       title: String(value.title || ''),
       description: String(value.worldDescription || ''),
@@ -535,9 +556,9 @@
       sourceWorldDraftRevisionId: value.worldDraftRevisionId || null,
       topicTags: [...(value.topicTags || [])],
       personaOptions: [...(value.personaOptions || [])],
-      characters: [...(value.characters || [])],
+      characters: scenarioCharacters,
       selectedPersona: String((value.personaOptions || [])[0] || ''),
-      playerCharacterVersionId: value.playerCharacterVersionId || null,
+      playerCharacterVersionId: value.playerCharacterVersionId || recommendedPlayer?.characterVersionId || null,
       firstFollowerCharacterVersionId: value.firstFollowerCharacterVersionId || null,
     };
   }
@@ -1629,8 +1650,31 @@
     return next;
   }
 
+  function renderQuickPlayerRole() {
+    const select = $('#quick-player-character');
+    const cards = (state.evalInput.characters || []).filter((card) =>
+      (state.evalInput.characterVersionIds || []).includes(card.characterVersionId) && card.playable !== false);
+    if (!cards.length) {
+      select.innerHTML = '<option value="">零角色世界 · Preview Player</option>';
+      select.value = '';
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    select.innerHTML = cards.map((card) =>
+      `<option value="${escapeHtml(card.characterVersionId)}">${escapeHtml(card.displayName)}</option>`).join('');
+    const recommended = cards.find((card) => card.starterRecommended) || cards[0];
+    const selected = cards.find((card) => card.characterVersionId === state.evalInput.playerCharacterVersionId)
+      || recommended;
+    select.value = selected.characterVersionId;
+    state.evalInput.playerCharacterVersionId = selected.characterVersionId;
+    if (state.evalInput.firstFollowerCharacterVersionId === selected.characterVersionId) {
+      state.evalInput.firstFollowerCharacterVersionId = null;
+    }
+  }
+
   function updatePersonaOptions(options = [], selected = '') {
-    const values = options.length ? options : ['默认 Preview Player'];
+    const values = options.length ? options : ['默认评审视角'];
     const select = $('#persona-select');
     select.innerHTML = values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
     select.value = values.includes(selected) ? selected : values[0];
@@ -1661,6 +1705,16 @@
   function renderExperience() {
     window.SliceExperienceReport?.render($('#experience-report'), state.lastRun, state.evalInput, state.experienceTrack);
     const result = state.lastRun;
+    const continuePanel = $('#continue-panel');
+    const hasLiveRuns = Boolean(result?.previewRuns?.current?.runId && result?.previewRuns?.v2Candidate?.runId);
+    const running = document.body.classList.contains('run-active');
+    continuePanel.hidden = !hasLiveRuns || running;
+    $('#continue-submit').disabled = running;
+    if (hasLiveRuns) {
+      const role = (state.evalInput.characters || []).find((card) =>
+        card.characterVersionId === state.evalInput.playerCharacterVersionId)?.displayName || 'Preview Player';
+      $('#continue-meta').textContent = `${role} · 已有 ${result.turns?.length || 0} 轮行为 · Current / V2 都沿用现有 Run，不会重新编译`;
+    }
     const compileReady = result?.experiment?.status === 'succeeded';
     const compilePending = result?.experiment?.status === 'running'
       && !['dead_letter', 'cancelled', 'succeeded'].includes(result.experiment.execution?.status);
@@ -1709,8 +1763,12 @@
     const chosenFollower = reset ? state.evalInput.firstFollowerCharacterVersionId : follower.value;
     const option = (card) => `<option value="${escapeHtml(card.characterVersionId)}">${escapeHtml(card.displayName)}</option>`;
     const playable = cards.filter((card) => card.playable !== false);
-    player.innerHTML = '<option value="">自定义试玩身份（Preview Player）</option>' + playable.map(option).join('');
-    player.value = playable.some((card) => card.characterVersionId === chosenPlayer) ? chosenPlayer : '';
+    const recommended = playable.find((card) => card.starterRecommended) || playable[0] || null;
+    player.innerHTML = (playable.length
+      ? '<option value="">请选择剧本角色</option>'
+      : '<option value="">零角色世界 · Preview Player</option>') + playable.map(option).join('');
+    player.value = playable.some((card) => card.characterVersionId === chosenPlayer)
+      ? chosenPlayer : recommended?.characterVersionId || '';
     const npcs = cards.filter((card) => card.characterVersionId !== player.value);
     follower.innerHTML = '<option value="">按剧本推荐选择</option>' + npcs.map(option).join('');
     follower.value = npcs.some((card) => card.characterVersionId === chosenFollower) ? chosenFollower : '';
@@ -1748,16 +1806,30 @@
     updateSourceMeta();
     renderScenarioCharacters();
     renderStartRoles(true);
+    renderQuickPlayerRole();
   }
 
   function initializeScenarioControls() {
     $('#eval-player-character').addEventListener('change', () => renderStartRoles());
+    $('#quick-player-character').addEventListener('change', (event) => {
+      const nextPlayer = event.target.value || null;
+      if (nextPlayer === state.evalInput.playerCharacterVersionId) return;
+      state.evalInput.playerCharacterVersionId = nextPlayer;
+      if (state.evalInput.firstFollowerCharacterVersionId === nextPlayer) {
+        state.evalInput.firstFollowerCharacterVersionId = null;
+      }
+      state.lastRun = null;
+      resetToWaiting();
+      renderExperience();
+      showToast(nextPlayer ? '试玩角色已切换；下一次运行会以这个剧本角色进入世界' : '当前为零角色 Preview Player');
+    });
     const select = $('#scenario-select');
     const scenarios = scenarioLibrary.length ? scenarioLibrary : [FALLBACK_SCENARIO];
     select.innerHTML = scenarios.map((scenario) =>
       `<option value="${escapeHtml(scenario.id)}">${escapeHtml(scenario.title)}</option>`).join('');
     select.value = state.evalInput.sourceScenarioId || initialScenario.id;
     updatePersonaOptions(state.evalInput.personaOptions, state.evalInput.selectedPersona);
+    renderQuickPlayerRole();
   }
 
   function loadScenario(scenario) {
@@ -1871,6 +1943,58 @@
     }
   }
 
+  async function runContinuation(action) {
+    const backend = window.SliceEvalBackend;
+    if (!backend?.connected()) { openAuthDialog(); return; }
+    if (!state.lastRun?.previewRuns?.current?.runId || !state.lastRun?.previewRuns?.v2Candidate?.runId) {
+      showToast('当前没有可继续的双轨 Preview Run');
+      return;
+    }
+    const body = String(action || '').trim();
+    if (!body) { showToast('请输入下一轮玩家行为'); return; }
+    const button = $('#continue-submit');
+    const lockedControls = ['#run-all', '#scenario-select', '#quick-player-character', '#edit-input', '#import-run', '#auth-action', '#resume-compile'];
+    button.disabled = true;
+    button.textContent = '运行中…';
+    lockedControls.forEach((selector) => { $(selector).disabled = true; });
+    document.body.classList.add('run-active');
+    renderExperience();
+    try {
+      const result = await backend.continueEvaluation(state.lastRun, body, (progress) => {
+        const message = progress.message || '继续运行中';
+        $('#experience-progress').textContent = message;
+        setHealth('running', 'Shared Backend', message);
+        if (progress.partialResult?.input) applyRunResult(progress.partialResult, { progressive: true });
+      });
+      applyRunResult(result);
+      $('#continue-action').value = '';
+      const latest = result.turns?.at(-1);
+      const okay = latest && [latest.current, latest.v2Candidate].every((execution) => execution?.status === 'applied');
+      $('#experience-progress').textContent = okay
+        ? `第 ${result.turns.length} 轮已写入同一双轨 Run；可以继续输入下一步。`
+        : `第 ${result.turns.length} 轮已返回，存在可定位异常；Run 已保留，仍可继续输入。`;
+      showToast(okay ? '下一轮已完成，可以继续玩' : '这一轮有异常，但同一局仍可继续');
+    } catch (error) {
+      const partialResult = error?.partialResult || null;
+      if (partialResult?.input) applyRunResult(partialResult, { progressive: true });
+      const unauthorized = error?.status === 401
+        || ['SLICE_AUTH_REQUIRED', 'SLICE_EVAL_SESSION_EXPIRED'].includes(error?.code);
+      setHealth('error', unauthorized ? 'Eval Session' : 'Shared Backend', unauthorized ? '需要重新登录' : '这一轮执行失败');
+      $('#experience-progress').textContent = `这一轮未完成：${error.message || error}；已有 Run 未丢失。`;
+      if (unauthorized) {
+        $('#auth-action').textContent = '登录';
+        setAuthStatus('Eval Session 已过期或被撤销，请重新登录。');
+        if (!$('#auth-dialog').open) $('#auth-dialog').showModal();
+      }
+      showToast(`这一轮失败：${error.message || error}`);
+    } finally {
+      document.body.classList.remove('run-active');
+      button.disabled = false;
+      button.textContent = '运行下一轮';
+      lockedControls.forEach((selector) => { $(selector).disabled = false; });
+      renderExperience();
+    }
+  }
 
   function countRootIssues() {
     return NODES.filter((item) => item.issue && (item.stage === 'compiler' || item.kind === 'review')).length;
@@ -1995,6 +2119,16 @@
 
     $('#run-all').addEventListener('click', () => runRealEvaluation());
     $('#resume-compile').addEventListener('click', () => runRealEvaluation({ resume: true }));
+    $('#continue-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      runContinuation($('#continue-action').value);
+    });
+    $('#continue-action').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        $('#continue-form').requestSubmit();
+      }
+    });
     $('#stop-run').addEventListener('click', () => {
       window.SliceEvalBackend.requestStop();
       $('#stop-run').disabled = true;
@@ -2089,6 +2223,9 @@
       }
       const characterError = characterVersionInputError(next.characterVersionIds);
       if (characterError) { showToast(characterError); return; }
+      if (next.characterVersionIds.length && !next.playerCharacterVersionId) {
+        showToast('请选择一个本剧本真实角色作为“我扮演谁”'); return;
+      }
       try { window.SliceEvalBackend.__testing.validateInput(next); } catch (error) { showToast(error.message); return; }
       state.evalInput = next;
       state.lastRun = null;
@@ -2098,6 +2235,7 @@
       if (next.sourceScenarioId) $('#scenario-select').value = next.sourceScenarioId;
       else ensureCustomScenarioOption(next.title);
       updatePersonaOptions(next.personaOptions, next.selectedPersona);
+      renderQuickPlayerRole();
       showToast(next.sourceWorldDraftRevisionId
         ? '评测参数已保存；继续使用内置 immutable Revision'
         : '世界 Source 已修改；运行时会新建临时 immutable Revision');

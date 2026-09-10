@@ -7,7 +7,7 @@
   <title>Slice · 剧情体验评估</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="stylesheet" href="./styles.css?v=20260905-experience-1" />
-  <link rel="stylesheet" href="./experience-report.css?v=20260905-gameplay-5" />
+  <link rel="stylesheet" href="./experience-report.css?v=20260910-live-play-1" />
 </head>
 <body data-view-mode="actual" data-workbench="experience">
   <div id="app" class="app">
@@ -29,9 +29,15 @@
         </label>
         <div class="context-divider"></div>
         <label class="compact-field persona-field">
-          <span title="仅作评审标签，不会改变后端 Preview Player 身份">评审标签</span>
-          <select id="persona-select" aria-label="互动对象建议">
-            <option>默认 Preview Player</option>
+          <span>我扮演谁</span>
+          <select id="quick-player-character" aria-label="本次试玩角色">
+            <option value="">加载剧本角色…</option>
+          </select>
+        </label>
+        <label class="compact-field persona-field">
+          <span title="仅作报告视角标签，不改变实际角色身份">评审标签</span>
+          <select id="persona-select" aria-label="评审标签">
+            <option>默认评审视角</option>
           </select>
         </label>
       </div>
@@ -61,6 +67,18 @@
       <label>对比轨道 <select id="experience-track"><option value="both">Current / V2 并排</option><option value="current">只看 Current</option><option value="v2_candidate">只看 V2 Candidate</option></select></label>
       <span id="experience-progress" role="status" aria-live="polite">选择剧本，配置人物与行动，然后运行。</span>
     </nav>
+    <section id="continue-panel" class="continue-panel" aria-label="继续同一局试玩" hidden>
+      <div class="continue-copy">
+        <small>LIVE RUN</small>
+        <strong>继续这一局</strong>
+        <span id="continue-meta">编译完成后，可在同一 Current / V2 Run 上继续输入行为。</span>
+      </div>
+      <form id="continue-form" class="continue-form">
+        <textarea id="continue-action" rows="2" maxlength="4000" placeholder="输入下一步行为，例如：我去找唐晶，问她刚才为什么没有回我。" aria-label="下一轮玩家行为"></textarea>
+        <button id="continue-submit" class="button primary" type="submit">运行下一轮</button>
+      </form>
+      <small class="continue-help">普通文字按自由行动提交；也支持“发帖：…”“评论：…”“回复评论：…”“私聊 角色名：…”“事件：choiceId”。每次都沿用当前两个 Preview Run，不重新编译。</small>
+    </section>
     <main id="experience-report" class="experience-report" aria-label="玩法体验报告"></main>
     <div class="workspace">
       <aside class="toolrail" aria-label="画布工具">
@@ -195,10 +213,10 @@
             <p class="dialog-note">勾选 0–8 张真实角色卡。已选卡优先显示；保存后会进入编译 Source，而非只更换显示名。</p>
             <div id="eval-scenario-characters" class="eval-character-grid"></div>
             <div class="eval-role-selection">
-              <label>我扮演谁<select id="eval-player-character" aria-label="玩家扮演角色"><option value="">自定义试玩身份（Preview Player）</option></select></label>
+              <label>我扮演谁<select id="eval-player-character" aria-label="玩家扮演角色"><option value="">请选择剧本角色</option></select></label>
               <label>首位互动 NPC<select id="eval-first-follower" aria-label="首位互动 NPC"><option value="">按剧本推荐选择</option></select></label>
             </div>
-            <p class="dialog-note">扮演身份与互动对象独立保存到后端。你扮演的角色不会再次作为 NPC 出现；未选择角色时，明确使用 Preview Player。</p>
+            <p class="dialog-note">Role Play 剧本必须从本次真实 CharacterVersion 中选择一个玩家角色；你扮演的角色会从 NPC Cast 中移除。只有零角色的临时自定义世界才使用 Preview Player。</p>
           </section>
           <label class="full">世界简介<textarea id="eval-description" rows="3" required></textarea></label>
           <label class="full">世界观设定<textarea id="eval-setting" rows="3" required></textarea></label>
@@ -215,12 +233,13 @@
     </dialog>
   </div>
 
-  <script src="./scenario-library.js?v=20260905-experience-1"></script>
+  <script src="./scenario-library.js?v=20260910-live-play-1"></script>
+  <script src="./scenario-role-index.js?v=20260910-live-play-1"></script>
   <script src="./auth-config.js?v=20260905-experience-1"></script>
-  <script src="./eval-backend.js?v=20260905-gameplay-5"></script>
+  <script src="./eval-backend.js?v=20260910-live-play-1"></script>
   <script src="./compiled-plan-view.js?v=20260905-plans-2"></script>
   <script src="./cost-estimate.js?v=20260905-plans-2"></script>
   <script src="./experience-report.js?v=20260905-gameplay-5"></script>
-  <script src="./app.js?v=20260905-gameplay-5"></script>
+  <script src="./app.js?v=20260910-live-play-1"></script>
 </body>
 </html>
