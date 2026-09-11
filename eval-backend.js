@@ -2,8 +2,8 @@
   'use strict';
 
   const CONTRACT_URLS = location.pathname.includes('/tools/runtime-eval-web/')
-    ? ['../../packages/contracts/backend-contract.lock.json', './capability-contract.json']
-    : ['./capability-contract.json'];
+    ? ['../../packages/contracts/backend-contract.lock.json', './network-contract.json']
+    : ['./network-contract.json'];
   const SESSION_KEY = 'slice-system-eval-session-v1';
   const EXPECTED = Object.freeze({
     createCompilerRuntimeEvalSession: ['POST', '/eval-api/v1/session', 201, 'compiler_runtime_eval_credential_proof', 'compiler_runtime_eval_login', 'none'],
@@ -139,7 +139,7 @@
     if (response.status !== 404 || code !== 'ROUTE_NOT_FOUND') return null;
     const error = new Error(
       `staging 后端还没有部署 Eval API route：${operation.httpMethod.toUpperCase()} ${operation.routePath} 返回 404 ROUTE_NOT_FOUND。` +
-      '这不是账号密码错误；需要发布包含 quality.runtime-ai-evaluation.1 Eval routes 的 slice-api。',
+      '这不是账号密码错误；需要确认对应 Eval route 已进入 slice-eval-api 并完成稳定 Origin 路由。',
     );
     error.code = 'SLICE_EVAL_ROUTE_NOT_DEPLOYED';
     error.status = response.status;
@@ -174,18 +174,16 @@
     return value;
   }
   function validateContract(contract) {
-    if (contract?.schemaVersion !== 3 || contract?.capabilityScope?.scopeId !== 'slice.real-mvp-staging.v1') {
-      throw new Error('不是 Slice staging capability-scoped handoff');
+    if (contract?.contractVersion !== '4.0.0' || !Array.isArray(contract?.operations)) {
+      throw new Error('不是 Slice v4 Network Shape contract');
     }
-    const required = new Set(contract.capabilityScope.requiredOperationIds || []);
-    const operations = new Map((contract.operations || []).map((operation) => [operation.operationId, operation]));
-    for (const [operationId, [method, path, status, authClass, audience, idempotency]] of Object.entries(EXPECTED)) {
+    const operations = new Map(contract.operations.map((operation) => [operation.operationId, operation]));
+    for (const [operationId, [method, path, status, authClass, , idempotency]] of Object.entries(EXPECTED)) {
       const operation = operations.get(operationId);
-      if (!required.has(operationId) || operation?.implementationStatus !== 'implemented'
-        || operation.httpMethod?.toUpperCase() !== method || operation.routePath !== path
+      if (operation?.httpMethod?.toUpperCase() !== method || operation.routePath !== path
         || operation.successStatus !== status || operation.authClass !== authClass
-        || operation.audience !== audience || operation.idempotency !== idempotency) {
-        throw new Error(`Eval operation 未通过 exact handoff gate：${operationId}`);
+        || operation.idempotency !== idempotency) {
+        throw new Error(`Eval operation 未通过 Network Shape 校验：${operationId}`);
       }
     }
   }
@@ -203,7 +201,7 @@
         return contract;
       } catch (error) { lastError = error; }
     }
-    throw lastError || new Error('Eval capability handoff 不可用');
+    throw lastError || new Error('Eval Network Shape contract 不可用');
   }
   function operationPath(operation, params = {}, query = {}) {
     let path = operation.routePath.replace(/\{([A-Za-z0-9]+)\}/gu, (_, key) => {
