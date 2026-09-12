@@ -262,7 +262,14 @@
   async function call(operationId, { params, query, body, key, useSession = true } = {}) {
     await loadContract();
     const operation = state.operations.get(operationId);
-    if (!operation || !EXPECTED[operationId]) throw new Error(`未授权 operation：${operationId}`);
+    // Additional console operations use the generated Eval bearer surface only.
+    // This is an auth/transport boundary, never a deployment capability gate.
+    const generatedEvalOperation = operation?.authClass === 'compiler_runtime_eval_bearer'
+      && /^\/eval-api\/v1\//u.test(operation?.routePath || '')
+      && !String(operation?.routePath || '').includes('..');
+    if (!operation || (!EXPECTED[operationId] && !generatedEvalOperation)) {
+      throw Object.assign(new Error(`Eval Network Shape 缺少对应操作：${operationId}`), { code: 'SLICE_EVAL_OPERATION_UNAVAILABLE', operationId });
+    }
     if (operation.idempotency === 'required' && !key) {
       throw new Error(operationId + ' 缺少 Idempotency-Key');
     }
@@ -2004,7 +2011,21 @@
     }
   }
 
+  async function withConsoleTelemetry(records, onProgress, task) {
+    if (state.activeTelemetry) throw new Error('已有操作正在执行，请等待当前操作返回');
+    state.activeTelemetry = { records, onProgress };
+    try { return await task(); } finally { state.activeTelemetry = null; }
+  }
+
   window.SliceEvalBackend = Object.freeze({
+    workspaceId: () => connected() ? state.session.workspaceId : null,
+    consoleTools: Object.freeze({
+      call, withTelemetry: withConsoleTelemetry, validateInput, compactError,
+      buildCreateWorldDraftRequest, buildCreateWorldDraftRevisionRequest,
+      buildCreateCompilerExperimentRequest, createCompilerExperimentWithRecovery,
+      waitForExperiment, readExperienceProjections, projectionIssues, refreshTrace,
+      previewRunRequest, assertPreviewIdentity, readOpeningBody, waitForOutcome,
+    }),
     loadContract, connect, disconnect, connected, runFullEvaluation, startInteractiveRuntime, continueEvaluation, resumeCompilation, requestStop,
     __testing: Object.freeze({
       validateInput, normalizeSourceDocument, normalizeInputCharacters, previewRunRequest, assertPreviewIdentity, buildWorldSeed, buildWorldDraftContent,
