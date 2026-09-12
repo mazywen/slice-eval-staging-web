@@ -13,7 +13,7 @@
   };
   const pageNames={scripts:'剧本与创作',play:'交互运行',records:'操作与诊断',guide:'流程总览'};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
-  const blankDraft=()=>({title:'',description:'',setting:'',goal:'',highlightDescription:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
+  const blankDraft=()=>({title:'',description:'',setting:'',goal:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
   const needsPolling=()=>!!state.result?.pendingCommand || pendingRelease();
   const locked=()=>state.busy || !!state.result?.pendingCommand || state.result?.runtimePhase==='waiting_for_backend' || pendingRelease();
@@ -91,7 +91,7 @@
       '<label class="full">世界观与背景<textarea name="setting" rows="5" maxlength="4000" required'+disable(state.busy)+'>'+e(d.setting)+'</textarea></label>'+
       '<label class="full">世界目标<textarea name="goal" rows="2" maxlength="160" required'+disable(state.busy)+'>'+e(d.goal)+'</textarea></label>'+
       '</div><div class="form-section"><div class="section-heading"><h3>剧本人物 <small id="character-count">'+A(d.characterVersionIds).length+' / 8</small></h3><button id="create-character" type="button" class="text-button"'+disable(state.busy)+'>＋ 创建人物</button></div>'+characterOptions()+'</div>'+
-      '<div class="form-section"><label>高光场景描述 <small>可选。作为编译源文本，编译后可核对实际产物。</small><textarea name="highlightDescription" rows="3" maxlength="4000"'+disable(state.busy)+' placeholder="写下希望出现的场景、冲突或转折">'+e(d.highlightDescription)+'</textarea></label></div>'+presetActivities()+
+      presetActivities()+
       '<div class="form-actions"><span class="muted">封面与头像使用默认占位</span><button id="save-draft" class="button" type="submit"'+disable(state.busy)+'>保存测试草稿</button><button id="compile-draft" class="button primary" type="button"'+disable(state.busy)+'>编译剧本</button></div></form>'+
       (compiled?'<div class="form-section"><div class="section-heading"><h3>编译结果已返回</h3><button class="text-button" type="button" data-inspect-step="compile">查看完整编译结果 →</button></div><p class="notice">'+e(C.capabilities().compilerNotice || '编译费用以实际调用为准。')+'</p><div class="inline-controls"><button class="button primary" data-page="play" type="button">选择人物并开始</button>'+(typeof C.publish==='function'?'<button id="publish-draft" class="button" type="button"'+disable(locked())+'>发布到测试环境</button>':'')+'</div>'+(typeof C.publish==='function'?'<p class="muted" style="margin-top:10px">正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。</p>':'')+'</div>':'');
   }
@@ -197,7 +197,7 @@
   }
   function renderGuide() {
     const definitions=[
-      ['01','创作与编译','编辑世界设定、人物与高光场景。保存剧本后执行真实编译，查看系统如何转成可运行的世界。'],
+      ['01','创作与编译','编辑世界设定、人物与预制活动。保存剧本后执行真实编译，查看系统如何转成可运行的世界。'],
       ['02','选角与开场','编译完成后由你选择扮演人物并开始。开局建立后，等待你确认开场内容。'],
       ['03','交互与观察','你自己发帖、评论、私聊、回应事件或进入活动。后台正常处理，并留下可以查看的过程证据。'],
     ];
@@ -210,8 +210,10 @@
     const form=$('#draft-form');
     if(!form || !state.draft)return;
     const data=new FormData(form);
-    for(const key of ['title','description','setting','goal','highlightDescription'])state.draft[key]=String(data.get(key) || '');
-    state.draft.characterVersionIds=data.getAll('characterVersionIds');
+    for(const key of ['title','description','setting','goal'])state.draft[key]=String(data.get(key) || '');
+    const previousIds=A(state.draft.characterVersionIds), selectedIds=data.getAll('characterVersionIds');
+    const selectedSet=new Set(selectedIds), previousSet=new Set(previousIds);
+    state.draft.characterVersionIds=[...previousIds.filter(id=>selectedSet.has(id)),...selectedIds.filter(id=>!previousSet.has(id))];
     const all=[...A(state.draft.characters),...state.characters];
     state.draft.characters=state.draft.characterVersionIds.map(id=>all.find(row=>row.characterVersionId===id) || {characterVersionId:id});
   }
@@ -280,7 +282,7 @@
     const input={...state.draft,characters:A(state.draft.characters),characterVersionIds:A(state.draft.characterVersionIds)};
     const previous=state.result;
     const same=previous?.scenario?.worldDraftRevisionId && !V.preview(previous).runId &&
-      ['title','description','setting','goal','highlightDescription'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
+      ['title','description','setting','goal'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
       JSON.stringify(previous.input?.characterVersionIds || [])===JSON.stringify(input.characterVersionIds) &&
       JSON.stringify(previous.input?.activityDefinitions || [])===JSON.stringify(input.activityDefinitions || []) && !A(input.removedActivityDefinitionIds).length;
     const result=await task(compile?'正在保存输入并编译剧本…':'正在保存剧本…',async(onProgress)=>{

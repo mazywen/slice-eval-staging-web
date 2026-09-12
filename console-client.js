@@ -181,7 +181,7 @@
     const normalized = T.validateInput({
       ...input, description: input.description || input.worldDescription,
       setting: input.setting || input.worldSetting, goal: input.goal || input.worldGoal,
-      evaluationMode: 'experience', evaluationInstruction: '', playerActions: [],
+      evaluationMode: 'experience', evaluationInstruction: '', playerActions: [], highlightDescription: null,
       sourceWorldDraftRevisionId: null, sourceDocument: input.sourceDocument || null,
     });
     normalized.characters = (normalized.characters || []).map((row) => {
@@ -189,6 +189,7 @@
       return { ...row, playable: source.playable !== false, starterRecommended: source.starterRecommended === true,
         starterPriority: Number.isInteger(source.starterPriority) ? source.starterPriority : null };
     });
+    delete normalized.highlightDescription;
     normalized.sourceContent = clone(input.sourceContent || null);
     return normalized;
   }
@@ -197,14 +198,15 @@
     if (input.sourceContent) {
       const edited = request.content;
       request.content = { ...clone(input.sourceContent), worldCore: edited.worldCore, coverAssetId: null,
-        highlightDescription: edited.highlightDescription, topicTags: edited.topicTags,
+        topicTags: edited.topicTags,
         ...(input.sourceDocument ? { sourceDocument: clone(input.sourceDocument) } : {}) };
     }
+    delete request.content.highlightDescription; // Not part of the formal V6 write DTO.
     request.content.characterBindings = (input.characterVersionIds || []).map((characterVersionId, index) => {
       const selected = (input.characters || []).find((entry) => entry.characterVersionId === characterVersionId);
       return { characterVersionId, playable: selected?.playable !== false,
         starterRecommended: selected ? selected.starterRecommended === true : index === 0,
-        starterPriority: selected?.starterPriority ?? index + 1 };
+        starterPriority: selected ? selected.starterPriority ?? null : index + 1 };
     });
     return request;
   }
@@ -284,7 +286,7 @@
   function sourceFingerprint(input) {
     return stableJson({
       title: input.title || '', description: input.description || '', setting: input.setting || '', goal: input.goal || '',
-      highlightDescription: input.highlightDescription || '', topicTags: input.topicTags || [],
+      topicTags: input.topicTags || [],
       characterVersionIds: input.characterVersionIds || [],
       characters: (input.characters || []).map((row) => ({
         characterVersionId: row.characterVersionId, playable: row.playable !== false,
