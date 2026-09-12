@@ -10,7 +10,7 @@
   const narrative = { OPENING_HOOK: '开场钩子', BOND: '关系推进', INVESTIGATE: '调查', NEGOTIATE: '协商', PUBLIC_CHALLENGE: '公开挑战', PRIVATE_TEST: '私下试探', COMPLICATION: '矛盾升级', REVEAL: '揭示', REVERSAL: '反转', BETRAYAL: '背叛', RESCUE: '救援', REUNION: '重逢', BREAKTHROUGH: '突破', CRISIS_CHOICE: '危机抉择', AFTERMATH: '余波', RECOVERY: '恢复', ENDING_GATE: '结局条件', EPILOGUE: '尾声' };
   const tension = { QUIET: '平静', BUILD: '铺垫', PRESSURE: '施压', PEAK: '高潮', RELEASE: '释放', RECOVERY: '恢复' };
   const chapterEffects = { RELATIONSHIP: '关系', KNOWLEDGE: '知识', RESOURCE: '资源', ACTIVE_CONFLICT: '冲突', OPEN_LOOP: '未决线索', MILESTONE_PATH: '阶段推进', ENDING_EVIDENCE: '结局证据' };
-  const status = { running: '执行中', completed: '流程执行结束', coverage_incomplete: '流程结束，玩法覆盖未通过', verified: '玩法覆盖通过', completed_with_issues: '流程结束，有问题', stopped: '已停止', failed: '失败', applied: '已生效', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
+  const status = { running: '执行中', compiled_waiting_for_user: '编译完成，等待进入 Runtime', waiting_for_user: '已暂停，等待用户输入', waiting_with_issues: '已暂停，存在可定位问题', completed: '流程执行结束', coverage_incomplete: '流程结束，玩法覆盖未通过', verified: '玩法覆盖通过', completed_with_issues: '流程结束，有问题', stopped: '已停止', failed: '失败', applied: '已生效', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
   function duration(ms) { return number(ms) === null ? '未回传' : ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`; }
   function uniqueCalls(calls) {
     const seen = new Set();
@@ -103,7 +103,7 @@
   }
   function entityChanges(before, after) {
     const rows = [], gaps = [];
-    for (const [scope, label, key] of [['events', '事件', 'eventId'], ['activities', '活动', 'activityId'], ['milestones', '里程碑', 'milestoneId']]) {
+    for (const [scope, label, key] of [['events', '事件', 'eventId'], ['activities', '活动', 'activityId'], ['activityInstances', 'Activity Instance', 'activityId'], ['activityAttempts', 'Activity Attempt', 'activityAttemptId'], ['milestones', '里程碑', 'milestoneId']]) {
       if (incomplete(before?.[scope]) || incomplete(after?.[scope])) gaps.push(label);
       const prior = new Map(items(before?.[scope]?.value).map((row) => [row[key], row]));
       for (const row of items(after?.[scope]?.value)) {
@@ -115,7 +115,7 @@
     return { rows, gaps };
   }
   function entitiesHtml(changes) {
-    return changes.rows.map(({ label, row, previous, isDelta }) => `<article class="experience-message"><div><span>${label}</span><strong>${esc(row.title || '未回传标题')}</strong><small>${isDelta ? previous ? '本轮更新' : '本轮新增' : '已观测，缺少可比基线'}</small></div><p>${esc(row.setup || row.description || '')}</p>${row.objective ? `<p>目标：${esc(row.objective)}</p>` : ''}<small>状态：${esc([previous?.state, row.state, row.resolution].filter(Boolean).join(' → ') || '未回传')}</small>${row.currentTurn !== undefined ? `<p>回合 ${esc(row.currentTurn)} / ${esc(row.maxTurns ?? '未回传')}</p>` : ''}${array(row.choices).length ? `<ol>${row.choices.map((choice) => `<li>${esc(typeof choice === 'string' ? choice : choice.label)}</li>`).join('')}</ol>` : ''}${row.freeInputAllowed ? '<small>支持自由输入回应</small>' : ''}${array(row.evidence).map((item) => `<p>证据：${esc(item.summary)}</p>`).join('')}</article>`).join('');
+    return changes.rows.map(({ label, row, previous, isDelta }) => `<article class="experience-message"><div><span>${label}</span><strong>${esc(row.title || row.currentScene?.title || row.setup?.title || '未回传标题')}</strong><small>${isDelta ? previous ? '本轮更新' : '本轮新增' : '已观测，缺少可比基线'}</small></div><p>${esc(row.setup?.sceneDescription || row.currentScene?.sceneDescription || row.setup || row.description || '')}</p>${row.objective ? `<p>目标：${esc(row.objective)}</p>` : ''}<small>状态：${esc([previous?.state || previous?.status, row.state || row.status, row.resolution].filter(Boolean).join(' → ') || '未回传')}</small>${row.currentTurn !== undefined ? `<p>回合 ${esc(row.currentTurn)} / ${esc(row.maxTurns ?? '未回传')}</p>` : row.turnCount !== undefined ? `<p>Activity 回合 ${esc(row.turnCount)}</p>` : ''}${array(row.choices).length ? `<ol>${row.choices.map((choice) => `<li>${esc(typeof choice === 'string' ? choice : choice.label)}</li>`).join('')}</ol>` : ''}${row.freeInputAllowed ? '<small>支持自由输入回应</small>' : ''}${array(row.evidence).map((item) => `<p>证据：${esc(item.summary)}</p>`).join('')}</article>`).join('');
   }
   function stepModel(result, track, step, index) {
     const execution = step?.[track.key];
@@ -137,6 +137,7 @@
       narrativeProjection: outcome.narrativeProjection || null,
       chapterState: outcome.chapterState || outcome.gameplayEvidence?.chapter?.state || null,
       chapterSettlement: outcome.chapterSettlement || outcome.gameplayEvidence?.chapter?.settlement || null,
+      debug: outcome.debugEvidence || null,
       diff: stateDiff(execution.projectionsBefore, execution.projections),
       surfaces, npcMessages, playerActorId,
       entities: entityChanges(execution.projectionsBefore, execution.projections),
@@ -202,12 +203,16 @@
     const outcome = model?.outcome || {};
     const attempt = outcome.attemptInterpretation;
     const memory = outcome.memoryEvidence;
+    const debug = model?.debug;
+    const selectedItems = array(debug?.memory?.sharedContext?.items);
+    const privateHints = array(debug?.memory?.privatePovHints);
     const projection = model?.narrativeProjection;
     const claims = attempt ? [...array(attempt.claimedNpcStates), ...array(attempt.claimedWorldChanges)] : [];
     const lanes = array(memory?.lanes).map((row) => `${row.lane}:${row.status}/${row.candidateCount}`).join(' · ');
     return `<div class="experience-process-grid">
       <div><span>Attempt Resolution</span>${attempt ? `<strong>${esc(attempt.selfAction || '未回传')}</strong><p>玩家想要：${esc(attempt.desiredOutcome || '未回传')}</p><small>${claims.length ? `需抵抗/核验的玩家主张 ${esc(claims.join('；'))}` : '没有把玩家对 NPC / 世界的主张直接当成事实'}</small>` : '<p class="experience-muted">旧 Outcome 未回传 Attempt Interpretation。</p>'}</div>
-      <div><span>Memory / POV</span>${memory ? `<strong>召回 ${esc(memory.selectedItemCount)} 条</strong><p>${esc(memory.strategy)}</p><small>${esc(lanes || 'lane 证据未回传')} · Private POV ${esc(memory.privatePovCallCount)} 次</small>` : '<p class="experience-muted">本轮没有可展示的记忆召回证据。</p>'}</div>
+      <div><span>Memory / POV</span>${memory ? `<strong>召回 ${esc(memory.selectedItemCount)} 条</strong><p>${esc(memory.strategy)}</p><small>${esc(lanes || 'lane 证据未回传')} · Private POV ${esc(memory.privatePovCallCount)} 次</small>` : '<p class="experience-muted">本轮没有可展示的记忆召回证据。</p>'}${debug ? `<p><b>实际送入主模型：</b>${esc(selectedItems.length)} 条共享记忆 · ${esc(privateHints.length)} 组安全 POV Hint</p>${selectedItems.slice(0, 6).map((item) => `<small>${esc(item.sourceRef || item.sourceOutcomeId || 'memory')} · ${esc(item.summary || item.text || JSON.stringify(item))}</small>`).join('')}` : ''}</div>
+      <div><span>Engineering / Director</span>${debug?.engineering ? `<strong>${esc(debug.engineering.costClass || '未标记 Cost Class')}</strong><p>Vector ${debug.engineering.vectorRetrievalActive ? 'ON' : 'OFF'} · Graph ${debug.engineering.graphRetrievalActive ? 'ON' : 'OFF'}</p><small>Context 预算 ${esc(debug.engineering.contextManifest?.estimatedDynamicTailTokens ?? '—')} tokens · Responder ${esc(array(debug.memory?.responderActorIds).length)}</small>` : '<p class="experience-muted">该回合没有 Eval Debug Engineering Evidence。</p>'}</div>
       <div><span>Narrative Projection</span>${projection ? `<strong>${esc(projection.arcPhase || '—')} · ${esc(tension[projection.tensionBand] || projection.tensionBand || '—')}</strong><p>已使用 Seed：${esc(array(projection.usedSeedRefs).join('、') || '无')}</p><small>Open Loops ${array(projection.activeOpenLoops).length} · Recent Beats ${array(projection.recentBeats).length}</small>` : '<p class="experience-muted">旧 Trace 未回传 Narrative Projection 摘要。</p>'}</div>
     </div>`;
   }
@@ -320,7 +325,7 @@
     const messages = surfaces.rows.map((row) => `<article class="experience-message"><div><span>${esc(row.surface)}</span><strong>${esc(row.displayName || names.get(row.actorId) || row.actorId || '未回传角色名')}</strong>${row.isDelta ? '' : '<small>历史快照，非本轮增量</small>'}</div><p>${esc(row.text)}</p></article>`).join('');
     return `<section class="experience-track">
       <div class="experience-track-head"><strong>${model.track.label}</strong><span class="experience-status ${execution.status === 'applied' ? '' : 'has-issue'}">${esc(status[execution.status] || execution.status)}</span></div>
-      <p class="experience-summary">${esc(outcome.narrativeSummary || execution.error?.message || '后端尚未返回剧情摘要')}</p>
+      <p class="experience-summary">${esc(outcome.narrativeSummary || execution.activityResponse?.currentScene?.summary || execution.activityResponse?.setup?.title || execution.activityResponse?.outcomeSummary || execution.error?.message || '本步为同步产品操作，没有 Runtime 剧情摘要')}</p>
       ${model.noVisibleFeedback ? '<p class="experience-warning">玩法观察：命令已生效，但完整快照中没有新增 NPC 回应。玩家自己的帖子、经验奖励和剧情摘要均不能替代 NPC 互动。</p>' : ''}
       <h4>本轮 Runtime 调度链</h4>
       ${runtimeProcessHtml(model)}
@@ -344,8 +349,17 @@
       ${diff.gaps.length ? `<p class="experience-warning">缺少前后快照：${esc(diff.gaps.join('、'))}，无法计算这些指标。</p>` : ''}
       ${usageHtml(model.usage, execution.durationMs)}
       ${stageTimingsHtml(outcome.stageTimings)}
-      ${raw('本步实际请求 / Outcome / Director / 模型调用', { input: execution.payload, command: execution.command, outcome, aiCalls: model.trace?.aiCalls || [], errors: execution.error, projectionIssues: execution.projectionIssues })}
-      ${raw('本步状态前后快照', { before: execution.projectionsBefore || null, after: execution.projections || null })}
+      ${model.debug ? raw('Eval Debug · 实际召回记忆 / Provider-safe Context / 工程判定', {
+        engineering: model.debug.engineering,
+        memory: model.debug.memory,
+        modelInput: model.debug.modelInput,
+      }) : ''}
+      ${model.debug ? raw('Eval Debug · 模型 Candidate → Authority Bound Proposal', {
+        modelCandidate: model.debug.modelCandidate,
+        authorityBoundProposal: model.debug.authorityBoundProposal,
+      }) : ''}
+      ${raw('本步实际请求 / 产品返回 / Outcome / Director / 模型调用', { input: execution.payload, activityResponse: execution.activityResponse || null, submitReceipt: execution.accepted || null, command: execution.command, outcome, aiCalls: model.trace?.aiCalls || [], errors: execution.error, projectionIssues: execution.projectionIssues })}
+      ${raw('本步状态前后快照（含 Activity Attempt / Instance / History）', { before: execution.projectionsBefore || null, after: execution.projections || null })}
     </section>`;
   }
   function gameplayCoverage(result, track) {
@@ -491,6 +505,27 @@
     return `<section class="experience-track"><h3>${esc(track.label)} · 实际玩法覆盖</h3><p class="${acceptance.passed ? 'experience-muted' : 'experience-warning'}">${acceptance.passed ? '本轨道核心玩法覆盖通过' : '核心玩法验收未通过'} · 流程${acceptance.workflowFinished ? '已结束' : '尚未完整结束'} · 手机设备未验收</p><details><summary>连续链与持久化验收 ${acceptance.checks.filter((row) => row.observed).length} / ${acceptance.checks.length}</summary>${acceptance.checks.map((row) => `<p>${esc(row.label)}：${row.observed ? '有回读证据' : esc(row.reason)}</p>`).join('')}</details><p>玩家：<strong>${esc(preview?.identitySnapshot?.displayName || '尚未创建')}</strong> · 身份来源：${esc(preview?.identitySnapshot?.sourceType || '未回传')}</p><p>首位互动 NPC：${esc(preview?.firstFollower?.displayName || array(preview?.castSnapshot?.entries).find((row) => row.characterVersionId === preview?.firstFollower?.characterVersionId)?.displayName || '未回传')}</p><div class="experience-effects">${gameplayCoverage(result, track).map((item) => `<span>${item.label}：<b>${item.observed ? '已观测' : '未观测 / 未验证'}</b></span>`).join('')}</div><small>这是本次运行的覆盖情况，不是全部功能已完成的认证；私信不产生经验、技能或里程碑奖励。</small></section>`;
   }
   function selectedTracks(code) { return code === 'both' ? tracks : tracks.filter((track) => track.code === code); }
+  function operationLedgerHtml(result) {
+    const rows = array(result?.operations);
+    const tableRows = rows.map((row) => `<tr><td>${esc(row.sequence ?? '—')}</td><td>${esc(row.stage || '—')}</td><td><code>${esc(row.operationId || '—')}</code></td><td>${esc(row.method || '—')}</td><td>${esc(row.httpStatus ?? '—')}</td><td>${esc(row.status || '—')}</td><td>${esc(duration(row.durationMs))}</td></tr>`).join('');
+    return `<section class="experience-section"><div class="experience-section-title"><span>IO</span><h2>真实 API 输入 / 输出 Ledger</h2></div><p class="experience-goal">记录本次 Eval 实际调用的 operation、HTTP 状态、耗时，以及浏览器允许展示的请求/响应字段。失败也保留，不用“成功摘要”覆盖。</p>${rows.length ? `<div class="experience-table-wrap"><table><thead><tr><th>#</th><th>阶段</th><th>Operation</th><th>Method</th><th>HTTP</th><th>状态</th><th>耗时</th></tr></thead><tbody>${tableRows}</tbody></table></div>` : '<p class="experience-muted">还没有 API 调用记录。</p>'}${raw('全部 API 请求 / 响应（安全投影）', rows)}</section>`;
+  }
+  function aiCallLedgerHtml(result, selected) {
+    const rows = [];
+    const seen = new Set();
+    for (const track of selected) {
+      const trace = traceTrack(result, track);
+      const candidates = [...array(trace?.aiCalls), ...array(trace?.runtimeCommands).flatMap((command) => array(command.aiCalls).map((call) => ({ ...call, runtimeCommandId: command.commandId, runtimeCommandType: command.commandType })))];
+      for (const call of candidates) {
+        const key = `${track.code}:${call.callRef || JSON.stringify(call)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({ ...call, trackCode: track.code, trackLabel: track.label });
+      }
+    }
+    const tableRows = rows.map((call) => `<tr><td>${esc(call.trackLabel)}</td><td>${esc(call.purpose || call.runtimeCommandType || 'compile/runtime')}</td><td>${esc(call.modelProvider || '—')} / ${esc(call.model || '—')}</td><td>${esc(number(call.inputTokens) ?? '—')}</td><td>${esc(number(call.outputTokens) ?? '—')}</td><td>${esc(duration(call.latencyMs))}</td><td>${esc(call.currency && number(call.costMinor) !== null ? `${call.currency} ${(call.costMinor / 100).toFixed(2)}` : '未回传')}</td></tr>`).join('');
+    return `<section class="experience-section"><div class="experience-section-title"><span>AI</span><h2>模型调用、Token 与费用 Ledger</h2></div><p class="experience-goal">按真实 callRef 去重；输入/输出 token、模型耗时和账本费用只在后端确实回传时显示，未知不会记成 0。</p>${rows.length ? `<div class="experience-table-wrap"><table><thead><tr><th>轨道</th><th>用途</th><th>模型</th><th>Input</th><th>Output</th><th>耗时</th><th>费用</th></tr></thead><tbody>${tableRows}</tbody></table></div>` : '<p class="experience-muted">当前阶段没有模型调用证据。</p>'}${raw('全部模型调用证据', rows)}</section>`;
+  }
   function compileHtml(result, track) {
     const compiled = array(result.experiment?.tracks).find((item) => item.trackCode === track.code);
     const trace = traceTrack(result, track);

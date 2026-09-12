@@ -1314,8 +1314,13 @@
               castSnapshot: pair.preview?.castSnapshot || null,
             })),
             output: pairMap((pair) => ({
-              evidenceScope: 'provider-safe Context body stays backend-owned; exact digest and token usage are auditable',
+              evidenceScope: pair.trace?.outcome?.debugEvidence
+                ? 'Eval-only provider-safe Runtime Context + exact selected memory + token ledger'
+                : 'Debug Evidence 未部署/该命令未产出 Outcome；保留 digest 与 token ledger',
               commandInputDigest: pair.trace?.inputDigest || null,
+              modelInput: pair.trace?.outcome?.debugEvidence?.modelInput || null,
+              selectedMemory: pair.trace?.outcome?.debugEvidence?.memory?.sharedContext?.items || [],
+              privatePovHints: pair.trace?.outcome?.debugEvidence?.memory?.privatePovHints || [],
               providerCalls: (pair.trace?.aiCalls || []).map((call) => ({
                 callRef: call.callRef,
                 requestDigest: call.requestDigest,
@@ -1337,9 +1342,11 @@
               expectedRunRevision: pair.trace?.expectedRunRevision
                 ?? pair.execution?.runBefore?.revision ?? null,
             })),
-            output: pairMap((_pair, outcome) => outcome ? {
+            output: pairMap((pair, outcome) => outcome ? {
               attemptInterpretation: outcome.attemptInterpretation || null,
               directorDecision: outcome.directorDecision || null,
+              engineeringDirective: pair.trace?.outcome?.debugEvidence?.engineering?.directive || null,
+              engineering: pair.trace?.outcome?.debugEvidence?.engineering || null,
               chapterDirective: outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive || null,
               chapterStateBeforeEffects: outcome.chapterDirective?.evidenceStateEffectCodes || null,
             } : { state: 'not_exposed_or_command_rejected' }),
@@ -1350,10 +1357,12 @@
           runtime_opening_llm: {
             input: pairMap((pair) => ({
               calls: pair.trace?.aiCalls || [],
-              note: 'raw prompt 不下发浏览器；展示 requestDigest、模型、token、耗时和费用',
+              modelInput: pair.trace?.outcome?.debugEvidence?.modelInput || null,
+              note: '展示 provider-safe 结构化模型输入；凭据、Cookie、Provider Request ID 仍不下发浏览器',
             })),
             output: pairMap((pair, outcome) => ({
               callStatus: (pair.trace?.aiCalls || []).map((call) => call.status),
+              modelCandidate: pair.trace?.outcome?.debugEvidence?.modelCandidate || null,
               narrativeSummary: outcome?.narrativeSummary
                 || pair.execution?.outcome?.narrativeSummary || null,
               narrativeEffects: outcome?.narrativeEffects || null,
@@ -1364,11 +1373,13 @@
             calls,
           },
           runtime_opening_validate: {
-            input: pairMap((_pair, outcome) => ({
+            input: pairMap((pair, outcome) => ({
               directorDecision: outcome?.directorDecision || null,
               narrativeEffects: outcome?.narrativeEffects || null,
+              modelCandidate: pair.trace?.outcome?.debugEvidence?.modelCandidate || null,
             })),
             output: pairMap((pair, outcome) => ({
+              authorityBoundProposal: pair.trace?.outcome?.debugEvidence?.authorityBoundProposal || null,
               commandStatus: pair.trace?.status
                 || pair.execution?.command?.status || pair.execution?.status || null,
               commandErrorCode: pair.trace?.errorCode
@@ -1466,8 +1477,13 @@
         [`turn_${turnRows[index]}_context`]: {
           input: pairMap((pair) => ({ action: turn.action, runBefore: pair.execution?.runBefore || null })),
           output: pairMap((pair) => ({
-            evidenceScope: 'provider-safe Context body is restricted; digest and exact token usage are exposed',
+            evidenceScope: pair.trace?.outcome?.debugEvidence
+              ? 'Eval-only provider-safe Context + exact selected memories / Private POV hints'
+              : 'Debug Evidence 未部署/该命令未产出 Outcome；保留 digest 与 token ledger',
             commandInputDigest: pair.trace?.inputDigest || null,
+            modelInput: pair.trace?.outcome?.debugEvidence?.modelInput || null,
+            selectedMemory: pair.trace?.outcome?.debugEvidence?.memory?.sharedContext?.items || [],
+            privatePovHints: pair.trace?.outcome?.debugEvidence?.memory?.privatePovHints || [],
             modelCalls: (pair.trace?.aiCalls || []).map((call) => ({
               callRef: call.callRef, requestDigest: call.requestDigest,
               modelProvider: call.modelProvider, model: call.model, modelVersion: call.modelVersion,
@@ -1484,9 +1500,11 @@
             commandInputDigest: pair.trace?.inputDigest || null,
             expectedRunRevision: pair.trace?.expectedRunRevision ?? null,
           })),
-          output: pairMap((_pair, outcome) => outcome ? {
+          output: pairMap((pair, outcome) => outcome ? {
             attemptInterpretation: outcome.attemptInterpretation || null,
             directorDecision: outcome.directorDecision || null,
+            engineeringDirective: pair.trace?.outcome?.debugEvidence?.engineering?.directive || null,
+            engineering: pair.trace?.outcome?.debugEvidence?.engineering || null,
             chapterDirective: outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive || null,
             narrativeProjection: outcome.narrativeProjection || null,
           } : { state: 'not_exposed_or_command_rejected' }),
@@ -1497,10 +1515,12 @@
         [`turn_${turnRows[index]}_llm`]: {
           input: pairMap((pair) => ({
             calls: pair.trace?.aiCalls || [],
-            note: 'raw prompt 不返回浏览器；requestDigest、模型、token、耗时与费用可审计',
+            modelInput: pair.trace?.outcome?.debugEvidence?.modelInput || null,
+            note: '展示 provider-safe 结构化模型输入；凭据、Cookie、Provider Request ID 仍不下发浏览器',
           })),
           output: pairMap((pair, outcome) => ({
             callStatus: (pair.trace?.aiCalls || []).map((call) => call.status),
+            modelCandidate: pair.trace?.outcome?.debugEvidence?.modelCandidate || null,
             narrativeSummary: outcome?.narrativeSummary || null,
             narrativeEffects: outcome?.narrativeEffects || null,
             error: pair.execution?.error || null,
@@ -1510,11 +1530,13 @@
           calls,
         },
         [`turn_${turnRows[index]}_validator`]: {
-          input: pairMap((_pair, outcome) => ({
+          input: pairMap((pair, outcome) => ({
             directorDecision: outcome?.directorDecision || null,
             narrativeEffects: outcome?.narrativeEffects || null,
+            modelCandidate: pair.trace?.outcome?.debugEvidence?.modelCandidate || null,
           })),
           output: pairMap((pair, outcome) => ({
+            authorityBoundProposal: pair.trace?.outcome?.debugEvidence?.authorityBoundProposal || null,
             commandStatus: pair.trace?.status || pair.execution?.command?.status || pair.execution?.status || null,
             commandErrorCode: pair.trace?.errorCode || pair.execution?.command?.errorCode || null,
             outcomeStatus: outcome?.status || null,
@@ -1702,6 +1724,126 @@
       });
   }
 
+  function projectionItems(projection) {
+    return Array.isArray(projection?.value?.items) ? projection.value.items : [];
+  }
+
+  function continuationSuggestions(type, result) {
+    const projection = result?.finalProjections?.current || result?.opening?.current?.projections || null;
+    if (type === 'dm_message') {
+      return (state.evalInput.characters || []).map((character) => ({
+        value: character.displayName, label: character.role || '角色',
+      }));
+    }
+    if (type === 'event_choice') {
+      return projectionItems(projection?.events).flatMap((event) =>
+        (event.choices || []).map((choice) => ({
+          value: choice.choiceId,
+          label: `${event.title || '事件'} · ${choice.label || choice.choiceId}`,
+        })));
+    }
+    if (type === 'event_input') {
+      return projectionItems(projection?.events).filter((event) => event.freeInputAllowed === true)
+        .map((event) => ({ value: event.eventId, label: event.title || '可自由输入事件' }));
+    }
+    if (['activity_update', 'activity_invite_response', 'activity_enter'].includes(type)) {
+      return projectionItems(projection?.activityAttempts).map((attempt) => ({
+        value: attempt.setup?.title || attempt.activityAttemptId,
+        label: `${attempt.status || 'attempt'} · ${attempt.setup?.location || ''}`,
+      }));
+    }
+    if (['activity_turn', 'activity_exit'].includes(type)) {
+      return projectionItems(projection?.activityInstances).filter((activity) =>
+        type !== 'activity_turn' || activity.status === 'active').map((activity) => ({
+        value: activity.currentScene?.title || activity.title || activity.activityId,
+        label: `${activity.status || 'activity'} · Scene r${activity.sceneRevision ?? '—'}`,
+      }));
+    }
+    return [];
+  }
+
+  function renderContinuationActionForm() {
+    const type = $('#continue-action-type').value;
+    const result = state.lastRun;
+    const target = $('#continue-target');
+    const body = $('#continue-action');
+    const activityFields = $('#continue-activity-fields');
+    const inviteResponse = $('#continue-activity-response');
+    const exitStatus = $('#continue-activity-exit-status');
+    const suggestions = continuationSuggestions(type, result);
+    $('#continue-target-suggestions').innerHTML = suggestions.map((item) =>
+      `<option value="${escapeHtml(item.value)}" label="${escapeHtml(item.label || '')}"></option>`).join('');
+    const targetModes = {
+      dm_message: '角色名', event_choice: 'choiceId', event_input: 'eventId',
+      activity_update: 'Activity 标题', activity_invite_response: 'Activity 标题',
+      activity_enter: 'Activity 标题', activity_turn: 'Activity 标题', activity_exit: 'Activity 标题',
+    };
+    const targetLabel = targetModes[type] || '';
+    target.hidden = !targetLabel;
+    target.disabled = !targetLabel;
+    target.placeholder = targetLabel ? `${targetLabel}${suggestions.length ? '（可从当前状态选择）' : ''}` : '此操作不需要目标';
+    const needsBody = ['free_act', 'post', 'comment', 'reply', 'dm_message', 'event_input', 'activity_turn'].includes(type);
+    body.hidden = !needsBody;
+    body.disabled = !needsBody;
+    body.placeholder = type === 'activity_turn' ? '输入 Activity 内这回合的玩家行动'
+      : type === 'event_input' ? '输入对事件的自由回应'
+        : type === 'dm_message' ? '输入私聊内容'
+          : '输入这一步玩家实际输入的内容';
+    activityFields.hidden = !['activity_create', 'activity_update'].includes(type);
+    inviteResponse.hidden = type !== 'activity_invite_response';
+    inviteResponse.disabled = type !== 'activity_invite_response';
+    exitStatus.hidden = type !== 'activity_exit';
+    exitStatus.disabled = type !== 'activity_exit';
+    const help = {
+      free_act: '等同 Mobile 的自由行动：系统会做 Attempt → Context / Memory → Director → Model → Finalizer。',
+      post: '发布一条玩家帖子；返回后可直接检查 NPC 帖子/评论、关系、成长与剧情推进。',
+      comment: '评论当前 Feed 中的真实帖子；不会伪造评论目标。',
+      reply: '回复当前可见的最新真实 NPC 评论；没有目标就失败关闭。',
+      dm_message: '目标使用角色名；Eval 会为 Current / V2 分别解析真实 Actor 与 Direct Channel。',
+      event_choice: '选择当前 Event 的 choiceId；候选来自当前 Current Run 投影。V2 会按相同 choiceId 独立验证。',
+      event_input: '目标为支持自由输入的 eventId；正文就是玩家实际回应。',
+      activity_create: '使用手机端 Activity 创建字段；邀请角色按名字在每个 Track 分别解析成真实 Actor。',
+      activity_update: '目标使用 Activity 标题；两条 Track 会分别定位各自最新 Attempt，再用其真实 revision 更新。',
+      activity_invite_response: '目标使用 Activity 标题；默认由当前玩家 Actor 回应，不要求填写内部 Actor ID。',
+      activity_enter: '目标使用 Activity 标题；自动读取各 Track 的 Attempt ID 与当前 Run revision。',
+      activity_turn: '目标使用 Active Activity 标题；自动读取各 Track 的 activityId / sceneRevision / runRevision，再进入同一 Runtime Command plane。',
+      activity_exit: '目标使用 Active Activity 标题；按当前 Scene revision 正式退出/结算。',
+    };
+    $('#continue-help').textContent = `${help[type] || ''} 每次只执行一个真实操作并暂停。`;
+  }
+
+  function continuationActionFromForm() {
+    const type = $('#continue-action-type').value;
+    const target = $('#continue-target').value.trim();
+    const body = $('#continue-action').value.trim();
+    if (['free_act', 'post', 'comment', 'reply'].includes(type)) return { type, body };
+    if (type === 'dm_message') return { type, targetName: target, body };
+    if (type === 'event_choice') return { type: 'event_action', choiceId: target };
+    if (type === 'event_input') return { type: 'event_action', eventId: target, body };
+    if (['activity_create', 'activity_update'].includes(type)) {
+      const invitedNames = $('#continue-activity-invites').value.split(/[，,]/u).map((item) => item.trim()).filter(Boolean);
+      return {
+        type,
+        ...(type === 'activity_update' ? { targetTitle: target } : {}),
+        payload: {
+          title: $('#continue-activity-title').value.trim(),
+          when: $('#continue-activity-when').value.trim(),
+          location: $('#continue-activity-location').value.trim(),
+          sceneDescription: $('#continue-activity-scene').value.trim(),
+          purpose: $('#continue-activity-purpose').value.trim(),
+          invitedNames,
+        },
+      };
+    }
+    if (type === 'activity_invite_response') return {
+      type, targetTitle: target, response: $('#continue-activity-response').value,
+    };
+    if (type === 'activity_enter') return { type, targetTitle: target };
+    if (type === 'activity_turn') return { type, targetTitle: target, body };
+    if (type === 'activity_exit') return { type, targetTitle: target, status: $('#continue-activity-exit-status').value };
+    return { type, body };
+  }
+
   function canContinueEvaluation(result) {
     return Boolean(
       result?.previewRuns?.current?.runId
@@ -1722,14 +1864,16 @@
     if (canContinue) {
       const role = (state.evalInput.characters || []).find((card) =>
         card.characterVersionId === state.evalInput.playerCharacterVersionId)?.displayName || 'Preview Player';
-      $('#continue-meta').textContent = `${role} · 已有 ${result.turns?.length || 0} 轮行为 · Current / V2 都沿用现有 Run，不会重新编译`;
+      $('#continue-meta').textContent = `${role} · 已有 ${result.turns?.length || 0} 个玩家操作 · Current / V2 都沿用现有 Run；每次只推进一步`;
+      renderContinuationActionForm();
     }
-    const compileReady = result?.experiment?.status === 'succeeded';
+    const compileReady = result?.experiment?.status === 'succeeded' && Boolean(result?.compiledPlans);
     const compilePending = result?.experiment?.status === 'running'
       && !['dead_letter', 'cancelled', 'succeeded'].includes(result.experiment.execution?.status);
     const canResume = (compileReady || compilePending) && result?.scenario?.worldDraftRevisionId
       && !result.previewRuns?.current && !result.previewRuns?.v2Candidate;
-    $('#resume-compile').textContent = compileReady ? '使用此编译继续试玩' : '继续等待同一编译';
+    $('#resume-compile').dataset.mode = compileReady ? 'start-runtime' : 'resume-compile';
+    $('#resume-compile').textContent = compileReady ? '进入 Runtime · Opening 后暂停' : '继续等待同一编译';
     $('#resume-compile').hidden = !canResume || document.body.classList.contains('run-active');
   }
 
@@ -1899,12 +2043,12 @@
     selectNode(item.id);
   }
 
-  async function runRealEvaluation({ resume = false } = {}) {
+  async function runRealEvaluation({ resume = false, startRuntime = false } = {}) {
     const backend = window.SliceEvalBackend;
     if (!backend?.connected()) { openAuthDialog(); return; }
-    const button = $('#run-all');
-    button.disabled = true; button.textContent = '正在运行…';
-    const previous = resume ? state.lastRun : null;
+    const button = startRuntime ? $('#resume-compile') : $('#run-all');
+    button.disabled = true; button.textContent = startRuntime ? '正在进入 Runtime…' : '正在运行…';
+    const previous = (resume || startRuntime) ? state.lastRun : null;
     const lockedControls = ['#scenario-select', '#persona-select', '#edit-input', '#import-run', '#auth-action', '#resume-compile'];
     lockedControls.forEach((selector) => { $(selector).disabled = true; });
     $('#stop-run').hidden = state.evalInput.evaluationMode === 'regression';
@@ -1915,9 +2059,11 @@
     document.body.classList.add('run-active');
     resetToWaiting(); renderNodes();
     try {
-      const execute = previous
-        ? (notify) => backend.resumeCompilation(previous, notify)
-        : (notify) => backend.runFullEvaluation(state.evalInput, notify);
+      const execute = startRuntime
+        ? (notify) => backend.startInteractiveRuntime(previous, notify)
+        : previous
+          ? (notify) => backend.resumeCompilation(previous, notify)
+          : (notify) => backend.runFullEvaluation(state.evalInput, notify);
       const result = await execute((progress) => {
         const message = progress.message || $('#experience-progress').textContent || '执行中';
         $('#experience-progress').textContent = message;
@@ -1927,8 +2073,18 @@
         }
       });
       applyRunResult(result);
-      $('#experience-progress').textContent = result.status === 'stopped' ? `已停止，保留 ${result.turns.length} 轮结果` : `已返回 ${result.turns.length} 轮真实结果；查看报告中的证据与异常。`;
-      showToast(`真实 Eval 已返回：${result.turns.length} 轮 Current/V2 对比`);
+      if (result.status === 'compiled_waiting_for_user') {
+        $('#experience-progress').textContent = '双轨编译完成并已暂停。先检查完整编译产物，再点击“进入 Runtime”。';
+        showToast('编译完成：尚未创建 Run，等待你决定下一步');
+      } else if (['waiting_for_user', 'waiting_with_issues'].includes(result.status)) {
+        $('#experience-progress').textContent = result.status === 'waiting_for_user'
+          ? 'Opening 已完成并暂停。现在可逐步模拟手机端操作。'
+          : 'Opening 已返回并暂停，但有可定位异常；先看证据再继续。';
+        showToast('Runtime 已暂停，等待下一步玩家操作');
+      } else {
+        $('#experience-progress').textContent = result.status === 'stopped' ? `已停止，保留 ${result.turns.length} 轮结果` : `已返回 ${result.turns.length} 轮真实结果；查看报告中的证据与异常。`;
+        showToast(`真实 Eval 已返回：${result.turns.length} 轮 Current/V2 对比`);
+      }
     } catch (error) {
       const partialResult = error?.partialResult || null;
       if (partialResult?.input) applyRunResult(partialResult, { progressive: true });
@@ -1944,12 +2100,21 @@
       $('#experience-progress').textContent = `执行中止：${error.message || error}`;
       showToast(`执行失败：${error.message || error}`);
     } finally {
-      button.disabled = false; button.textContent = state.evalInput.evaluationMode === 'regression' ? '运行链路回归' : '连续模拟';
+      button.disabled = false;
+      if (!startRuntime) button.textContent = state.evalInput.evaluationMode === 'regression' ? '运行链路回归' : '编译并暂停';
       lockedControls.forEach((selector) => { $(selector).disabled = false; });
       $('#stop-run').hidden = true;
       document.body.classList.remove('run-active');
       renderExperience();
     }
+  }
+
+  function buildContinuationActionFromForm() {
+    return continuationActionFromForm();
+  }
+
+  function updateContinuationComposer() {
+    renderContinuationActionForm();
   }
 
   async function runContinuation(action) {
@@ -1959,8 +2124,6 @@
       showToast('当前双轨 Opening 尚未全部成功，不能继续提交下一轮');
       return;
     }
-    const body = String(action || '').trim();
-    if (!body) { showToast('请输入下一轮玩家行为'); return; }
     const button = $('#continue-submit');
     const lockedControls = ['#run-all', '#scenario-select', '#quick-player-character', '#edit-input', '#import-run', '#auth-action', '#resume-compile'];
     button.disabled = true;
@@ -1969,7 +2132,7 @@
     document.body.classList.add('run-active');
     renderExperience();
     try {
-      const result = await backend.continueEvaluation(state.lastRun, body, (progress) => {
+      const result = await backend.continueEvaluation(state.lastRun, action, (progress) => {
         const message = progress.message || '继续运行中';
         $('#experience-progress').textContent = message;
         setHealth('running', 'Shared Backend', message);
@@ -1977,6 +2140,7 @@
       });
       applyRunResult(result);
       $('#continue-action').value = '';
+      if (!['dm_message', 'event_choice', 'event_input', 'activity_update', 'activity_invite_response', 'activity_enter', 'activity_turn', 'activity_exit'].includes($('#continue-action-type').value)) $('#continue-target').value = '';
       const latest = result.turns?.at(-1);
       const okay = latest && [latest.current, latest.v2Candidate].every((execution) => execution?.status === 'applied');
       $('#experience-progress').textContent = okay
@@ -1999,7 +2163,7 @@
     } finally {
       document.body.classList.remove('run-active');
       button.disabled = false;
-      button.textContent = '运行下一轮';
+      button.textContent = '执行这一步';
       lockedControls.forEach((selector) => { $(selector).disabled = false; });
       renderExperience();
     }
@@ -2127,11 +2291,20 @@
     });
 
     $('#run-all').addEventListener('click', () => runRealEvaluation());
-    $('#resume-compile').addEventListener('click', () => runRealEvaluation({ resume: true }));
+    $('#resume-compile').addEventListener('click', () => {
+      const startRuntime = $('#resume-compile').dataset.mode === 'start-runtime';
+      runRealEvaluation(startRuntime ? { startRuntime: true } : { resume: true });
+    });
     $('#continue-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      runContinuation($('#continue-action').value);
+      try { runContinuation(buildContinuationActionFromForm()); }
+      catch (error) { showToast(error.message || String(error)); }
     });
+    $('#continue-action-type').addEventListener('change', () => {
+      $('#continue-target').value = '';
+      updateContinuationComposer();
+    });
+    updateContinuationComposer();
     $('#continue-action').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
@@ -2227,8 +2400,11 @@
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
       const next = inputFromForm();
-      if (!next.title || !next.description || !next.setting || !next.goal || !next.evaluationInstruction || !next.playerActions.length) {
-        showToast('请完整填写剧本、提示词和至少一轮玩家行动'); return;
+      if (!next.title || !next.description || !next.setting || !next.goal || !next.evaluationInstruction) {
+        showToast('请完整填写剧本与评测指令'); return;
+      }
+      if (next.evaluationMode === 'regression' && next.playerActions.length < 4) {
+        showToast('链路回归模式至少需要 4 条固定行动；剧情体验模式可以不预填任何行动'); return;
       }
       const characterError = characterVersionInputError(next.characterVersionIds);
       if (characterError) { showToast(characterError); return; }
@@ -2239,7 +2415,7 @@
       state.evalInput = next;
       state.lastRun = null;
       resetToWaiting(); renderExperience();
-      $('#run-all').textContent = next.evaluationMode === 'regression' ? '运行链路回归' : '连续模拟';
+      $('#run-all').textContent = next.evaluationMode === 'regression' ? '运行链路回归' : '编译并暂停';
       $('#input-dialog').close();
       if (next.sourceScenarioId) $('#scenario-select').value = next.sourceScenarioId;
       else ensureCustomScenarioOption(next.title);

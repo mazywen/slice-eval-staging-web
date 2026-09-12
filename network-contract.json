@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "productKey": "slice",
   "contractVersion": "4.0.0",
-  "generatedAt": "2026-09-10T11:06:07.000Z",
-  "sourceBaseCommit": "cfcb105ae5eb143b84bf78d92ff0359fefccbd73",
-  "routeRegistrySha256": "31cd70db63b79cfe752e0680ac86faca0dd21198a298ada800028c7859c86f75",
+  "generatedAt": "2026-09-11T15:48:16.000Z",
+  "sourceBaseCommit": "a40caf5d5bffedb8ecee24b0a385f643a1ccdd19",
+  "routeRegistrySha256": "41da829b37b92e7acd9f8fb9a48570ace373172e09319ab54dd2ea7b08bd03c2",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -897,6 +897,471 @@
       "responseTransport": "json",
       "responseType": "WorldDraft",
       "routePath": "/v4/creator/world-drafts/{worldDraftId}/seed",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_CHARACTER_INELIGIBLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "listMobileCharacters",
+      "pathParams": [],
+      "queryType": "CursorQuery",
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "CharacterPage",
+      "routePath": "/v4/creator/characters",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_CHARACTER_INELIGIBLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "createMobileCharacter",
+      "pathParams": [],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CreateCharacterRequest",
+      "responseTransport": "json",
+      "responseType": "CharacterDetail",
+      "routePath": "/v4/creator/characters",
+      "successStatus": 201
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_CHARACTER_INELIGIBLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getMobileCharacter",
+      "pathParams": [
+        "characterId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "CharacterDetail",
+      "routePath": "/v4/creator/characters/{characterId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_CHARACTER_INELIGIBLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "listMobileCharacterSlotCandidates",
+      "pathParams": [
+        "worldDraftId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "CreatorCharacterSlotCandidatePage",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/character-slot-candidates",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "listMobileActivityDefinitions",
+      "pathParams": [
+        "worldDraftId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "CreatorActivityDefinitionPage",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/activity-definitions",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getMobileActivityDefinition",
+      "pathParams": [
+        "worldDraftId",
+        "activityDefinitionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "CreatorActivityDefinition",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/activity-definitions/{activityDefinitionId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "createMobileActivityDefinition",
+      "pathParams": [
+        "worldDraftId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CreateActivityDefinitionRequest",
+      "responseTransport": "json",
+      "responseType": "CreatorActivityDefinition",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/activity-definitions",
+      "successStatus": 201
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "put",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "updateMobileActivityDefinition",
+      "pathParams": [
+        "worldDraftId",
+        "activityDefinitionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "UpdateActivityDefinitionRequest",
+      "responseTransport": "json",
+      "responseType": "CreatorActivityDefinition",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/activity-definitions/{activityDefinitionId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "archiveMobileActivityDefinition",
+      "pathParams": [
+        "worldDraftId",
+        "activityDefinitionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "ArchiveActivityDefinitionRequest",
+      "responseTransport": "json",
+      "responseType": "CreatorActivityDefinition",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/activity-definitions/{activityDefinitionId}/archive",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "none",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "validateMobileActivityDefinition",
+      "pathParams": [
+        "worldDraftId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CreateActivityDefinitionRequest",
+      "responseTransport": "json",
+      "responseType": "CreatorActivityValidationResult",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/activity-definition-validations",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "createWorldDraftRevision",
+      "pathParams": [
+        "worldDraftId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CreateWorldDraftRevisionRequest",
+      "responseTransport": "json",
+      "responseType": "WorldDraftRevision",
+      "routePath": "/v4/creator/world-drafts/{worldDraftId}/revisions",
+      "successStatus": 201
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "compileWorldDraftRevision",
+      "pathParams": [
+        "worldDraftRevisionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CompileWorldDraftRevisionRequest",
+      "responseTransport": "json",
+      "responseType": "CompileReport",
+      "routePath": "/v4/creator/world-draft-revisions/{worldDraftRevisionId}/compile",
+      "successStatus": 202
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getMobileCompileReport",
+      "pathParams": [
+        "compileJobId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "CompileReport",
+      "routePath": "/v4/creator/compile-reports/{compileJobId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "submitMobileWorldReview",
+      "pathParams": [
+        "worldDraftRevisionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "ReviewSubmissionRequest",
+      "responseTransport": "json",
+      "responseType": "ReviewSubmission",
+      "routePath": "/v4/creator/world-draft-revisions/{worldDraftRevisionId}/review-submissions",
+      "successStatus": 202
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getMobileWorldReviewDecision",
+      "pathParams": [
+        "reviewSubmissionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "WorldReviewDecision",
+      "routePath": "/v4/creator/review-submissions/{reviewSubmissionId}/decision",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "publishWorld",
+      "pathParams": [
+        "worldId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "PublishWorldRequest",
+      "responseTransport": "json",
+      "responseType": "WorldVersion",
+      "routePath": "/v4/creator/worlds/{worldId}/publish",
       "successStatus": 200
     },
     {
@@ -2339,7 +2804,7 @@
       "responseTransport": "json",
       "responseType": "CompileReport",
       "routePath": "/studio-api/v4/creator/world-draft-revisions/{worldDraftRevisionId}/compile",
-      "successStatus": 201
+      "successStatus": 202
     },
     {
       "authClass": "creator_studio_cookie",
@@ -4294,6 +4759,342 @@
       "responseTransport": "json",
       "responseType": "RunActivity",
       "routePath": "/eval-api/v1/runs/{runId}/activities/{activityId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalListActivityInstances",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": "CursorQuery",
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityInstancePageV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-instances",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalGetActivityInstance",
+      "pathParams": [
+        "runId",
+        "activityId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityInstanceV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-instances/{activityId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalListActivityAttempts",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": "CursorQuery",
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityAttemptPageV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-attempts",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalListActivityCandidates",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": "CursorQuery",
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityCandidatePageV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-candidates",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_INVITEE_INELIGIBLE",
+        "SLICE_ACTIVITY_ACTOR_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalCreateActivityAttempt",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CreateActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-attempts",
+      "successStatus": 201
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "patch",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalUpdateActivityAttempt",
+      "pathParams": [
+        "runId",
+        "activityAttemptId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "UpdateActivityAttemptRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_INVITE_AUTHORITY_INVALID",
+        "SLICE_ACTIVITY_INVITATION_ALREADY_DECIDED",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalRespondActivityInvite",
+      "pathParams": [
+        "runId",
+        "activityAttemptId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "RespondActivityInviteRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}/invite-response",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_INVITATIONS_UNRESOLVED",
+        "SLICE_ACTIVITY_REQUIRED_PARTICIPANT_UNAVAILABLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalEnterActivity",
+      "pathParams": [
+        "runId",
+        "activityAttemptId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "EnterActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityInstanceV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}/enter",
+      "successStatus": 201
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
+        "SLICE_ACTIVITY_NOT_ACTIVE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalSubmitActivityAction",
+      "pathParams": [
+        "runId",
+        "activityId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "SubmitActivityActionRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityActionAcceptedV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-instances/{activityId}/actions",
+      "successStatus": 202
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
+        "SLICE_ACTIVITY_COMPLETION_NOT_COMMITTED",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalExitActivity",
+      "pathParams": [
+        "runId",
+        "activityId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "ExitActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityResultV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-instances/{activityId}/exit",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalListActivityHistory",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": "CursorQuery",
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityHistoryPageV1",
+      "routePath": "/eval-api/v1/runs/{runId}/activity-history",
       "successStatus": 200
     },
     {

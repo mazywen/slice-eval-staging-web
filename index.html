@@ -58,14 +58,14 @@
         <button id="auth-action" class="button ghost" type="button">登录</button>
         <button id="resume-compile" class="button ghost" type="button" hidden>继续等待同一编译</button>
         <button id="stop-run" class="button ghost" type="button" hidden>本轮后停止</button>
-        <button id="run-all" class="button primary" type="button">连续模拟</button>
+        <button id="run-all" class="button primary" type="button">编译并暂停</button>
       </div>
     </header>
 
     <nav class="workbench-tabs" aria-label="评估工作面">
       <div role="group" aria-label="工作面"><button type="button" data-workbench-view="experience" aria-pressed="true">玩法报告</button><button type="button" data-workbench-view="canvas" aria-pressed="false">技术诊断画布</button></div>
       <label>对比轨道 <select id="experience-track"><option value="both">Current / V2 并排</option><option value="current">只看 Current</option><option value="v2_candidate">只看 V2 Candidate</option></select></label>
-      <span id="experience-progress" role="status" aria-live="polite">选择剧本，配置人物与行动，然后运行。</span>
+      <span id="experience-progress" role="status" aria-live="polite">选择剧本并编译；编译完成后会暂停，之后每次只推进一个真实手机端操作。</span>
     </nav>
     <section id="continue-panel" class="continue-panel" aria-label="继续同一局试玩" hidden>
       <div class="continue-copy">
@@ -74,10 +74,37 @@
         <span id="continue-meta">编译完成后，可在同一 Current / V2 Run 上继续输入行为。</span>
       </div>
       <form id="continue-form" class="continue-form">
-        <textarea id="continue-action" rows="2" maxlength="4000" placeholder="输入下一步行为，例如：我去找唐晶，问她刚才为什么没有回我。" aria-label="下一轮玩家行为"></textarea>
-        <button id="continue-submit" class="button primary" type="submit">运行下一轮</button>
+        <select id="continue-action-type" aria-label="手机端操作类型">
+          <option value="free_act">自由行动</option>
+          <option value="post">发帖</option>
+          <option value="comment">评论帖子</option>
+          <option value="reply">回复 NPC 评论</option>
+          <option value="dm_message">私聊</option>
+          <option value="event_choice">回应事件 · 选项</option>
+          <option value="event_input">回应事件 · 自由输入</option>
+          <option value="activity_create">创建 Activity</option>
+          <option value="activity_update">修改 Activity</option>
+          <option value="activity_invite_response">回应 Activity 邀请</option>
+          <option value="activity_enter">进入 Activity</option>
+          <option value="activity_turn">Activity 内行动</option>
+          <option value="activity_exit">退出 / 结算 Activity</option>
+        </select>
+        <input id="continue-target" list="continue-target-suggestions" placeholder="目标（角色 / 事件 / Activity）" aria-label="操作目标" />
+        <datalist id="continue-target-suggestions"></datalist>
+        <textarea id="continue-action" rows="2" maxlength="4000" placeholder="输入这一步玩家实际输入的内容" aria-label="下一步玩家输入"></textarea>
+        <button id="continue-submit" class="button primary" type="submit">执行这一步</button>
+        <div id="continue-activity-fields" class="continue-activity-fields" hidden>
+          <input id="continue-activity-title" maxlength="160" placeholder="Activity 标题" />
+          <input id="continue-activity-when" maxlength="1000" placeholder="什么时候发生" />
+          <input id="continue-activity-location" maxlength="1000" placeholder="地点" />
+          <textarea id="continue-activity-scene" rows="2" maxlength="4000" placeholder="场景描述"></textarea>
+          <textarea id="continue-activity-purpose" rows="2" maxlength="4000" placeholder="这次 Activity 的目的"></textarea>
+          <input id="continue-activity-invites" placeholder="邀请角色名，用逗号分隔；会按每个 Track 的真实 Actor 自动解析" />
+        </div>
+        <select id="continue-activity-response" hidden aria-label="Activity 邀请回应"><option value="ACCEPTED">接受邀请</option><option value="REJECTED">拒绝邀请</option><option value="IGNORED">忽略邀请</option></select>
+        <select id="continue-activity-exit-status" hidden aria-label="Activity 退出状态"><option value="exited">主动退出</option><option value="completed">完成</option><option value="interrupted">中断</option><option value="failed">失败</option></select>
       </form>
-      <small class="continue-help">普通文字按自由行动提交；也支持“发帖：…”“评论：…”“回复评论：…”“私聊 角色名：…”“事件：choiceId”。每次都沿用当前两个 Preview Run，不重新编译。</small>
+      <small id="continue-help" class="continue-help">每次只执行一个真实操作并暂停。目标和可用项会从当前 Run 的权威投影读取；所有写入都走与 Mobile 相同的 Runtime owner。</small>
     </section>
     <main id="experience-report" class="experience-report" aria-label="玩法体验报告"></main>
     <div class="workspace">
@@ -205,7 +232,7 @@
         <p id="eval-source-meta" class="dialog-note source-meta"></p>
         <div class="form-grid">
           <label>世界名称<input id="eval-title" required /></label>
-          <label>执行方式<select id="eval-mode"><option value="experience">剧情体验 · 按填写的行动连续运行</option><option value="regression">链路回归 · 评论 / 私聊 / 事件 / 记忆</option></select></label>
+          <label>执行方式<select id="eval-mode"><option value="experience">单步调优 · 编译后暂停等待输入</option><option value="regression">链路回归 · 自动跑固定技术链路</option></select></label>
           <details class="full"><summary>高级：手动填写 CharacterVersion UUID</summary><label>每行一个，最多 8 个<textarea id="eval-character-version-id" rows="4" autocomplete="off" data-zero-cast-policy="institutional_zero_cast" aria-describedby="eval-character-version-help"></textarea><small id="eval-character-version-help">只接受当前 Eval 工作区真实 UUID。下面勾选卡片会自动填写；留空表示零角色。</small></label></details>
           <section class="eval-cast-section full" aria-labelledby="eval-cast-title">
             <div class="eval-cast-head"><div><small>AUTHORITATIVE CAST</small><strong id="eval-cast-title">本次运行的人物卡</strong></div><span id="eval-scenario-character-count">0 / 8 已绑定</span></div>
@@ -223,23 +250,23 @@
           <label class="full">世界目标<textarea id="eval-goal" rows="3" required></textarea></label>
           <label class="full">高光时刻描述（可选，单段）<textarea id="eval-highlight-description" rows="3" maxlength="4000" placeholder="可选：描述希望开场出现的冲突、揭示、重逢、转折或抉择。"></textarea><small>写入单一 highlightDescription；留空则不附带。</small></label>
           <label class="full">中间提示词 / V2 实验指令<textarea id="eval-instruction" rows="4" maxlength="2000" required></textarea><small id="instruction-count">0 / 2000</small></label>
-          <label class="full">玩家行动（每行一轮，1–24 轮）<textarea id="eval-actions" rows="8" required></textarea><small>普通文字作为自由行动；指定渠道可写“发帖：正文”“回复评论：正文”“评论：正文”“私聊 唐晶：正文”“事件：choiceId”。回复评论会选取真实可见的最新 NPC 评论。不会自动改选第一条事件，也不会加入记忆测试代号。</small></label>
+          <label class="full">预设行动（可选；单步模式不会自动执行）<textarea id="eval-actions" rows="5"></textarea><small>用于记录测试脚本或链路回归参考。单步调优模式会在编译完成后立即暂停，不会自动播放这里的任何一行；后续请在主页面逐步选择帖子、评论、私聊、事件或 Activity 操作。</small></label>
           <p id="eval-source-change-warning" class="experience-warning full" hidden>人物或四字段已改：将创建自定义 Source，仅含当前四字段与人物卡，不再复用内置完整长文 Revision。需要完整原文时，请在下方附上原始 Markdown。</p>
           <label class="full">附加完整剧本原文（可选；仅随本次 Source 提交后端）<input id="eval-source-document" type="file" accept=".md,text/markdown,text/plain" /><small id="eval-source-document-status">未附加；内置剧本不改 Source 时仍使用后端完整长文。</small></label>
         </div>
-        <p class="dialog-note">点击“连续模拟”后，按已填写的行动依次推进，不保证这组行动一定抵达结局。同一条 immutable Source Revision 和同一组玩家行动会同时进入 current 与 v2_candidate，并各自创建独立 Preview Run。修改世界正文或 CharacterVersion 会建立临时 Revision；只修改评测指令或玩家行动仍复用内置 Revision。</p>
+        <p class="dialog-note">点击“编译并暂停”后只完成 Source → Current/V2 编译，并展示完整 Plan / GameConfig / Opening / Selection Trace，不创建试玩 Run。你显式点击“进入 Runtime”后才创建双 Preview Run 并确认 Opening；之后每提交一次操作只推进一回合，再次暂停等待输入。修改世界正文或 CharacterVersion 会建立临时 Revision；只修改评测指令仍复用内置 Revision。</p>
         <div class="dialog-actions"><button value="cancel" class="button ghost">取消</button><button id="input-save" value="default" class="button primary">保存输入</button></div>
       </form>
     </dialog>
   </div>
 
-  <script src="./scenario-library.js?v=20260910-live-play-1"></script>
-  <script src="./scenario-role-index.js?v=20260910-live-play-1"></script>
-  <script src="./auth-config.js?v=20260905-experience-1"></script>
-  <script src="./eval-backend.js?v=20260910-live-play-1"></script>
-  <script src="./compiled-plan-view.js?v=20260905-plans-2"></script>
-  <script src="./cost-estimate.js?v=20260905-plans-2"></script>
-  <script src="./experience-report.js?v=20260905-gameplay-5"></script>
-  <script src="./app.js?v=20260910-live-play-1"></script>
+  <script src="./scenario-library.js?v=20260912-step-eval-1"></script>
+  <script src="./scenario-role-index.js?v=20260912-step-eval-1"></script>
+  <script src="./auth-config.js?v=20260912-step-eval-1"></script>
+  <script src="./eval-backend.js?v=20260912-step-eval-1"></script>
+  <script src="./compiled-plan-view.js?v=20260912-step-eval-1"></script>
+  <script src="./cost-estimate.js?v=20260912-step-eval-1"></script>
+  <script src="./experience-report.js?v=20260912-step-eval-1"></script>
+  <script src="./app.js?v=20260912-step-eval-1"></script>
 </body>
 </html>

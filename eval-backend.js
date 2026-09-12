@@ -27,6 +27,17 @@
     evalGetRunProgression: ['GET', '/eval-api/v1/runs/{runId}/progression', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListRunEvents: ['GET', '/eval-api/v1/runs/{runId}/events', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListRunActivities: ['GET', '/eval-api/v1/runs/{runId}/activities', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListActivityInstances: ['GET', '/eval-api/v1/runs/{runId}/activity-instances', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalGetActivityInstance: ['GET', '/eval-api/v1/runs/{runId}/activity-instances/{activityId}', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListActivityAttempts: ['GET', '/eval-api/v1/runs/{runId}/activity-attempts', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalListActivityCandidates: ['GET', '/eval-api/v1/runs/{runId}/activity-candidates', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
+    evalCreateActivityAttempt: ['POST', '/eval-api/v1/runs/{runId}/activity-attempts', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalUpdateActivityAttempt: ['PATCH', '/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalRespondActivityInvite: ['POST', '/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}/invite-response', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalEnterActivity: ['POST', '/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}/enter', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalSubmitActivityAction: ['POST', '/eval-api/v1/runs/{runId}/activity-instances/{activityId}/actions', 202, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalExitActivity: ['POST', '/eval-api/v1/runs/{runId}/activity-instances/{activityId}/exit', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalListActivityHistory: ['GET', '/eval-api/v1/runs/{runId}/activity-history', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListRunCast: ['GET', '/eval-api/v1/runs/{runId}/cast', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListRunHistory: ['GET', '/eval-api/v1/runs/{runId}/history', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListDmChannels: ['GET', '/eval-api/v1/runs/{runId}/dm-channels', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
@@ -52,6 +63,17 @@
     evalGetRunProgression: 'runtime',
     evalListRunEvents: 'runtime',
     evalListRunActivities: 'runtime',
+    evalListActivityInstances: 'runtime',
+    evalGetActivityInstance: 'runtime',
+    evalListActivityAttempts: 'runtime',
+    evalListActivityCandidates: 'runtime',
+    evalCreateActivityAttempt: 'runtime',
+    evalUpdateActivityAttempt: 'runtime',
+    evalRespondActivityInvite: 'runtime',
+    evalEnterActivity: 'runtime',
+    evalSubmitActivityAction: 'runtime',
+    evalExitActivity: 'runtime',
+    evalListActivityHistory: 'runtime',
     evalListRunCast: 'runtime',
     evalListRunHistory: 'runtime',
     evalListDmChannels: 'runtime',
@@ -426,8 +448,10 @@
       throw new Error('玩家扮演角色不能同时成为首位互动 NPC');
     }
     if (normalized.title.length > 160) throw new Error('世界标题不能超过 160 字');
-    if (!normalized.playerActions.length) throw new Error('至少填写一个玩家行动');
-    if (normalized.playerActions.length > 24) throw new Error('一次最多运行 24 轮；不会静默截断行动');
+    // Experience mode is interactive: compilation is allowed with zero scripted
+    // actions and always pauses before Runtime. playerActions are optional notes /
+    // regression fixtures and are never auto-played in interactive mode.
+    if (normalized.playerActions.length > 24) throw new Error('一次最多保存 24 条预设行动；不会静默截断');
     if (normalized.playerActions.some((action) => [...action].length > 4000)) throw new Error('每轮行动不能超过 4000 字');
     if (normalized.evaluationMode === 'experience') normalized.playerActions.forEach(parseJourneyAction);
     if (normalized.description.length > 4000 || normalized.setting.length > 4000) {
@@ -653,6 +677,10 @@
     progression: ['evalGetRunProgression'],
     events: ['evalListRunEvents'],
     activities: ['evalListRunActivities'],
+    activityInstances: ['evalListActivityInstances'],
+    activityAttempts: ['evalListActivityAttempts'],
+    activityCandidates: ['evalListActivityCandidates'],
+    activityHistory: ['evalListActivityHistory'],
     cast: ['evalListRunCast'],
     history: ['evalListRunHistory'],
     dmChannels: ['evalListDmChannels'],
@@ -1088,6 +1116,73 @@
     }
   }
 
+  function normalizeJourneyAction(value) {
+    if (value == null || typeof value !== 'object' || Array.isArray(value)) return parseJourneyAction(value);
+    const payload = cloneEvidence(value);
+    const type = String(payload.type || '').trim();
+    const body = typeof payload.body === 'string' ? payload.body.trim() : '';
+    const requiredBody = () => {
+      if (!body) throw new Error(`${type} 缺少正文`);
+      if ([...body].length > 4000) throw new Error('每轮正文不能超过 4000 字');
+      return body;
+    };
+    if (type === 'free_act') return { type, body: requiredBody() };
+    if (type === 'post') return { type, body: requiredBody(), visibility: payload.visibility || 'public' };
+    if (type === 'comment' || type === 'reply') return { type, body: requiredBody() };
+    if (type === 'dm_message') return { type, targetName: String(payload.targetName || '').trim(), body: requiredBody() };
+    if (type === 'event_action') {
+      const eventId = String(payload.eventId || '').trim() || null;
+      const choiceId = String(payload.choiceId || '').trim() || null;
+      if (!choiceId && !body) throw new Error('event_action 必须提供 choiceId 或 body');
+      if (choiceId && body) throw new Error('event_action 的 choiceId 与 body 只能二选一');
+      return { type, eventId, choiceId, ...(body ? { body } : {}) };
+    }
+    if (type === 'activity_create') {
+      if (!payload.payload || typeof payload.payload !== 'object' || Array.isArray(payload.payload)) throw new Error('创建 Activity 缺少 payload');
+      return { type, payload: cloneEvidence(payload.payload) };
+    }
+    if (type === 'activity_update') {
+      if (!String(payload.activityAttemptId || payload.targetTitle || '').trim()) throw new Error('修改 Activity 需要 Activity 标题或 attemptId');
+      if (!payload.payload || typeof payload.payload !== 'object' || Array.isArray(payload.payload)) throw new Error('修改 Activity 缺少 payload');
+      return { type, activityAttemptId: String(payload.activityAttemptId || '').trim() || null,
+        targetTitle: String(payload.targetTitle || '').trim() || null, payload: cloneEvidence(payload.payload) };
+    }
+    if (type === 'activity_invite_response') {
+      const response = String(payload.response || '').trim().toUpperCase();
+      if (!['ACCEPTED', 'REJECTED', 'IGNORED'].includes(response)) throw new Error('Activity 邀请回应必须是 ACCEPTED / REJECTED / IGNORED');
+      if (!String(payload.activityAttemptId || payload.targetTitle || '').trim()) throw new Error('Activity 邀请回应需要 Activity 标题或 attemptId');
+      return { type, activityAttemptId: String(payload.activityAttemptId || '').trim() || null,
+        targetTitle: String(payload.targetTitle || '').trim() || null,
+        actorId: String(payload.actorId || '').trim() || null, response };
+    }
+    if (type === 'activity_enter') {
+      if (!String(payload.activityAttemptId || payload.targetTitle || '').trim()) throw new Error('进入 Activity 需要 Activity 标题或 attemptId');
+      return { type, activityAttemptId: String(payload.activityAttemptId || '').trim() || null,
+        targetTitle: String(payload.targetTitle || '').trim() || null };
+    }
+    if (type === 'activity_turn') {
+      if (!String(payload.activityId || payload.targetTitle || '').trim()) throw new Error('Activity 回合需要 Activity 标题或 activityId');
+      return { type, activityId: String(payload.activityId || '').trim() || null,
+        targetTitle: String(payload.targetTitle || '').trim() || null, body: requiredBody() };
+    }
+    if (type === 'activity_exit') {
+      const exitStatus = String(payload.status || 'exited').trim();
+      if (!['completed', 'interrupted', 'failed', 'exited'].includes(exitStatus)) throw new Error('Activity 退出状态无效');
+      if (!String(payload.activityId || payload.targetTitle || '').trim()) throw new Error('退出 Activity 需要 Activity 标题或 activityId');
+      return { type, activityId: String(payload.activityId || '').trim() || null,
+        targetTitle: String(payload.targetTitle || '').trim() || null, status: exitStatus };
+    }
+    throw new Error(`不支持的 Eval 玩家操作：${type || '(empty)'}`);
+  }
+
+  function parseJsonAction(value, label) {
+    try {
+      const parsed = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
+      return parsed;
+    } catch (_) { throw new Error(`${label} 必须是 JSON object`); }
+  }
+
   function parseJourneyAction(value) {
     const action = String(value || '').trim();
     const post = action.match(/^发帖\s*[：:]\s*([\s\S]+)$/u);
@@ -1098,16 +1193,189 @@
     if (comment) return { type: 'comment', body: comment[1].trim() };
     const dm = action.match(/^私聊\s+([^：:]+)[：:]\s*([\s\S]+)$/u);
     if (dm) return { type: 'dm_message', targetName: dm[1].trim(), body: dm[2].trim() };
+    const eventInput = action.match(/^事件输入\s+([^：:]+)[：:]\s*([\s\S]+)$/u);
+    if (eventInput) return { type: 'event_action', eventId: eventInput[1].trim(), body: eventInput[2].trim() };
     const event = action.match(/^事件\s*[：:]\s*(\S+)$/u);
-    if (event) return { type: 'event_action', choiceId: event[1] };
-    if (/^(发帖|回复评论|评论|私聊|事件)\s*[：:]/u.test(action) || /^私聊\s/u.test(action)) {
-      throw new Error('行动格式：发帖：正文 / 回复评论：正文 / 评论：正文 / 私聊 角色名：正文 / 事件：choiceId；其他文字按自由行动提交');
+    if (event) return { type: 'event_action', eventId: null, choiceId: event[1] };
+    const createActivity = action.match(/^创建活动\s*[：:]\s*([\s\S]+)$/u);
+    if (createActivity) return { type: 'activity_create', payload: parseJsonAction(createActivity[1], 'Activity payload') };
+    const updateActivity = action.match(/^修改活动\s+([^：:]+)[：:]\s*([\s\S]+)$/u);
+    if (updateActivity) return { type: 'activity_update', activityAttemptId: updateActivity[1].trim(), payload: parseJsonAction(updateActivity[2], 'Activity payload') };
+    const invite = action.match(/^活动回应\s+(\S+)\s+(\S+)\s*[：:]\s*(ACCEPTED|REJECTED|IGNORED)$/iu);
+    if (invite) return { type: 'activity_invite_response', activityAttemptId: invite[1], actorId: invite[2], response: invite[3].toUpperCase() };
+    const enter = action.match(/^进入活动\s*[：:]\s*(\S+)$/u);
+    if (enter) return { type: 'activity_enter', activityAttemptId: enter[1] };
+    const activityTurn = action.match(/^活动\s+([^：:]+)[：:]\s*([\s\S]+)$/u);
+    if (activityTurn) return { type: 'activity_turn', activityId: activityTurn[1].trim(), body: activityTurn[2].trim() };
+    const exit = action.match(/^退出活动\s+([^：:]+)[：:]\s*(completed|interrupted|failed|exited)$/iu);
+    if (exit) return { type: 'activity_exit', activityId: exit[1].trim(), status: exit[2].toLowerCase() };
+    if (/^(发帖|回复评论|评论|私聊|事件输入|事件|创建活动|修改活动|活动回应|进入活动|退出活动)(?:\s|[：:]|$)/u.test(action)
+      || /^活动(?:\s|[：:]|$)/u.test(action)) {
+      throw new Error('行动格式不完整；可使用页面的操作类型选择器，或按帮助中的 DSL 输入');
     }
+    if (!action) throw new Error('请输入这一轮玩家行为');
     return { type: 'free_act', body: action };
   }
 
+  function journeyActionLabel(value) {
+    const action = normalizeJourneyAction(value);
+    if (action.type === 'post') return `发帖：${action.body}`;
+    if (action.type === 'comment') return `评论：${action.body}`;
+    if (action.type === 'reply') return `回复评论：${action.body}`;
+    if (action.type === 'dm_message') return `私聊 ${action.targetName || '目标角色'}：${action.body}`;
+    if (action.type === 'event_action') return action.choiceId ? `事件：${action.choiceId}` : `事件输入 ${action.eventId}：${action.body}`;
+    if (action.type === 'activity_create') return `创建活动：${JSON.stringify(action.payload)}`;
+    if (action.type === 'activity_update') return `修改活动 ${action.targetTitle || action.activityAttemptId}：${JSON.stringify(action.payload)}`;
+    if (action.type === 'activity_invite_response') return `活动回应 ${action.targetTitle || action.activityAttemptId} ${action.actorId || '当前玩家'}：${action.response}`;
+    if (action.type === 'activity_enter') return `进入活动：${action.targetTitle || action.activityAttemptId}`;
+    if (action.type === 'activity_turn') return `活动 ${action.targetTitle || action.activityId}：${action.body}`;
+    if (action.type === 'activity_exit') return `退出活动 ${action.targetTitle || action.activityId}：${action.status}`;
+    return action.body;
+  }
+
+  function activityTitle(value) {
+    return String(value?.setup?.title || value?.currentScene?.title || value?.title || value?.payload?.title || '').trim();
+  }
+  function latestActivityRow(rows, { id, title, activeOnly = false } = {}) {
+    const list = pageItems(rows);
+    const filtered = list.filter((item) => !activeOnly || item?.status === 'active');
+    const byId = id ? filtered.find((item) => item.activityAttemptId === id || item.activityId === id) : null;
+    if (byId) return byId;
+    const byTitle = title ? filtered.filter((item) => activityTitle(item) === title).at(-1) : null;
+    return byTitle || filtered.at(-1) || null;
+  }
+  function activityPayloadForPreview(preview, input, rawPayload) {
+    const payload = cloneEvidence(rawPayload || {});
+    const invitedNames = Array.isArray(payload.invitedNames)
+      ? [...new Set(payload.invitedNames.map((name) => String(name || '').trim()).filter(Boolean))]
+      : [];
+    delete payload.invitedNames;
+    if (invitedNames.length) {
+      payload.invitedActorIds = invitedNames.map((name) => {
+        const matches = (input.characters || []).filter((character) => character.displayName === name);
+        if (matches.length !== 1) throw resourceUnavailable(
+          'SLICE_EVAL_ACTIVITY_INVITEE_MISSING', `Activity 邀请角色「${name}」必须唯一匹配本次 Cast`, { name });
+        return actorIdForCharacterVersion(preview, matches[0]);
+      });
+    }
+    return payload;
+  }
+
+  async function executeActivityMutation(preview, input, payload) {
+    const runId = preview.runId;
+    const run = await call('evalGetRun', { params: { runId } });
+    const startedAtMs = performance.now();
+    let response;
+    if (payload.type === 'activity_create') {
+      response = await call('evalCreateActivityAttempt', {
+        params: { runId }, key: idempotency('eval-activity-create'),
+        body: { expectedRunRevision: run.revision, payload: activityPayloadForPreview(preview, input, payload.payload) },
+      });
+    } else if (payload.type === 'activity_update') {
+      const attempts = await call('evalListActivityAttempts', { params: { runId } });
+      const attempt = latestActivityRow(attempts, { id: payload.activityAttemptId, title: payload.targetTitle });
+      if (!attempt) throw resourceUnavailable('SLICE_EVAL_ACTIVITY_ATTEMPT_MISSING', `找不到 Activity Attempt ${payload.targetTitle || payload.activityAttemptId || ''}`, { attempts });
+      response = await call('evalUpdateActivityAttempt', {
+        params: { runId, activityAttemptId: attempt.activityAttemptId }, key: idempotency('eval-activity-update'),
+        body: { expectedRunRevision: run.revision, expectedAttemptRevision: attempt.stateRevision,
+          payload: activityPayloadForPreview(preview, input, payload.payload) },
+      });
+    } else if (payload.type === 'activity_invite_response') {
+      const attempts = await call('evalListActivityAttempts', { params: { runId } });
+      const attempt = latestActivityRow(attempts, { id: payload.activityAttemptId, title: payload.targetTitle });
+      if (!attempt) throw resourceUnavailable('SLICE_EVAL_ACTIVITY_ATTEMPT_MISSING', '当前轨道找不到对应 Activity Attempt', { attempts });
+      const playerActorId = (preview.actorStates || []).find((item) => item.kind === 'player')?.actorId;
+      const actorId = payload.actorId || playerActorId;
+      if (!actorId) throw resourceUnavailable('SLICE_EVAL_ACTIVITY_ACTOR_MISSING', '当前 Preview Run 没有可控玩家 Actor');
+      response = await call('evalRespondActivityInvite', {
+        params: { runId, activityAttemptId: attempt.activityAttemptId }, key: idempotency('eval-activity-invite'),
+        body: { actorId, response: payload.response },
+      });
+    } else if (payload.type === 'activity_enter') {
+      const attempts = await call('evalListActivityAttempts', { params: { runId } });
+      const attempt = latestActivityRow(attempts, { id: payload.activityAttemptId, title: payload.targetTitle });
+      if (!attempt) throw resourceUnavailable('SLICE_EVAL_ACTIVITY_ATTEMPT_MISSING', '当前轨道找不到可进入的 Activity Attempt', { attempts });
+      response = await call('evalEnterActivity', {
+        params: { runId, activityAttemptId: attempt.activityAttemptId }, key: idempotency('eval-activity-enter'),
+        body: { expectedRunRevision: run.revision },
+      });
+    } else if (payload.type === 'activity_exit') {
+      const instances = await call('evalListActivityInstances', { params: { runId } });
+      const selected = latestActivityRow(instances, { id: payload.activityId, title: payload.targetTitle, activeOnly: true });
+      if (!selected?.activityId) throw resourceUnavailable('SLICE_EVAL_ACTIVITY_INSTANCE_MISSING', '当前轨道没有对应的 Active Activity', { instances });
+      const activity = await call('evalGetActivityInstance', { params: { runId, activityId: selected.activityId } });
+      response = await call('evalExitActivity', {
+        params: { runId, activityId: selected.activityId }, key: idempotency('eval-activity-exit'),
+        body: { status: payload.status, expectedRunRevision: run.revision, expectedSceneRevision: activity.sceneRevision },
+      });
+    } else {
+      throw new Error(`不支持的同步 Activity 操作：${payload.type}`);
+    }
+    return {
+      status: 'applied', payload: cloneEvidence(payload),
+      durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+      runBefore: run, accepted: null, command: null, outcome: null,
+      activityResponse: cloneEvidence(response), feed: null, projections: null,
+      projectionIssues: [], error: null,
+    };
+  }
+
+  async function executeActivityTurn(preview, payload) {
+    const runId = preview.runId;
+    const [run, instances] = await Promise.all([
+      call('evalGetRun', { params: { runId } }),
+      call('evalListActivityInstances', { params: { runId } }),
+    ]);
+    const selected = latestActivityRow(instances, { id: payload.activityId, title: payload.targetTitle, activeOnly: true });
+    if (!selected?.activityId) throw resourceUnavailable('SLICE_EVAL_ACTIVITY_INSTANCE_MISSING', '当前轨道没有对应的 Active Activity', { instances });
+    const activity = await call('evalGetActivityInstance', { params: { runId, activityId: selected.activityId } });
+    const startedAtMs = performance.now();
+    let accepted = null;
+    let command = null;
+    try {
+      accepted = await call('evalSubmitActivityAction', {
+        params: { runId, activityId: selected.activityId }, key: idempotency('eval-activity-turn'),
+        body: { body: payload.body, expectedRunRevision: run.revision, expectedSceneRevision: activity.sceneRevision },
+      });
+      if (!accepted?.commandId) throw new Error('Activity Turn 没有返回 commandId');
+      let attempt = 0;
+      while (performance.now() - startedAtMs < COMMAND_POLL_BUDGET_MS) {
+        command = await call('evalGetWorldCommand', { params: { runId, commandId: accepted.commandId } });
+        if (command.status === 'rejected') {
+          return {
+            status: 'rejected', payload: cloneEvidence(payload), durationMs: Math.round(performance.now() - startedAtMs),
+            runBefore: run, accepted, command, outcome: null, activityResponse: accepted,
+            feed: null, projections: null, projectionIssues: [],
+            error: compactError(Object.assign(new Error('Activity Turn 被 Worker 拒绝'), { code: command.errorCode || 'SLICE_RUNTIME_COMMAND_REJECTED' })),
+          };
+        }
+        if (command.status === 'applied') {
+          const outcome = await waitForOutcome(runId, accepted.commandId);
+          return {
+            status: outcome.status === 'rejected' ? 'rejected' : 'applied',
+            payload: cloneEvidence(payload), durationMs: Math.round(performance.now() - startedAtMs),
+            runBefore: run, accepted, command, outcome, activityResponse: accepted,
+            feed: null, projections: null, projectionIssues: [],
+            error: outcome.status === 'rejected'
+              ? compactError(Object.assign(new Error(outcome.rejectionCode || outcome.narrativeSummary), { code: outcome.rejectionCode || 'SLICE_RUNTIME_OUTCOME_REJECTED' }))
+              : null,
+          };
+        }
+        if (!['accepted', 'processing'].includes(command.status)) throw new Error(`未知 Activity Command 状态：${command.status}`);
+        const delay = COMMAND_POLL_DELAYS_MS[Math.min(attempt, COMMAND_POLL_DELAYS_MS.length - 1)];
+        attempt += 1;
+        await sleep(delay);
+      }
+      throw new Error('Activity Turn 在 65 秒轮询预算内没有完成');
+    } catch (error) {
+      error.runtimeEvidence = { runBefore: run, accepted, command, payload: cloneEvidence(payload) };
+      error.runtimeDurationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
+      throw error;
+    }
+  }
+
   async function executeJourneyAction(preview, input, action) {
-    const payload = parseJourneyAction(action);
+    const payload = normalizeJourneyAction(action);
     try {
       if (payload.type === 'post') {
         const run = await call('evalGetRun', { params: { runId: preview.runId } });
@@ -1116,21 +1384,41 @@
       if (payload.type === 'reply') return await executeNpcReplyRun(preview, payload.body);
       if (payload.type === 'comment') return await executeCommentRun(preview.runId, payload.body);
       if (payload.type === 'dm_message') {
-        const matches = input.characters.filter((character) => character.displayName === payload.targetName);
-        if (matches.length !== 1) throw resourceUnavailable('SLICE_EVAL_DM_TARGET_MISSING', `私聊目标「${payload.targetName}」必须唯一匹配本次已选择的人物卡`);
-        const target = await ensureDirectDmChannel(preview.runId, preview, matches[0]);
-        return await executeDmRun(preview.runId, payload.body, target.channelId);
+        const matches = payload.targetName
+          ? input.characters.filter((character) => character.displayName === payload.targetName)
+          : [];
+        if (payload.targetName && matches.length !== 1) throw resourceUnavailable('SLICE_EVAL_DM_TARGET_MISSING', `私聊目标「${payload.targetName}」必须唯一匹配本次已选择的人物卡`);
+        const target = matches[0] || resolveScenarioDmTarget(input, payload.body);
+        const channel = await ensureDirectDmChannel(preview.runId, preview, target);
+        return await executeDmRun(preview.runId, payload.body, channel.channelId);
       }
       if (payload.type === 'event_action') {
         const [run, events] = await Promise.all([
           call('evalGetRun', { params: { runId: preview.runId } }),
           call('evalListRunEvents', { params: { runId: preview.runId } }),
         ]);
-        const event = pageItems(events).find((item) => ['active', 'available'].includes(item.state)
-          && item.choices?.some((choice) => choice.choiceId === payload.choiceId));
-        if (!event) throw resourceUnavailable('SLICE_EVAL_EVENT_CHOICE_MISSING', `当前轨道没有可用的事件选项 ${payload.choiceId}；未替换为第一项`, { events });
-        return await executeRunCommand(preview.runId, run, { type: 'event_action', eventId: event.eventId, choiceId: payload.choiceId });
+        const rows = pageItems(events).filter((item) => ['active', 'available'].includes(item.state));
+        const event = payload.eventId
+          ? rows.find((item) => item.eventId === payload.eventId)
+          : rows.find((item) => item.choices?.some((choice) => choice.choiceId === payload.choiceId));
+        if (!event) throw resourceUnavailable('SLICE_EVAL_EVENT_CHOICE_MISSING', payload.eventId
+          ? `当前轨道没有可操作的事件 ${payload.eventId}`
+          : `当前轨道没有可用的事件选项 ${payload.choiceId}；未替换为第一项`, { events });
+        if (payload.choiceId && !event.choices?.some((choice) => choice.choiceId === payload.choiceId)) {
+          throw resourceUnavailable('SLICE_EVAL_EVENT_CHOICE_MISSING', `事件 ${event.eventId} 不包含选项 ${payload.choiceId}`, { event });
+        }
+        if (payload.body && event.freeInputAllowed !== true) {
+          throw resourceUnavailable('SLICE_EVAL_EVENT_FREE_INPUT_UNAVAILABLE', `事件 ${event.eventId} 不允许自由输入`, { event });
+        }
+        return await executeRunCommand(preview.runId, run, {
+          type: 'event_action', eventId: event.eventId,
+          ...(payload.choiceId ? { choiceId: payload.choiceId } : { body: payload.body }),
+        });
       }
+      if (['activity_create', 'activity_update', 'activity_invite_response', 'activity_enter', 'activity_exit'].includes(payload.type)) {
+        return await executeActivityMutation(preview, input, payload);
+      }
+      if (payload.type === 'activity_turn') return await executeActivityTurn(preview, payload);
       return await executeRun(preview.runId, payload.body);
     } catch (error) {
       if (error?.status === 401) throw error;
@@ -1189,8 +1477,8 @@
       || !previous?.previewRuns?.v2Candidate?.runId) {
       throw new Error('当前报告没有可继续的双轨 Preview Run');
     }
-    const action = String(rawAction || '').trim();
-    if (!action) throw new Error('请输入这一轮玩家行为');
+    const normalizedAction = normalizeJourneyAction(rawAction);
+    const action = journeyActionLabel(normalizedAction);
     const input = validateInput({
       ...previous.input,
       sourceDocument: null,
@@ -1227,8 +1515,8 @@
       });
       const turnStartedAtMs = performance.now();
       const [currentExecution, candidateExecution] = await Promise.all([
-        executeJourneyAction(result.previewRuns.current, input, action),
-        executeJourneyAction(result.previewRuns.v2Candidate, input, action),
+        executeJourneyAction(result.previewRuns.current, input, normalizedAction),
+        executeJourneyAction(result.previewRuns.v2Candidate, input, normalizedAction),
       ]);
       currentExecution.projectionsBefore = previousProjections.current;
       candidateExecution.projectionsBefore = previousProjections.v2Candidate;
@@ -1237,8 +1525,9 @@
       currentExecution.projectionIssues = projectionIssues(currentExecution.projections);
       candidateExecution.projectionIssues = projectionIssues(candidateExecution.projections);
       result.turns.push({
-        kind: parseJourneyAction(action).type,
+        kind: normalizedAction.type,
         action,
+        actionPayload: cloneEvidence(normalizedAction),
         current: currentExecution,
         v2Candidate: candidateExecution,
         durationMs: Math.max(0, Math.round(performance.now() - turnStartedAtMs)),
@@ -1260,9 +1549,11 @@
           .some((execution) => execution?.status !== 'applied' || (execution?.projectionIssues || []).length > 0))
         || [result.opening?.current, result.opening?.v2Candidate]
           .some((execution) => execution && execution.status !== 'applied');
-      result.status = currentRoundHasIssue || historicalIssue ? 'completed_with_issues' : 'completed';
+      result.status = currentRoundHasIssue || historicalIssue ? 'waiting_with_issues' : 'waiting_for_user';
+      result.runtimePhase = 'waiting_for_user';
       result.lastContinuation = {
         action,
+        actionPayload: cloneEvidence(normalizedAction),
         completedAt: new Date().toISOString(),
         currentStatus: currentExecution.status,
         v2CandidateStatus: candidateExecution.status,
@@ -1280,12 +1571,94 @@
       if (error?.status !== 401 && result.experiment?.experimentId) {
         try { await refreshTrace(result); } catch {}
       }
-      result.status = 'completed_with_issues';
+      result.status = 'waiting_with_issues';
+      result.runtimePhase = 'waiting_for_user';
       result.completedAt = new Date().toISOString();
       result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
-      result.lastContinuation = { action, completedAt: result.completedAt, error: compactError(error) };
+      result.lastContinuation = { action, actionPayload: cloneEvidence(normalizedAction), completedAt: result.completedAt, error: compactError(error) };
       error.partialResult = cloneEvidence(result);
       throw error;
+    } finally {
+      state.activeTelemetry = null;
+    }
+  }
+
+  async function startInteractiveRuntime(previous, onProgress = () => {}) {
+    if (!connected()) {
+      const error = new Error('请先登录 Eval Backend');
+      error.code = 'SLICE_EVAL_SESSION_EXPIRED'; error.status = 401; throw error;
+    }
+    if (state.activeTelemetry) throw new Error('已有评测正在运行，请等待当前阶段收束');
+    if (!previous?.input || previous?.experiment?.status !== 'succeeded'
+      || !previous?.compiledPlans || !previous?.scenario?.worldDraftRevisionId
+      || previous.previewRuns?.current || previous.previewRuns?.v2Candidate) {
+      throw new Error('只能从“编译完成、尚未创建 Preview Run”的 Eval 结果进入 Runtime');
+    }
+    const input = validateInput({ ...previous.input, sourceDocument: null, evaluationMode: 'experience', playerActions: [] });
+    const result = cloneEvidence(previous);
+    const startedAtMs = performance.now();
+    const previousDurationMs = Number.isFinite(Number(result.durationMs)) ? Number(result.durationMs) : 0;
+    result.status = 'running'; result.runtimePhase = 'starting_runtime'; result.completedAt = null;
+    result.operations = Array.isArray(result.operations) ? result.operations : [];
+    const publish = (event) => onProgress({
+      ...event,
+      partialResult: cloneEvidence({ ...result,
+        durationMs: previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs)) }),
+    });
+    state.activeTelemetry = { records: result.operations, onProgress: publish };
+    try {
+      publish({ kind: 'checkpoint', step: 'preview', message: '按手机端开始游戏：创建 Current / V2 Preview Run' });
+      const [current, candidate] = await Promise.all([
+        call('createCompilerExperimentPreviewRun', {
+          params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-current'),
+          body: previewRunRequest(input, 'current'),
+        }),
+        call('createCompilerExperimentPreviewRun', {
+          params: { experimentId: result.experiment.experimentId }, key: idempotency('preview-v2'),
+          body: previewRunRequest(input, 'v2_candidate'),
+        }),
+      ]);
+      result.previewRuns = { current, v2Candidate: candidate };
+      assertPreviewIdentity(current, input); assertPreviewIdentity(candidate, input);
+      result.initialProjections.current = await readExperienceProjections(current.runId);
+      result.initialProjections.v2Candidate = await readExperienceProjections(candidate.runId);
+      publish({ kind: 'checkpoint', step: 'opening', message: '按手机端确认 Opening；本步结束后暂停等待玩家操作' });
+      const openingStartedAtMs = performance.now();
+      const [currentOpening, candidateOpening] = await Promise.all([
+        safeExecuteOpeningRun(current.runId), safeExecuteOpeningRun(candidate.runId),
+      ]);
+      currentOpening.projectionsBefore = result.initialProjections.current;
+      candidateOpening.projectionsBefore = result.initialProjections.v2Candidate;
+      currentOpening.projections = await readExperienceProjections(current.runId);
+      candidateOpening.projections = await readExperienceProjections(candidate.runId);
+      currentOpening.projectionIssues = projectionIssues(currentOpening.projections);
+      candidateOpening.projectionIssues = projectionIssues(candidateOpening.projections);
+      result.opening = {
+        current: currentOpening, v2Candidate: candidateOpening,
+        durationMs: Math.max(0, Math.round(performance.now() - openingStartedAtMs)),
+      };
+      result.finalProjections = { current: currentOpening.projections, v2Candidate: candidateOpening.projections };
+      result.finalProjectionIssues = {
+        current: projectionIssues(currentOpening.projections),
+        v2Candidate: projectionIssues(candidateOpening.projections),
+      };
+      await refreshTrace(result);
+      const issue = [currentOpening, candidateOpening].some((execution) =>
+        execution.status !== 'applied' || (execution.projectionIssues || []).length > 0) || Boolean(result.traceError);
+      result.status = issue ? 'waiting_with_issues' : 'waiting_for_user';
+      result.runtimePhase = 'waiting_for_user';
+      result.completedAt = new Date().toISOString();
+      result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
+      publish({ kind: 'complete', step: 'opening', message: issue
+        ? 'Opening 已返回并暂停；存在可定位问题，先检查证据再决定是否继续'
+        : 'Opening 已完成并暂停；现在等待你输入下一步手机端操作' });
+      return result;
+    } catch (error) {
+      if (result.experiment?.experimentId) { try { await refreshTrace(result); } catch {} }
+      result.status = 'waiting_with_issues'; result.runtimePhase = 'runtime_start_failed';
+      result.completedAt = new Date().toISOString();
+      result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
+      error.partialResult = cloneEvidence(result); throw error;
     } finally {
       state.activeTelemetry = null;
     }
@@ -1314,6 +1687,7 @@
     const result = {
       schemaVersion: 'slice.system-eval-run.v2',
       status: 'running',
+      runtimePhase: 'compiling',
       startedAt: new Date().toISOString(),
       completedAt: null,
       durationMs: 0,
@@ -1374,7 +1748,22 @@
         const error = new Error('完整 Plan 的 Experiment/Source 绑定或双轨正文不完整，已停止后续运行');
         error.code = 'SLICE_EVAL_PLAN_PIN_MISMATCH'; throw error;
       }
-      publish({ kind: 'checkpoint', step: 'compile', message: '完整 Plan 已读取，可查看四块正文；开始创建试玩 Run' });
+      if (input.evaluationMode === 'experience') {
+        // Interactive Eval deliberately stops at the product boundary: source →
+        // compile. Creating a Run, confirming Opening, or replaying a prefilled
+        // action here would hide the exact input/output boundary the lab exists
+        // to inspect.
+        result.status = 'compiled_waiting_for_user';
+        result.runtimePhase = 'compiled_waiting_for_user';
+        result.completedAt = new Date().toISOString();
+        result.durationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
+        publish({
+          kind: 'complete', step: 'compile',
+          message: '双轨编译完成并已暂停；完整 Plan / GameConfig / Opening / Selection Trace 已可查看，等待你显式进入 Runtime',
+        });
+        return result;
+      }
+      publish({ kind: 'checkpoint', step: 'compile', message: '完整 Plan 已读取；回归模式继续创建试玩 Run' });
       checkExperienceStop(input);
       publish({ kind: 'checkpoint', step: 'preview', message: '创建双 Preview Run' });
       const [current, candidate] = await Promise.all([
@@ -1596,10 +1985,11 @@
   }
 
   window.SliceEvalBackend = Object.freeze({
-    loadContract, connect, disconnect, connected, runFullEvaluation, continueEvaluation, resumeCompilation, requestStop,
+    loadContract, connect, disconnect, connected, runFullEvaluation, startInteractiveRuntime, continueEvaluation, resumeCompilation, requestStop,
     __testing: Object.freeze({
       validateInput, normalizeSourceDocument, normalizeInputCharacters, previewRunRequest, assertPreviewIdentity, buildWorldSeed, buildWorldDraftContent,
-      parseJourneyAction, executeJourneyAction, executeNpcReplyRun, readExperienceProjections, directMessageChannel,
+      parseJourneyAction, normalizeJourneyAction, journeyActionLabel, executeJourneyAction, executeActivityMutation, executeActivityTurn,
+      executeNpcReplyRun, readExperienceProjections, directMessageChannel,
       waitForExperiment,
       buildCreateWorldDraftRequest, buildCreateWorldDraftRevisionRequest,
       buildCreateCompilerExperimentRequest, backendRouteError, compactError,
