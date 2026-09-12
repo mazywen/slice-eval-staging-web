@@ -825,9 +825,33 @@
       description: content.bio || '', background: content.backgroundAndKnowledge || '',
       playable: content.playable !== false, content, raw: row };
   }
+  async function listAllPages(operationId, params, mapRow, rowId) {
+    const collected = [], seenIds = new Set(), seenCursors = new Set();
+    let cursor = null;
+    while (true) {
+      const page = await T.call(operationId, { ...(params ? { params } : {}),
+        query: { limit: 100, ...(cursor ? { cursor } : {}) } });
+      if (!Array.isArray(page?.items) || !page.pageInfo || typeof page.pageInfo.hasMore !== 'boolean'
+        || !Object.hasOwn(page.pageInfo, 'nextCursor')) {
+        throw fail('列表分页响应不完整，请重试；尚未读取全部数据', 'SLICE_EVAL_PAGE_INVALID');
+      }
+      for (const raw of page.items) {
+        const row = mapRow(raw), id = rowId(row);
+        if (!id) throw fail('列表项缺少真实 ID，无法确认全部数据', 'SLICE_EVAL_PAGE_INVALID');
+        if (!seenIds.has(id)) { seenIds.add(id); collected.push(row); }
+      }
+      const nextCursor = page.pageInfo.nextCursor;
+      if (nextCursor == null) {
+        if (page.pageInfo.hasMore) throw fail('后台声明仍有下一页但没有返回游标；尚未读取全部数据', 'SLICE_EVAL_PAGINATION_INVALID');
+        return collected;
+      }
+      if (typeof nextCursor !== 'string' || !nextCursor.trim()) throw fail('后台返回了无效分页游标；尚未读取全部数据', 'SLICE_EVAL_PAGINATION_INVALID');
+      if (seenCursors.has(nextCursor)) throw fail('后台分页游标重复；尚未读取全部数据', 'SLICE_EVAL_PAGINATION_LOOP');
+      seenCursors.add(nextCursor); cursor = nextCursor;
+    }
+  }
   async function listScenarios() {
-    const page = await T.call('evalListWorldDrafts');
-    return items(page).map(scenarioRow);
+    return listAllPages('evalListWorldDrafts', null, scenarioRow, (row) => row.id);
   }
   async function getScenario(row) {
     const worldDraftId = row.worldDraftId || row.id;
@@ -858,10 +882,8 @@
     return selected;
   }
   async function listCharacters(options = {}) {
-    const page = options.worldDraftId
-      ? await T.call('evalListCharacterSlotCandidates', { params: { worldDraftId: options.worldDraftId } })
-      : await T.call('evalListCharacters');
-    return items(page).map(characterRow).filter((row) => row.characterVersionId);
+    return listAllPages(options.worldDraftId ? 'evalListCharacterSlotCandidates' : 'evalListCharacters',
+      options.worldDraftId ? { worldDraftId: options.worldDraftId } : null, characterRow, (row) => row.characterVersionId);
   }
   async function listRunCharacterSlots(result) {
     return items(await T.call('evalListRunCharacterSlots', { params: { runId: requiredId(result?.previewRuns?.current?.runId, '游玩会话') } }));

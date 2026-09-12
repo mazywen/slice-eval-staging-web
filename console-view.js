@@ -197,10 +197,31 @@
   function observedStages(outcome, diagnostics) {
     const timing=outcome.stageTimings || outcome.debugEvidence?.stageTimings;
     const rows=[['调度','directorMs'],['记忆召回','retrievalMs'],['人物独立视角','privatePovMs'],['主模型','mainRuntimeMs'],['结果校验','validationMs'],['规则结算','finalizationMs'],['内容物化','materializationMs'],['数据库提交','persistenceMs']];
-    const names={input:'操作输入',modelInput:'Runtime 上下文',finalPrompt:'最终模型请求',modelCandidate:'模型候选',authorityBoundProposal:'工程绑定后结果',memory:'记忆证据',stageTimings:'阶段耗时',outcome:'已落库结果',aiCalls:'AI 调用记录'};
+    const names={input:'操作输入',modelInput:'Runtime 上下文',finalPrompt:'最终模型请求',modelCandidate:'模型候选',authorityBoundProposal:'工程绑定后结果',memory:'记忆证据',stageTimings:'阶段耗时',outcome:'已落库结果',aiCalls:'AI 调用记录',failureDetails:'失败原因详情'};
     const coverage=Object.entries(diagnostics?.evidence || {}).map(([key,status])=>'<div class="observed-stage"><span class="step-dot"></span><strong>'+esc(names[key] || key)+'</strong><span>'+esc({captured:'已采集',not_collected:'未采集',partial:'部分采集',unavailable:'读取失败',none_recorded:'无调用记录'}[status] || status)+'</span></div>').join('');
     return '<section class="evidence-section"><h3>执行阶段耗时</h3><div class="observed-stages">'+rows.map(([title,key],i)=>'<div class="observed-stage"><small>'+String(i+1).padStart(2,'0')+'</small><strong>'+title+'</strong><span>'+duration(timing?.[key])+'</span></div>').join('')+'</div><p class="muted">阶段顺序为诊断分组。未采集耗时不能据此判断该步骤未执行；并行与包含关系不重复加总。</p></section>'+
       (coverage?'<section class="evidence-section"><h3>本次证据覆盖</h3>'+coverage+'</section>':'');
+  }
+  function failureDetails(diagnostics, status) {
+    const rows=arr(diagnostics?.failureEvidence);
+    if(!rows.length && !/fail|reject|error/.test(status || '') && !arr(diagnostics?.errors).length)return '';
+    const phases={load_context:'读取操作上下文',director:'调度与人物选择',memory:'记忆召回',model_input:'组装模型输入',model_call:'模型调用',proposal_validation:'模型结果校验',finalization:'结果结算',materialization:'内容生成',persistence:'保存结果',relationship_selection:'关系选择'};
+    const states={captured:'已采集',not_collected:'未采集',unavailable:'读取失败'};
+    const counts={sceneActorCount:'场景人物数',participantCount:'参与人物数',knownActorCount:'已知人物数',providerCallCount:'模型调用数'};
+    const body=rows.length?rows.map((row,index)=>{
+      const detail=row.status==='captured'?row.details:null;
+      const heading='<div class="section-heading"><h3>失败记录 '+(index+1)+'</h3><span class="badge">'+esc(states[row.status] || '未采集')+'</span></div>';
+      if(!detail)return '<article class="request-call">'+heading+'<p class="missing">'+(row.status==='unavailable'?'这条失败记录暂时无法读取。':'这条失败记录没有采集到具体原因。')+'</p></article>';
+      const fields=arr(detail.validationFieldPaths);
+      const scope=Object.entries(counts).filter(([key])=>number(detail.scopeCounts?.[key])!==null).map(([key,title])=>'<span>'+title+'：'+esc(detail.scopeCounts[key])+'</span>').join(' · ');
+      return '<article class="request-call">'+heading+'<p><strong>失败环节：</strong>'+esc(phases[detail.phase] || detail.phase || '未返回')+'</p>'+
+        '<p><strong>具体错误码：</strong><code>'+esc(detail.internalCode || detail.errorCode || '未返回')+'</code></p>'+
+        (detail.reasonCode?'<p><strong>判定原因：</strong><code>'+esc(detail.reasonCode)+'</code></p>':'')+
+        (fields.length?'<p><strong>相关字段：</strong>'+fields.map(field=>'<code>'+esc(field)+'</code>').join('、')+'</p>':'')+
+        (scope?'<p class="muted">'+scope+'</p>':'')+
+        (detail.failedAt?'<p class="muted">记录时间：'+esc(detail.failedAt)+'</p>':'')+'</article>';
+    }).join(''):'<p class="missing">具体失败原因未采集；当前只能查看后台返回的通用错误码。</p>';
+    return '<section class="evidence-section"><h3>失败原因与环节</h3>'+body+'</section>';
   }
   function modelObjects(debug) {
     if (!debug) return null;
@@ -213,7 +234,7 @@
     const inputNotice=step.execution?.payload?.bodyTruncated && !command.input?'<p class="notice">摘要，完整输入待读取。原正文 '+esc(step.execution.payload.originalBodyLength)+' 字；刷新后从后端 Trace 读取完整内容。</p>':'';
     if(tab==='input') return inputNotice+section('本次实际输入',command.input || step.input || step.execution?.payload)+section('操作提交结果',step.execution?.accepted || step.output);
     if(tab==='context') return section('召回与过滤证据',outcome.memoryEvidence)+section('实际记忆与人物视角',debug?.memory)+section('上下文组成与预算',debug?.engineering?.contextManifest)+raw('全部上下文过程证据',debug);
-    if(tab==='decisions') return section('用户意图与可执行结果',outcome.attemptInterpretation)+section('调度、人物与内容选择',outcome.directorDecision)+section('工程决策',debug?.engineering)+section('章节触发依据',outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive);
+    if(tab==='decisions') return failureDetails(command.diagnostics,step.status)+section('用户意图与可执行结果',outcome.attemptInterpretation)+section('调度、人物与内容选择',outcome.directorDecision)+section('工程决策',debug?.engineering)+section('章节触发依据',outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive);
     if(tab==='model') {
       const calls=callsFor(result,step);
       const requests=calls.map(call=>({callRef:call.callRef,model:call.model,requestEvidenceStatus:call.requestEvidenceStatus || 'not_collected',
@@ -235,7 +256,7 @@
     if(step.kind==='source' || step.kind==='start') return section(step.kind==='source'?'输入内容':'所选人物',step.input)+section(step.kind==='source'?'已保存的剧本':'开局结果',step.output)+(step.kind==='source'?section('保存剧本与预制活动的真实操作',arr(result.operations).filter(operation=>/WorldDraft|ActivityDefinition/.test(operation.operationId))):'');
     return inputNotice+'<div class="diagnostic-title">'+badge(step.status)+'<span class="mono">'+esc(step.commandId || '')+'</span></div>'+
       (outcome.narrativeSummary?'<p class="result-summary">'+esc(outcome.narrativeSummary)+'</p>':'')+
-      usageHtml(usage(callsFor(result,step)))+
+      failureDetails(command.diagnostics,step.status)+usageHtml(usage(callsFor(result,step)))+
       observedStages(outcome,command.diagnostics)+section('流程执行状态',command.diagnostics || {executionStatus:step.status},'展示真实后台状态；“已接收”表示操作已提交，最终结果以应用状态为准。')+
       section('调度决策',outcome.directorDecision)+section('实际应用的产品变化',outcome.gameplayEvidence)+
       section('异常与错误',command.diagnostics?.errors || step.execution?.error || command.error)+
@@ -247,5 +268,5 @@
     if(projection.value?.truncated || projection.value?.pageInfo?.hasMore || projection.value?.pageInfo?.nextCursor)return '<p class="notice">当前只展示已读取的'+esc(noun)+'，结果尚未完整加载。</p>';
     return '';
   }
-  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,uniqueCalls,modelRequests,startSelection,clearLazyEvidence:()=>lazyValues.clear()});
+  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,uniqueCalls,modelRequests,startSelection,failureDetails,clearLazyEvidence:()=>lazyValues.clear()});
 })(typeof window !== 'undefined' ? window : globalThis);

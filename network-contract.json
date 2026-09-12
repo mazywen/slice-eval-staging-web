@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-11T15:48:16.000Z",
   "sourceBaseCommit": "a40caf5d5bffedb8ecee24b0a385f643a1ccdd19",
-  "routeRegistrySha256": "3c947202cf245a006a099448edde3c2a8bb938638e6d1fcc31a977c59257cf9f",
+  "routeRegistrySha256": "0941e43957432dd11f687700826c7e69111c42c692786ea1c54078f1977838f6",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -1528,10 +1528,6 @@
         "SLICE_CHARACTER_SLOT_NOT_SELECTABLE",
         "SLICE_CHARACTER_ALREADY_IN_RUN",
         "SLICE_CHARACTER_INELIGIBLE",
-        "SLICE_HIGHLIGHT_NOT_ELIGIBLE",
-        "SLICE_HIGHLIGHT_ALREADY_ENTERED",
-        "SLICE_HIGHLIGHT_PARTICIPANT_UNAVAILABLE",
-        "SLICE_HIGHLIGHT_RIGHTS_SAFETY_BLOCKED",
         "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
         "SLICE_ACTIVITY_NOT_ACTIVE",
         "SLICE_INTERNAL_UNAVAILABLE"
@@ -1607,34 +1603,6 @@
       "responseTransport": "json",
       "responseType": "MilestonePage",
       "routePath": "/v4/runs/{runId}/milestones",
-      "successStatus": 200
-    },
-    {
-      "authClass": "mobile_bearer",
-      "csrf": "none",
-      "errorSet": [
-        "SLICE_AUTH_REQUIRED",
-        "SLICE_SESSION_AUDIENCE_INVALID",
-        "SLICE_INPUT_INVALID",
-        "SLICE_RATE_LIMITED",
-        "SLICE_RUN_NOT_FOUND",
-        "SLICE_INTERNAL_UNAVAILABLE"
-      ],
-      "etagPolicy": "strong_resource_revision",
-      "expectedRevisionPolicy": "none",
-      "httpMethod": "get",
-      "idempotency": "none",
-      "idempotencyRetention": "not_applicable",
-      "operationId": "listRunHighlightScenes",
-      "pathParams": [
-        "runId"
-      ],
-      "queryType": "CursorQuery",
-      "requestHashPolicy": "none",
-      "requestType": null,
-      "responseTransport": "json",
-      "responseType": "HighlightStoryPage",
-      "routePath": "/v4/runs/{runId}/highlight-scenes",
       "successStatus": 200
     },
     {
@@ -4343,10 +4311,6 @@
         "SLICE_CHARACTER_SLOT_NOT_SELECTABLE",
         "SLICE_CHARACTER_ALREADY_IN_RUN",
         "SLICE_CHARACTER_INELIGIBLE",
-        "SLICE_HIGHLIGHT_NOT_ELIGIBLE",
-        "SLICE_HIGHLIGHT_ALREADY_ENTERED",
-        "SLICE_HIGHLIGHT_PARTICIPANT_UNAVAILABLE",
-        "SLICE_HIGHLIGHT_RIGHTS_SAFETY_BLOCKED",
         "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
         "SLICE_ACTIVITY_NOT_ACTIVE",
         "SLICE_INTERNAL_UNAVAILABLE"
@@ -4594,34 +4558,6 @@
       "responseTransport": "json",
       "responseType": "RunStats",
       "routePath": "/eval-api/v1/runs/{runId}/stats",
-      "successStatus": 200
-    },
-    {
-      "authClass": "compiler_runtime_eval_bearer",
-      "csrf": "none",
-      "errorSet": [
-        "SLICE_AUTH_REQUIRED",
-        "SLICE_SESSION_AUDIENCE_INVALID",
-        "SLICE_INPUT_INVALID",
-        "SLICE_RATE_LIMITED",
-        "SLICE_RUN_NOT_FOUND",
-        "SLICE_INTERNAL_UNAVAILABLE"
-      ],
-      "etagPolicy": "strong_resource_revision",
-      "expectedRevisionPolicy": "none",
-      "httpMethod": "get",
-      "idempotency": "none",
-      "idempotencyRetention": "not_applicable",
-      "operationId": "evalListRunHighlightScenes",
-      "pathParams": [
-        "runId"
-      ],
-      "queryType": "CursorQuery",
-      "requestHashPolicy": "none",
-      "requestType": null,
-      "responseTransport": "json",
-      "responseType": "HighlightStoryPage",
-      "routePath": "/eval-api/v1/runs/{runId}/highlight-scenes",
       "successStatus": 200
     },
     {
@@ -7140,10 +7076,6 @@
         "SLICE_CHARACTER_SLOT_NOT_SELECTABLE",
         "SLICE_CHARACTER_ALREADY_IN_RUN",
         "SLICE_CHARACTER_INELIGIBLE",
-        "SLICE_HIGHLIGHT_NOT_ELIGIBLE",
-        "SLICE_HIGHLIGHT_ALREADY_ENTERED",
-        "SLICE_HIGHLIGHT_PARTICIPANT_UNAVAILABLE",
-        "SLICE_HIGHLIGHT_RIGHTS_SAFETY_BLOCKED",
         "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
         "SLICE_ACTIVITY_NOT_ACTIVE",
         "SLICE_INTERNAL_UNAVAILABLE"
