@@ -28,6 +28,15 @@
       status: attempt.status, stateRevision: attempt.stateRevision, invitationRevision: attempt.invitationRevision,
       invitationStates: clone(attempt.invitationStates), invitationResolutionError: attempt.invitationResolutionError };
   }
+  function compactActivityInstance(activity) {
+    if (!activity?.activityId) return null;
+    return { activityId: activity.activityId, runId: activity.runId, source: clone(activity.source),
+      status: activity.status, sceneRevision: activity.sceneRevision, currentScene: clone(activity.currentScene),
+      participantStates: clone(activity.participantStates), invitationStates: clone(activity.invitationStates),
+      turnCount: activity.turnCount, openSceneThreads: clone(activity.openSceneThreads),
+      startedAtRunRevision: activity.startedAtRunRevision, lastOutcomeId: activity.lastOutcomeId,
+      openingResolutionError: activity.openingResolutionError };
+  }
   function controlRecord(result) {
     const pending = result.pendingCommand;
     const compactPayload = (value) => {
@@ -42,9 +51,9 @@
     const compactExecution = (execution) => execution ? {
       status: execution.status, payload: compactPayload(execution.payload),
       startedAt: execution.startedAt, completedAt: execution.completedAt, durationMs: execution.durationMs,
-      accepted: execution.accepted?.commandId ? { commandId: execution.accepted.commandId } : compactActivityAttempt(execution.accepted),
-      activityResponse: compactActivityAttempt(execution.activityResponse),
-      invitationResolution: clone(execution.invitationResolution),
+      accepted: execution.accepted?.commandId ? { commandId: execution.accepted.commandId } : compactActivityAttempt(execution.accepted) || compactActivityInstance(execution.accepted),
+      activityResponse: compactActivityAttempt(execution.activityResponse) || compactActivityInstance(execution.activityResponse),
+      invitationResolution: clone(execution.invitationResolution), openingResolution: clone(execution.openingResolution),
       command: execution.command ? { commandId: execution.command.commandId || execution.accepted?.commandId,
         status: execution.command.status, errorCode: execution.command.errorCode } : null,
       error: clone(execution.error), outcome: null, evidenceNeedsRefresh: true,
@@ -181,6 +190,7 @@
   function phaseText(result) {
     if (result.pendingCommand?.status === 'admission_unknown' || result.release?.status === 'admission_unknown') return '接收状态未知，原操作记录已保留；刷新只读取后台证据，不会重新提交';
     if (result.pendingCommand?.observationKind === 'activity_invitation') return '后台正在处理这次活动邀请，等待同一版本的邀请结果';
+    if (result.pendingCommand?.observationKind === 'activity_opening') return '后台正在生成活动开场，继续观察同一实例，完成后等待你输入行动';
     if (result.pendingCommand) return '后台仍在执行原操作，正在观察同一命令';
     if (result.turns?.at(-1)?.current?.status === 'awaiting_response') return '后台邀请决议已完成，等待玩家手动回应邀请';
     if (result.runtimePhase === 'opening_waiting_for_user') return '开局已建立，等待你确认开场帖子';
@@ -657,6 +667,61 @@
       await pause(Math.min([1000, 2000, 3000, 5000][Math.min(count++, 3)], Math.max(0, budgetMs - (performance.now() - started))));
     } while (performance.now() - started <= budgetMs);
   }
+  function observeActivityOpening(result, activity) {
+    const pending = result.pendingCommand, execution = currentExecution(result);
+    if (activity?.activityId !== pending.activityId || activity.runId !== pending.params.runId
+      || !Number.isInteger(activity.sceneRevision) || activity.sceneRevision < 1) {
+      throw fail('活动开场返回的归属或场景版本不完整，保留原操作继续读取', 'SLICE_EVAL_ACTIVITY_OPENING_EVIDENCE_INVALID');
+    }
+    if (activity.sceneRevision < pending.sceneRevision || activity.sceneRevision < pending.observedSceneRevision) {
+      throw fail('活动开场读取到了较旧的场景，继续观察原实例', 'SLICE_EVAL_ACTIVITY_OPENING_EVIDENCE_STALE');
+    }
+    execution.activityResponse = clone(activity);
+    execution.openingResolution = { activityId: pending.activityId, sceneRevision: pending.sceneRevision,
+      observedSceneRevision: activity.sceneRevision, activityStatus: activity.status, status: 'pending' };
+    pending.observedSceneRevision = activity.sceneRevision;
+    execution.error = null; result.error = null;
+    if (activity.status === 'opening') {
+      execution.status = 'processing'; result.turns[pending.turnIndex].status = 'processing';
+      pending.status = 'processing'; result.status = 'waiting_for_backend'; result.runtimePhase = 'waiting_for_backend';
+      return;
+    }
+    if (activity.status === 'active') {
+      execution.status = 'applied'; execution.openingResolution.status = 'active';
+    } else if (activity.status === 'failed') {
+      execution.status = 'rejected'; execution.openingResolution.status = 'failed';
+      const recordedError = typeof activity.openingResolutionError === 'string' && activity.openingResolutionError.trim() ? activity.openingResolutionError : null;
+      if (recordedError) execution.openingResolution.errorCode = recordedError;
+      execution.error = { code: recordedError || 'SLICE_EVAL_ACTIVITY_OPENING_FAILED',
+        message: recordedError ? '后台活动开场生成失败：' + recordedError : '后台活动开场生成失败；失败原因未采集，请查看已保留的活动记录' };
+    } else if (['settling', 'completed', 'interrupted', 'exited'].includes(activity.status)) {
+      execution.status = 'superseded'; execution.openingResolution.status = 'superseded';
+      execution.error = { code: 'SLICE_EVAL_ACTIVITY_OPENING_SUPERSEDED',
+        message: '活动已进入后续或结束状态，未观察到本次开场完成；原记录已保留' };
+    } else {
+      throw fail('后台活动开场状态尚未识别：' + String(activity.status), 'SLICE_EVAL_ACTIVITY_OPENING_STATUS_UNKNOWN');
+    }
+    execution.completedAt = now(); finishFence(result, execution);
+  }
+  async function observePendingActivityOpening(result, emit, { budgetMs = 0 } = {}) {
+    const started = performance.now(); let count = 0;
+    do {
+      const pending = result.pendingCommand, execution = currentExecution(result);
+      try {
+        const activity = await T.call('evalGetActivityInstance', { params: {
+          runId: pending.params.runId, activityId: pending.activityId,
+        } });
+        observeActivityOpening(result, activity);
+      } catch (error) {
+        execution.error = T.compactError(error);
+        result.status = 'waiting_for_backend'; result.runtimePhase = 'waiting_for_backend';
+        throw error;
+      }
+      if (!result.pendingCommand || performance.now() - started >= budgetMs) return;
+      emit({ kind: 'checkpoint', step: 'runtime', message: '后台正在生成活动开场，继续观察同一实例；不会再次进入或自动发送行动' });
+      await pause(Math.min([1000, 2000, 3000, 5000][Math.min(count++, 3)], Math.max(0, budgetMs - (performance.now() - started))));
+    } while (performance.now() - started <= budgetMs);
+  }
   async function admitPending(result, emit) {
     const pending = result.pendingCommand;
     const execution = currentExecution(result);
@@ -670,7 +735,16 @@
           pending.status = 'admission_unknown';
           throw fail('已接收操作但未返回命令 ID，请检查接口记录', 'SLICE_EVAL_COMMAND_ID_MISSING');
         }
-        if (activityAttemptOperation(pending.operationId)) {
+        if (pending.operationId === 'evalEnterActivity') {
+          if (!receipt?.activityId || receipt.runId !== pending.params.runId
+            || !Number.isInteger(receipt.sceneRevision) || receipt.sceneRevision < 1) {
+            throw fail('进入活动已返回，但缺少完整实例标识；保留原操作，不重复进入', 'SLICE_EVAL_ACTIVITY_OPENING_RECEIPT_INVALID');
+          }
+          pending.observationKind = 'activity_opening'; pending.activityId = receipt.activityId;
+          pending.sceneRevision = receipt.sceneRevision; pending.observedSceneRevision = receipt.sceneRevision;
+          observeActivityOpening(result, receipt);
+          if (result.pendingCommand) emit({ kind: 'checkpoint', step: 'runtime', message: '活动实例已建立，后台正在生成开场；不会自动发送活动行动' });
+        } else if (activityAttemptOperation(pending.operationId)) {
           if (!receipt?.activityAttemptId || receipt.runId !== pending.params.runId
             || !Number.isInteger(receipt.invitationRevision) || receipt.invitationRevision < 1
             || !Number.isInteger(receipt.stateRevision) || receipt.stateRevision < 1
@@ -694,8 +768,9 @@
       const notDispatched = ['SLICE_EVAL_OPERATION_UNAVAILABLE', 'SLICE_EVAL_INPUT_INVALID'].includes(error.code);
       const uncertain = !notDispatched && (error.status == null || error.status >= 500 || error.status === 408);
       if (uncertain) {
-        execution.status = pending.observationKind === 'activity_invitation' ? 'processing' : 'acceptance_unknown';
-        pending.status = pending.observationKind === 'activity_invitation' ? 'processing' : 'admission_unknown'; result.runtimePhase = 'waiting_for_backend'; result.status = 'waiting_for_backend';
+        const observingActivity = ['activity_invitation', 'activity_opening'].includes(pending.observationKind);
+        execution.status = observingActivity ? 'processing' : 'acceptance_unknown';
+        pending.status = observingActivity ? 'processing' : 'admission_unknown'; result.runtimePhase = 'waiting_for_backend'; result.status = 'waiting_for_backend';
       } else {
         execution.status = 'rejected'; execution.completedAt = now(); finishFence(result, execution);
       }
@@ -706,6 +781,7 @@
     let pending = result.pendingCommand;
     if (!pending) return;
     if (pending.observationKind === 'activity_invitation') return observePendingActivity(result, emit, { budgetMs });
+    if (pending.observationKind === 'activity_opening') return observePendingActivityOpening(result, emit, { budgetMs });
     if (!pending.commandId) {
       // No receipt lookup exists in the current Eval contract. A missing response
       // cannot be matched by body, time or a nearby Trace entry. Keep the exact

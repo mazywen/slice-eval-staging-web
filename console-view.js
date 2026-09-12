@@ -7,6 +7,11 @@
   const items = (value) => arr(value?.items || value?.value?.items || (Array.isArray(value) ? value : []));
   const number = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
   const duration = (value) => number(value) === null ? '未采集' : value < 1000 ? value + ' ms' : (value / 1000).toFixed(1) + ' s';
+  function chapterSettlementValue(projection) {
+    const chapter = projection?.status === 'succeeded' ? projection.value : null;
+    if (!chapter || !Object.hasOwn(chapter, 'lastSettlement')) return undefined;
+    return chapter.lastSettlement === null ? '尚未结算' : chapter.lastSettlement;
+  }
   const labels = Object.freeze({
     draft_saved:'草稿已保存', compiling:'编译中', compiled:'编译完成', compiled_waiting_for_user:'编译完成，等待选角',
     waiting_for_user:'等待你的操作', waiting_with_issues:'存在待诊断问题', waiting_for_backend:'后台处理中',
@@ -16,6 +21,7 @@
     acceptance_unknown:'接收状态未知', admission_unknown:'接收状态未知',
     awaiting_response:'等待你的回应', superseded:'已被后续修改替代', invitationResolution:'邀请处理过程',
     invitationResolutionError:'邀请处理错误', invitationRevision:'邀请版本', invitationStates:'各人物邀请状态',
+    activity_opening:'活动开场', openingResolution:'活动开场处理过程', activityId:'活动实例', sceneRevision:'场景版本', observedSceneRevision:'已读取场景版本', participantStates:'参与人物状态', currentScene:'实际场景',
     failed:'执行失败', rejected:'已拒绝', available:'可查看', skipped:'已跳过', cancelled:'已取消',
     completed:'已完成', active:'进行中', exited:'已退出', interrupted:'已中断', draft:'草稿',
     post:'发帖', comment:'评论帖子', reply:'回复评论', dm_message:'发送私聊', event_action:'回应事件',
@@ -47,6 +53,7 @@
     input:'输入', output:'输出', code:'代码', message:'说明', errors:'错误', evidence:'采集状态',
     command:'操作', diagnostics:'诊断', job:'后台任务', usage:'消耗', selected:'已选中',
     activeChapter:'当前章节', completedChapters:'已完成章节', queuedChapters:'后续章节',
+    queuedChapterCount:'待推进章节数', completedChapterCount:'已完成章节数', lastSettlement:'最近结算',
     requiredStateEffectCodes:'所需进展', evidenceStateEffectCodes:'已有进展', missingStateEffectCodes:'缺少进展',
     minimumMeaningfulOutcomes:'最少有效操作', meaningfulOutcomeCount:'有效操作次数',
     preferredSurface:'优先呈现位置', seedRef:'剧情种子', narrativeFunction:'叙事功能',
@@ -152,7 +159,7 @@
       if(commandId)seenCommands.add(commandId);
       const commandTrace=commandId?arr(trace(result).runtimeCommands).find((t)=>t.commandId===commandId):null;
       const invitationTrace=commandId?null:invitationTraceFor(result,row.execution);
-      list.push({...row,kind:'runtime',commandId,status:commandTrace?.diagnostics?.executionStatus || row.execution?.status || '未采集',trace:commandTrace || invitationTrace,observationKind:invitationTrace || row.execution?.invitationResolution?'activity_invitation':'runtime_command',outcome:{...row.execution?.outcome,...commandTrace?.outcome},durationMs:row.execution?.durationMs});
+      list.push({...row,kind:'runtime',commandId,status:commandTrace?.diagnostics?.executionStatus || row.execution?.status || '未采集',trace:commandTrace || invitationTrace,observationKind:row.execution?.openingResolution?'activity_opening':invitationTrace || row.execution?.invitationResolution?'activity_invitation':'runtime_command',outcome:{...row.execution?.outcome,...commandTrace?.outcome},durationMs:row.execution?.durationMs});
     }
     return list;
   }
@@ -211,7 +218,7 @@
   }
   function stepUsage(result,step) {
     const diagnostics=step?.trace?.diagnostics;
-    const callsRecorded=diagnostics?.evidence?.callAttribution!=='unavailable'
+    const callsRecorded=!['unavailable','not_collected','partial'].includes(diagnostics?.evidence?.callAttribution)
       && diagnostics?.evidence?.aiCalls!=='unavailable'
       && (diagnostics?.evidence?.aiCalls==='none_recorded' || diagnostics?.usage?.recordedCallCount===0);
     return usage(callsFor(result,step),{callsRecorded});
@@ -335,12 +342,14 @@
   function diagnostic(result, step, tab) {
     if (!step) return empty('选择一条操作记录','每次操作的输入、调度、模型调用和结果会在这里关联展示。');
     const outcome=step.outcome||{}, debug=outcome.debugEvidence, command=step.trace||{};
-    const invitation=step.observationKind==='activity_invitation';
+    const invitation=step.observationKind==='activity_invitation',activityOpening=step.observationKind==='activity_opening';
+    const openingResult=activityOpening?{observation:step.execution?.openingResolution,acceptedInstance:step.execution?.accepted,observedInstance:step.execution?.activityResponse}:null;
     const invitationResult=invitation?{observation:step.execution?.invitationResolution,attempt:step.execution?.activityResponse || step.execution?.accepted}:null;
     const inputNotice=step.execution?.payload?.bodyTruncated && !command.input?'<p class="notice">摘要，完整输入待读取。原正文 '+esc(step.execution.payload.originalBodyLength)+' 字；刷新后从后端 Trace 读取完整内容。</p>':'';
     if(tab==='input') return inputNotice+section('本次实际输入',command.input || step.input || step.execution?.payload)+section('操作提交结果',step.execution?.accepted || step.output);
     if(tab==='context' && invitation)return invitationModelEvidence(callsFor(result,step),true)+section('独立记忆召回证据',null,'邀请链未单独采集 Memory / Director 证据；上方展示实际送入邀请模型的上下文。');
     if(tab==='context') return section('召回与过滤证据',outcome.memoryEvidence)+section('实际记忆与人物视角',debug?.memory)+section('上下文组成与预算',debug?.engineering?.contextManifest)+raw('全部上下文过程证据',debug);
+    if(tab==='decisions' && activityOpening)return failureDetails(command.diagnostics,step.status)+section('活动实例与开场状态',openingResult)+section('异常与错误',step.execution?.error);
     if(tab==='decisions' && invitation)return failureDetails(command.diagnostics,step.status)+section('活动邀请判定与结果',invitationResult)+section('后台处理过程',command.diagnostics);
     if(tab==='decisions') return failureDetails(command.diagnostics,step.status)+section('用户意图与可执行结果',outcome.attemptInterpretation)+section('调度、人物与内容选择',outcome.directorDecision)+section('工程决策',debug?.engineering)+section('章节触发依据',outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive);
     if(tab==='model') {
@@ -351,6 +360,7 @@
       return (step.kind==='compile'?compileUsageHtml(result):usageHtml(stepUsage(result,step)))+'<section class="evidence-section"><h3>实际模型请求</h3>'+modelRequests(calls)+'</section>'+
         (invitation?invitationModelEvidence(calls):section('Runtime 组装上下文',debug?.modelInput)+section('模型原始候选',debug?.modelCandidate)+section('工程绑定后的结果',debug?.authorityBoundProposal))+section('模型调用明细',calls);
     }
+    if(tab==='applied' && activityOpening)return section('活动实例与开场状态',openingResult,'实例已创建与开场已完成分开记录；只有读取到 active 才表示本次进入操作已完成。')+section('操作后的读取结果',step.execution?.projections);
     if(tab==='applied' && invitation)return section('活动邀请处理与结果',invitationResult)+section('操作后的读取结果',step.execution?.projections);
     if(tab==='applied') return section('结果摘要',outcome.narrativeSummary)+section('最终应用到产品的变化',outcome.gameplayEvidence)+section('剧情与章节结果',{narrativeEffects:outcome.narrativeEffects,chapterState:outcome.chapterState,chapterSettlement:outcome.chapterSettlement})+section('操作后的读取结果',step.execution?.projections || step.output);
     if(tab==='cost') return (step.kind==='compile'?compileUsageHtml(result):usageHtml(stepUsage(result,step)))+section('独立阶段耗时',outcome.stageTimings || debug?.stageTimings,'只显示实际采集的耗时。并行步骤不相加冒充用户等待时间。')+section('后端用量汇总',command.diagnostics?.usage || command.usage)+section('全部调用账单',callsFor(result,step));
@@ -361,6 +371,7 @@
     if(step.kind==='workspace')return section('执行状态',{status:step.status,error:step.error})+arr(step.operations).map(operation=>section('实际输入 · '+operation.operationId,operation.input)+section('实际输出',operation.output)+section('操作结果',{status:operation.status,httpStatus:operation.httpStatus,durationMs:operation.durationMs,error:operation.error})).join('');
     if(step.kind==='publish')return '<p class="notice">'+esc('正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。')+'</p>'+section('测试发布状态与结果',step.output)+section('本次发布使用的剧本',step.input);
     if(step.kind==='source' || step.kind==='start') return section(step.kind==='source'?'输入内容':'所选人物',step.input)+section(step.kind==='source'?'已保存的剧本':'开局结果',step.output)+(step.kind==='source'?section('保存剧本与预制活动的真实操作',arr(result.operations).filter(operation=>/WorldDraft|ActivityDefinition/.test(operation.operationId))):'');
+    if(activityOpening)return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+section('活动实例与开场状态',openingResult)+failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+section('异常与错误',step.execution?.error)+raw('原始操作记录',step);
     if(invitation)return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+section('活动邀请处理与结果',invitationResult)+failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+section('后台邀请任务与证据覆盖',command.diagnostics || {status:step.status})+section('异常与错误',command.diagnostics?.errors || step.execution?.error)+raw('原始操作记录',step);
     return inputNotice+'<div class="diagnostic-title">'+badge(step.status)+'<span class="mono">'+esc(step.commandId || '')+'</span></div>'+
       (outcome.narrativeSummary?'<p class="result-summary">'+esc(outcome.narrativeSummary)+'</p>':'')+
@@ -376,5 +387,5 @@
     if(projection.value?.truncated || projection.value?.pageInfo?.hasMore || projection.value?.pageInfo?.nextCursor)return '<p class="notice">当前只展示已读取的'+esc(noun)+'，结果尚未完整加载。</p>';
     return '';
   }
-  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,failureDetails,invitationTraceFor,compileTrackEvidence,clearLazyEvidence:()=>lazyValues.clear()});
+  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,failureDetails,chapterSettlementValue,invitationTraceFor,compileTrackEvidence,clearLazyEvidence:()=>lazyValues.clear()});
 })(typeof window !== 'undefined' ? window : globalThis);
