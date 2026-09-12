@@ -123,10 +123,11 @@
     return V.openingDraftValue(state.result).trim();
   }
   function renderOpening() {
-    const opening=V.openingSnapshot(state.result),pending=openingPending(),failed=opening.generationStatus==='failed';
-    const message=pending?'正在根据你的身份和处境准备开场帖子。你可以先了解这个世界，也可以自己写一条。':failed?'开场帖子暂时没有生成成功。你可以根据下面的背景和处境，自己写一条开始。':'看看你的处境，修改下面的帖子，准备好后再发布。';
+    const opening=V.openingSnapshot(state.result),pending=opening.generationStatus==='pending',failed=opening.generationStatus==='failed';
+    const roleReady=!pending&&!failed,playerName=V.preview(state.result).identitySnapshot?.displayName || '所选人物';
+    const message=pending?'正在根据你的身份和处境准备开场帖子。你可以先了解这个世界，也可以自己写一条。':failed?'开场帖子暂时没有生成成功。你可以根据公开背景，以所选人物的身份自己写一条开始。':'看看你的处境，修改下面的帖子，准备好后再发布。';
     return '<section class="panel" style="margin-bottom:20px"><div class="section-heading"><h3>你的开场</h3>'+V.badge(pending?'processing':failed?'failed':'waiting_for_user')+'</div><p class="muted" role="status">'+message+'</p>'+
-      V.section('世界背景',opening.background)+V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.openingHook)+
+      V.section('世界背景',opening.background)+(roleReady?V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.openingHook):V.section('你选择的身份',playerName))+
       '<label>开场帖子<textarea id="opening-body" rows="5" maxlength="4000" placeholder="以你的身份，说说此刻想说的话。"'+disable(locked())+'>'+e(V.openingDraftValue(state.result))+'</textarea></label>'+
       '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !openingBody())+'>确认并发布开场</button></section>';
   }
