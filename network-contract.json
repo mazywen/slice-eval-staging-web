@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-11T15:48:16.000Z",
   "sourceBaseCommit": "a40caf5d5bffedb8ecee24b0a385f643a1ccdd19",
-  "routeRegistrySha256": "0941e43957432dd11f687700826c7e69111c42c692786ea1c54078f1977838f6",
+  "routeRegistrySha256": "5ca89b7a9d32f90e6c34fb709c0478f84369c09bb2a1efa15e9d989393e1f66f",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -1659,6 +1659,122 @@
       "responseTransport": "json",
       "responseType": "RunStats",
       "routePath": "/v4/runs/{runId}/stats",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_MEDIA_REJECTED",
+        "SLICE_MEDIA_GENERATION_UNAVAILABLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "createMediaImageGeneration",
+      "pathParams": [],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "MediaImageGenerationRequest",
+      "responseTransport": "json",
+      "responseType": "MediaImageGeneration",
+      "routePath": "/v4/media/generations",
+      "successStatus": 202
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_MEDIA_REJECTED",
+        "SLICE_MEDIA_GENERATION_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getMediaImageGeneration",
+      "pathParams": [
+        "generationId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "MediaImageGeneration",
+      "routePath": "/v4/media/generations/{generationId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "creator_studio_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_MEDIA_GENERATION_UNAVAILABLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "studioCreateMediaImageGeneration",
+      "pathParams": [],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "MediaImageGenerationRequest",
+      "responseTransport": "json",
+      "responseType": "MediaImageGeneration",
+      "routePath": "/studio-api/v4/creator/media-generations",
+      "successStatus": 202
+    },
+    {
+      "authClass": "creator_studio_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_MEDIA_GENERATION_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "studioGetMediaImageGeneration",
+      "pathParams": [
+        "generationId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "MediaImageGeneration",
+      "routePath": "/studio-api/v4/creator/media-generations/{generationId}",
       "successStatus": 200
     },
     {

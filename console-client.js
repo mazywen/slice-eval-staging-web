@@ -22,6 +22,12 @@
     const workspaceId = B.workspaceId();
     return workspaceId ? PREFIX + encodeURIComponent(workspaceId) + ':' : null;
   }
+  function compactActivityAttempt(attempt) {
+    if (!attempt?.activityAttemptId) return null;
+    return { activityAttemptId: attempt.activityAttemptId, runId: attempt.runId,
+      status: attempt.status, stateRevision: attempt.stateRevision, invitationRevision: attempt.invitationRevision,
+      invitationStates: clone(attempt.invitationStates), invitationResolutionError: attempt.invitationResolutionError };
+  }
   function controlRecord(result) {
     const pending = result.pendingCommand;
     const compactPayload = (value) => {
@@ -36,7 +42,9 @@
     const compactExecution = (execution) => execution ? {
       status: execution.status, payload: compactPayload(execution.payload),
       startedAt: execution.startedAt, completedAt: execution.completedAt, durationMs: execution.durationMs,
-      accepted: execution.accepted?.commandId ? { commandId: execution.accepted.commandId } : null,
+      accepted: execution.accepted?.commandId ? { commandId: execution.accepted.commandId } : compactActivityAttempt(execution.accepted),
+      activityResponse: compactActivityAttempt(execution.activityResponse),
+      invitationResolution: clone(execution.invitationResolution),
       command: execution.command ? { commandId: execution.command.commandId || execution.accepted?.commandId,
         status: execution.command.status, errorCode: execution.command.errorCode } : null,
       error: clone(execution.error), outcome: null, evidenceNeedsRefresh: true,
@@ -61,7 +69,7 @@
       opening: { current: compactExecution(result.opening?.current) },
       pendingCommand: clone(pending),
       pendingStart: clone(result.pendingStart), release: clone(result.release),
-      turns: (result.turns || []).map((turn) => ({ kind: turn.kind || turn.current?.payload?.type,
+      turns: (result.turns || []).map((turn) => ({ kind: turn.kind || turn.current?.payload?.type, status: turn.status,
         current: compactExecution(turn.current) })), 
       initialProjections: { current: null }, finalProjections: { current: null }, finalProjectionIssues: { current: [] },
       trace: null, traceError: null, operations: [], error: clone(result.error), evidenceNeedsRefresh: true,
@@ -171,7 +179,10 @@
     });
   }
   function phaseText(result) {
+    if (result.pendingCommand?.status === 'admission_unknown' || result.release?.status === 'admission_unknown') return '接收状态未知，原操作记录已保留；刷新只读取后台证据，不会重新提交';
+    if (result.pendingCommand?.observationKind === 'activity_invitation') return '后台正在处理这次活动邀请，等待同一版本的邀请结果';
     if (result.pendingCommand) return '后台仍在执行原操作，正在观察同一命令';
+    if (result.turns?.at(-1)?.current?.status === 'awaiting_response') return '后台邀请决议已完成，等待玩家手动回应邀请';
     if (result.runtimePhase === 'opening_waiting_for_user') return '开局已建立，等待你确认开场帖子';
     if (result.runtimePhase === 'compiled_waiting_for_user') return '编译完成，等待你选角并开始';
     if (result.runtimePhase === 'draft') return '剧本已保存，等待你开始编译';
@@ -212,22 +223,35 @@
   }
 
   function activityDefinitionRequest(definition, worldDraftId) {
+    const structured = (key, array) => {
+      let value = definition[key];
+      if (value == null || typeof value === 'string' && !value.trim()) return undefined;
+      if (typeof value === 'string') {
+        try { value = JSON.parse(value); } catch { throw fail('预制活动的 ' + key + ' 不是有效 JSON，请检查后保存'); }
+      }
+      if (!value || (array ? !Array.isArray(value) : typeof value !== 'object' || Array.isArray(value))) {
+        throw fail('预制活动的 ' + key + ' 必须是 JSON ' + (array ? '数组' : '对象'));
+      }
+      return clone(value);
+    };
     const result = {
       title: String(definition.title || '').trim(),
+      ...(Object.hasOwn(definition, 'when') ? { when: String(definition.when || '').trim() || null } : {}),
+      ...(Object.hasOwn(definition, 'purpose') ? { purpose: String(definition.purpose || '').trim() || null } : {}),
       playerSafeTeaser: String(definition.playerSafeTeaser || '').trim() || null,
       sceneDescription: String(definition.sceneDescription || '').trim(),
       locationLabel: String(definition.locationLabel || '').trim(),
       backgroundAssetId: null,
       requiredParticipantActorRefs: [...new Set(definition.requiredParticipantActorRefs || [])],
       optionalParticipantActorRefs: [...new Set(definition.optionalParticipantActorRefs || [])],
-      trigger: clone(definition.trigger || { schemaVersion: 'slice.creator-activity-trigger.v1', mode: 'all', conditions: [], anyGroups: [] }),
+      trigger: structured('trigger', false) || { schemaVersion: 'slice.creator-activity-trigger.v1', mode: 'all', conditions: [], anyGroups: [] },
       actorKnowledgeSeeds: clone(definition.actorKnowledgeSeeds || []),
-      specialRules: clone(definition.specialRules || []),
-      outcomeSpace: clone(definition.outcomeSpace || {
+      specialRules: structured('specialRules', true) || [],
+      outcomeSpace: structured('outcomeSpace', false) || {
         resolutionMode: 'runtime_resolved', candidateResolutionPolicy: 'runtime_selects_zero_or_more',
         candidates: [], allowedOutcomeBands: ['ordinary'], relationshipAxesMayChange: [],
         worldStatsMayChange: [], endingEvidenceCodes: [], humanActorOutcomePolicy: 'attempt_resolve_only',
-      }),
+      },
       sourceRefs: clone(definition.sourceRefs?.length ? definition.sourceRefs : ['world-draft:' + worldDraftId]),
     };
     const participantRefs = [...result.requiredParticipantActorRefs, ...result.optionalParticipantActorRefs];
@@ -300,6 +324,7 @@
     });
   }
   async function saveDraft(input, onProgress = () => {}) {
+    for (const definition of input.activityDefinitions || []) activityDefinitionRequest(definition, input.worldDraftId);
     const unchangedSource = input.worldDraftRevisionId && input.sourceFingerprint
       && input.sourceFingerprint === sourceFingerprint(input);
     if (unchangedSource) {
@@ -551,11 +576,86 @@
     return Number.isInteger(index) ? result.turns[index]?.current : null;
   }
   function finishFence(result, execution) {
+    const turn = result.turns[result.pendingCommand?.turnIndex];
+    if (turn) turn.status = execution.status;
     if (execution.payload.type === 'confirm_opening_post') result.opening.current = clone(execution);
     result.pendingCommand = null;
     result.runtimePhase = execution.payload.type === 'confirm_opening_post' && execution.status !== 'applied'
       ? 'opening_waiting_for_user' : 'waiting_for_user';
-    result.status = execution.status === 'applied' && !execution.error ? 'waiting_for_user' : 'waiting_with_issues';
+    result.status = ['applied', 'awaiting_response'].includes(execution.status) && !execution.error ? 'waiting_for_user' : 'waiting_with_issues';
+  }
+
+  function activityAttemptOperation(operationId) {
+    return ['evalCreateActivityAttempt', 'evalUpdateActivityAttempt', 'evalRespondActivityInvite'].includes(operationId);
+  }
+  function observeActivityAttempt(result, attempt) {
+    const pending = result.pendingCommand, execution = currentExecution(result);
+    if (attempt?.activityAttemptId !== pending.activityAttemptId || attempt.runId !== pending.params.runId
+      || !Number.isInteger(attempt.invitationRevision) || !Number.isInteger(attempt.stateRevision)) {
+      throw fail('活动邀请返回的归属或版本不完整，保留原操作等待重新读取', 'SLICE_EVAL_ACTIVITY_EVIDENCE_INVALID');
+    }
+    if (attempt.invitationRevision < pending.invitationRevision || attempt.stateRevision < pending.observedStateRevision) {
+      throw fail('活动邀请读取到了较旧的状态，继续保留原操作', 'SLICE_EVAL_ACTIVITY_EVIDENCE_STALE');
+    }
+    execution.activityResponse = clone(attempt);
+    execution.invitationResolution = {
+      activityAttemptId: pending.activityAttemptId, invitationRevision: pending.invitationRevision,
+      observedInvitationRevision: attempt.invitationRevision, observedStateRevision: attempt.stateRevision,
+      status: 'pending',
+    };
+    pending.observedStateRevision = attempt.stateRevision;
+    execution.error = null; result.error = null;
+    if (attempt.invitationRevision > pending.invitationRevision) {
+      execution.status = 'superseded'; execution.invitationResolution.status = 'superseded';
+      execution.error = { code: 'SLICE_EVAL_ACTIVITY_INVITATION_SUPERSEDED',
+        message: '这次邀请已被更新的邀请版本替代，请查看最新活动状态' };
+    } else if (attempt.status === 'invitation_failed') {
+      execution.status = 'rejected'; execution.invitationResolution.status = 'failed';
+      execution.error = { code: attempt.invitationResolutionError || 'SLICE_ACTIVITY_INVITATION_FAILED',
+        message: '后台未能完成这次活动邀请，请查看失败记录' };
+    } else if (['pending_invites', 'inviting', 'ready'].includes(attempt.status)) {
+      if (!Array.isArray(attempt.invitationStates) || attempt.invitationStates.some((row) => row.invitationRevision !== attempt.invitationRevision
+        || (!['UNRESOLVED', 'PENDING'].includes(row.status) && row.decidedRevision !== row.invitationRevision))) {
+        throw fail('活动邀请缺少同一版本的完整决议记录', 'SLICE_EVAL_ACTIVITY_EVIDENCE_INVALID');
+      }
+      const unresolved = attempt.invitationStates.filter((row) => ['UNRESOLVED', 'PENDING'].includes(row.status));
+      if (unresolved.some((row) => row.controllerType !== 'human') || (attempt.status === 'pending_invites' && unresolved.length === 0)) {
+        execution.status = 'processing'; result.turns[pending.turnIndex].status = 'processing';
+        pending.status = 'processing';
+        result.status = 'waiting_for_backend'; result.runtimePhase = 'waiting_for_backend';
+        return;
+      }
+      // Human responses are a separate explicit user operation. A background
+      // fence must not prevent the user from answering their own invitation.
+      execution.status = unresolved.length ? 'awaiting_response' : 'applied';
+      execution.invitationResolution.status = unresolved.length ? 'waiting_for_user' : 'resolved';
+    } else if (['entered', 'cancelled'].includes(attempt.status)) {
+      execution.status = 'superseded'; execution.invitationResolution.status = 'superseded';
+      execution.error = { code: 'SLICE_EVAL_ACTIVITY_INVITATION_CLOSED',
+        message: '活动邀请已由其他操作结束，请查看当前活动状态' };
+    } else {
+      throw fail('后台活动邀请状态尚未识别：' + String(attempt.status), 'SLICE_EVAL_ACTIVITY_STATUS_UNKNOWN');
+    }
+    execution.completedAt = now(); finishFence(result, execution);
+  }
+  async function observePendingActivity(result, emit, { budgetMs = 0 } = {}) {
+    const started = performance.now(); let count = 0;
+    do {
+      const pending = result.pendingCommand, execution = currentExecution(result);
+      try {
+        const page = await T.call('evalListActivityAttempts', { params: { runId: pending.params.runId } });
+        const attempt = items(page).find((row) => row.activityAttemptId === pending.activityAttemptId);
+        if (!attempt) throw fail('尚未读取到原活动邀请，请刷新继续观察；不会重复提交', 'SLICE_EVAL_ACTIVITY_ATTEMPT_NOT_OBSERVED');
+        observeActivityAttempt(result, attempt);
+      } catch (error) {
+        execution.error = T.compactError(error);
+        result.status = 'waiting_for_backend'; result.runtimePhase = 'waiting_for_backend';
+        throw error;
+      }
+      if (!result.pendingCommand || performance.now() - started >= budgetMs) return;
+      emit({ kind: 'checkpoint', step: 'runtime', message: '后台正在处理同一版本的活动邀请，不自动进入活动' });
+      await pause(Math.min([1000, 2000, 3000, 5000][Math.min(count++, 3)], Math.max(0, budgetMs - (performance.now() - started))));
+    } while (performance.now() - started <= budgetMs);
   }
   async function admitPending(result, emit) {
     const pending = result.pendingCommand;
@@ -570,8 +670,21 @@
           pending.status = 'admission_unknown';
           throw fail('已接收操作但未返回命令 ID，请检查接口记录', 'SLICE_EVAL_COMMAND_ID_MISSING');
         }
-        execution.status = 'applied'; execution.activityResponse = clone(receipt);
-        execution.completedAt = now(); finishFence(result, execution);
+        if (activityAttemptOperation(pending.operationId)) {
+          if (!receipt?.activityAttemptId || receipt.runId !== pending.params.runId
+            || !Number.isInteger(receipt.invitationRevision) || receipt.invitationRevision < 1
+            || !Number.isInteger(receipt.stateRevision) || receipt.stateRevision < 1
+            || (pending.params.activityAttemptId && receipt.activityAttemptId !== pending.params.activityAttemptId)) {
+            throw fail('已接收活动操作但未返回完整邀请标识，请恢复同一请求', 'SLICE_EVAL_ACTIVITY_RECEIPT_INVALID');
+          }
+          pending.observationKind = 'activity_invitation'; pending.activityAttemptId = receipt.activityAttemptId;
+          pending.invitationRevision = receipt.invitationRevision; pending.observedStateRevision = receipt.stateRevision;
+          observeActivityAttempt(result, receipt);
+          if (result.pendingCommand) emit({ kind: 'checkpoint', step: 'runtime', message: '活动邀请已接收，后台正在处理；不自动进入活动' });
+        } else {
+          execution.status = 'applied'; execution.activityResponse = clone(receipt);
+          execution.completedAt = now(); finishFence(result, execution);
+        }
       } else {
         pending.commandId = receipt.commandId; pending.status = 'processing'; execution.status = 'processing';
         emit({ kind: 'checkpoint', step: 'runtime', message: '操作已接收；后台处理同一命令，不自动提交下一步' });
@@ -581,7 +694,8 @@
       const notDispatched = ['SLICE_EVAL_OPERATION_UNAVAILABLE', 'SLICE_EVAL_INPUT_INVALID'].includes(error.code);
       const uncertain = !notDispatched && (error.status == null || error.status >= 500 || error.status === 408);
       if (uncertain) {
-        pending.status = 'admission_unknown'; result.runtimePhase = 'waiting_for_backend'; result.status = 'waiting_for_backend';
+        execution.status = pending.observationKind === 'activity_invitation' ? 'processing' : 'acceptance_unknown';
+        pending.status = pending.observationKind === 'activity_invitation' ? 'processing' : 'admission_unknown'; result.runtimePhase = 'waiting_for_backend'; result.status = 'waiting_for_backend';
       } else {
         execution.status = 'rejected'; execution.completedAt = now(); finishFence(result, execution);
       }
@@ -591,10 +705,16 @@
   async function observePending(result, emit, { budgetMs = 0 } = {}) {
     let pending = result.pendingCommand;
     if (!pending) return;
+    if (pending.observationKind === 'activity_invitation') return observePendingActivity(result, emit, { budgetMs });
     if (!pending.commandId) {
-      await admitPending(result, emit); // Same persisted key and body; never a new action.
-      pending = result.pendingCommand;
-      if (!pending) return;
+      // No receipt lookup exists in the current Eval contract. A missing response
+      // cannot be matched by body, time or a nearby Trace entry. Keep the exact
+      // fence and evidence, and never turn a page refresh into another POST.
+      pending.status = 'admission_unknown';
+      const execution = currentExecution(result);
+      if (execution) execution.status = 'acceptance_unknown';
+      result.status = 'waiting_for_backend'; result.runtimePhase = 'waiting_for_backend';
+      return;
     }
     const started = performance.now();
     let count = 0;
@@ -719,12 +839,20 @@
 
   async function releaseMutation(result, operationId, params, body) {
     const release = result.release;
-    if (release.pendingMutation && release.pendingMutation.operationId !== operationId) throw fail('请先恢复上一项发布操作');
-    release.pendingMutation ||= { operationId, params, body, key: 'console-release-' + uid() };
+    if (release.pendingMutation) throw fail('发布操作接收状态未知，原记录已保留；不会自动重复提交', 'SLICE_EVAL_WRITE_PENDING');
+    release.pendingMutation = { operationId, params, body, key: 'console-release-' + uid() };
     saveSession(result);
-    const receipt = await T.call(operationId, { ...release.pendingMutation });
-    release.pendingMutation = null;
-    return receipt;
+    try {
+      const receipt = await T.call(operationId, { ...release.pendingMutation });
+      release.pendingMutation = null;
+      return receipt;
+    } catch (error) {
+      const notDispatched = ['SLICE_EVAL_OPERATION_UNAVAILABLE', 'SLICE_EVAL_INPUT_INVALID'].includes(error.code);
+      const uncertain = !notDispatched && (error.status == null || error.status >= 500 || error.status === 408);
+      if (uncertain) release.status = 'admission_unknown';
+      else { release.pendingMutation = null; release.status = 'blocked'; }
+      throw error;
+    }
   }
   async function publish(previous, onProgress = () => {}) {
     const result = clone(previous);
@@ -741,6 +869,13 @@
         costNotice: '正式发布另行执行 Creator 编译；本次调用不包含在实验双轨费用中，当前发布计量未采集。',
       };
       const release = result.release;
+      if (release.pendingMutation) {
+        // A response may have been lost at any publication stage. Keep the
+        // original receipt boundary; refreshing cannot safely issue it again.
+        release.status = 'admission_unknown'; result.status = 'waiting_for_backend';
+        emit({ kind: 'checkpoint', step: 'publish', message: phaseText(result) });
+        return;
+      }
       if (!release.compileReport?.compileJobId) {
         emit({ kind: 'checkpoint', step: 'publish', message: '开始正式测试发布；将额外执行 Creator 编译并保留真实结果' });
         release.compileReport = await releaseMutation(result, 'evalCompileWorldDraftRevision',
@@ -942,7 +1077,8 @@
       personality: String(input.personality || input.identity || '').trim(),
       speakingStyle: String(input.speakingStyle || '').trim(),
       backgroundAndKnowledge: String(input.background || input.backgroundAndKnowledge || '').trim(),
-      avatar: null, safetyBoundaries: [], supportedLocales: ['zh-CN'], playable: true, media: [],
+      avatar: null, safetyBoundaries: [], supportedLocales: ['zh-CN'],
+      playable: input.playable !== false && input.playable !== 'false', media: [],
     };
     const captured = await captureWorkspaceMutation('创建人物：' + displayName, () => T.call('evalCreateCharacter', {
       key: 'console-character-' + uid(),

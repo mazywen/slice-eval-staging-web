@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#f6f7f8" />
+  <meta name="theme-color" content="#fafafa" />
   <title>Slice · 产品观察台</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-  <link rel="stylesheet" href="./console.css?v=20260912-console-4" />
+  <link rel="stylesheet" href="./console.css?v=20260912-console-final" />
 </head>
 <body>
+  <a class="skip-link" href="#console-main">跳到主要内容</a>
   <div class="console-shell">
     <aside class="sidebar">
-      <a class="brand" href="./" aria-label="Slice 产品观察台"><span class="brand-mark">S</span><span><strong>Slice</strong><small>产品观察台</small></span></a>
+      <a class="brand" href="./" aria-label="Slice 产品观察台"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="M10 5h19a6 6 0 0 1 6 6v18a6 6 0 0 1-6 6H11a6 6 0 0 1-6-6V10a5 5 0 0 1 5-5Z"/><path class="slice-face" d="M14 16v2m12-2v2m-12 7q6 5 12 0"/><path d="m29 5 6 6h-6Z"/></svg></span><span><strong>Slice</strong><small>产品观察台</small></span></a>
       <span class="nav-label">工作空间</span>
       <nav id="console-nav" aria-label="控制台导航">
         <button class="nav-item active" type="button" data-page="scripts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5zM15 3v5h4M8 12h8M8 16h6"/></svg>剧本与创作</button>
@@ -52,6 +53,7 @@
       <label>性格<input name="personality" maxlength="160" required /></label>
       <label>说话风格<input name="speakingStyle" maxlength="1000" required /></label>
       <label>背景与知识<textarea name="background" rows="4" maxlength="4000" required></textarea></label>
+      <label>玩家能否扮演<select name="playable" required><option value="true">可以扮演</option><option value="false">仅作为互动人物</option></select></label>
       <p id="character-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button class="button" type="button" data-close-dialog>取消</button><button class="button primary" type="submit">保存人物</button></div>
     </form>
@@ -61,10 +63,10 @@
   </dialog>
   <dialog id="sessions-dialog" class="dialog wide"><div class="dialog-heading"><h2>会话记录</h2><button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button></div><p class="muted">恢复本标签页保存的会话后，重新读取后端状态。</p><div id="sessions-list"></div></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./auth-config.js?v=20260912-console-1"></script>
-  <script src="./eval-backend.js?v=20260912-console-4"></script>
-  <script src="./console-client.js?v=20260912-console-4"></script>
-  <script src="./console-view.js?v=20260912-console-4"></script>
-  <script src="./console-app.js?v=20260912-console-3"></script>
+  <script src="./auth-config.js?v=20260912-console-final"></script>
+  <script src="./eval-backend.js?v=20260912-console-final"></script>
+  <script src="./console-client.js?v=20260912-console-final"></script>
+  <script src="./console-view.js?v=20260912-console-final"></script>
+  <script src="./console-app.js?v=20260912-console-final"></script>
 </body>
 </html>

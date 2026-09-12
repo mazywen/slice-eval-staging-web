@@ -12,6 +12,10 @@
     waiting_for_user:'等待你的操作', waiting_with_issues:'存在待诊断问题', waiting_for_backend:'后台处理中',
     waiting_for_opening:'等待确认开场', starting_runtime:'准备开局', running:'处理中', processing:'处理中',
     succeeded:'已完成', applied:'已应用', accepted:'已接收', pending:'待处理', queued:'排队中',
+    pending_invites:'等待邀请处理', invitation_failed:'邀请处理失败', inviting:'邀请中', ready:'可以进入', entered:'已进入',
+    acceptance_unknown:'接收状态未知', admission_unknown:'接收状态未知',
+    awaiting_response:'等待你的回应', superseded:'已被后续修改替代', invitationResolution:'邀请处理过程',
+    invitationResolutionError:'邀请处理错误', invitationRevision:'邀请版本', invitationStates:'各人物邀请状态',
     failed:'执行失败', rejected:'已拒绝', available:'可查看', skipped:'已跳过', cancelled:'已取消',
     completed:'已完成', active:'进行中', exited:'已退出', interrupted:'已中断', draft:'草稿',
     post:'发帖', comment:'评论帖子', reply:'回复评论', dm_message:'发送私聊', event_action:'回应事件',
@@ -53,7 +57,7 @@
   });
   const label = (value) => labels[value] || value || '未采集';
   const badge = (value) => '<span class="badge ' + (/fail|reject|error/.test(value || '') ? 'danger' : /process|running|queued|pending|backend|compiling/.test(value || '') ? 'working' : /applied|succeeded|completed|compiled|available/.test(value || '') ? 'success' : '') + '">' + esc(label(value)) + '</span>';
-  const empty = (title, text = '') => '<div class="empty-state"><span class="empty-glyph" aria-hidden="true">◇</span><strong>' + esc(title) + '</strong>' + (text ? '<p>' + esc(text) + '</p>' : '') + '</div>';
+  const empty = (title, text = '') => '<div class="empty-state"><span class="empty-glyph" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M12 8h20l6 6v24a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3V11a3 3 0 0 1 2-3Z"/><path d="M31 8v8h7M18 23v2m12-2v2m-12 7q6 5 12 0M5 13l-2-1m39 8 3-1"/></svg></span><strong>' + esc(title) + '</strong>' + (text ? '<p>' + esc(text) + '</p>' : '') + '</div>';
   const avatar = (name, large) => '<span class="avatar' + (large ? ' large' : '') + '" aria-hidden="true">' + esc(Array.from(name || 'S').slice(0,1).join('')) + '</span>';
   const lazyValues = new Map();
   let lazySequence = 0;
@@ -102,9 +106,9 @@
     const selectedPlayer=players.some(row=>row.characterVersionId===playerId)?playerId:null;
     const followers=characters.filter(row=>row.characterVersionId!==selectedPlayer);
     const selectedFollower=followers.some(row=>row.characterVersionId===followerId)?followerId:null;
-    return {players,followers,playerId:selectedPlayer,followerId:selectedFollower,defaultPlayerSelected,playerChoiceMade:defaultPlayerSelected || Boolean(selectedPlayer) || !bound.size,requiresPlayer:bound.size>0,requiresFollower:followers.length>0,
+    return {players,followers,playerId:selectedPlayer,followerId:selectedFollower,defaultPlayerSelected,playerChoiceMade:defaultPlayerSelected || Boolean(selectedPlayer),requiresPlayer:true,requiresFollower:followers.length>0,
       missingInteractionCharacter:bound.size>0 && Boolean(selectedPlayer) && !followers.length,
-      ready:!bound.size || ((defaultPlayerSelected || Boolean(selectedPlayer)) && followers.length>0 && Boolean(selectedFollower))};
+      ready:(defaultPlayerSelected || Boolean(selectedPlayer)) && (!bound.size || (followers.length>0 && Boolean(selectedFollower)))};
   }
   function trace(result) { return arr(result?.trace?.tracks).find((row) => row.trackCode === 'current') || {}; }
   function preview(result) { return result?.previewRuns?.current || {}; }
@@ -119,6 +123,14 @@
     const input = arr(result?.input?.characters).find((a) => a.characterVersionId === id);
     const player = arr(preview(result).actorStates).find((a) => a.kind === 'player' && a.actorId === id);
     return input?.displayName || (player && preview(result).identitySnapshot?.displayName) || id || '未回传姓名';
+  }
+  function invitationTraceFor(result, execution) {
+    const identity=execution?.invitationResolution || execution?.accepted;
+    const runId=preview(result).runId,activityAttemptId=identity?.activityAttemptId;
+    const invitationRevision=Number(identity?.invitationRevision);
+    if(!runId || !activityAttemptId || !Number.isInteger(invitationRevision) || invitationRevision<1)return null;
+    const matches=arr(trace(result).activityInvitations).filter(row=>row.runId===runId && row.activityAttemptId===activityAttemptId && row.invitationRevision===invitationRevision);
+    return matches.length===1?matches[0]:null;
   }
   function steps(result) {
     if (!result) return [];
@@ -138,8 +150,9 @@
       const commandId=row.execution?.command?.commandId || row.execution?.accepted?.commandId;
       if(commandId && seenCommands.has(commandId))continue;
       if(commandId)seenCommands.add(commandId);
-      const commandTrace=arr(trace(result).runtimeCommands).find((t)=>t.commandId===commandId);
-      list.push({...row,kind:'runtime',commandId,status:commandTrace?.diagnostics?.executionStatus || row.execution?.status || '未采集',trace:commandTrace,outcome:{...row.execution?.outcome,...commandTrace?.outcome},durationMs:row.execution?.durationMs});
+      const commandTrace=commandId?arr(trace(result).runtimeCommands).find((t)=>t.commandId===commandId):null;
+      const invitationTrace=commandId?null:invitationTraceFor(result,row.execution);
+      list.push({...row,kind:'runtime',commandId,status:commandTrace?.diagnostics?.executionStatus || row.execution?.status || '未采集',trace:commandTrace || invitationTrace,observationKind:invitationTrace || row.execution?.invitationResolution?'activity_invitation':'runtime_command',outcome:{...row.execution?.outcome,...commandTrace?.outcome},durationMs:row.execution?.durationMs});
     }
     return list;
   }
@@ -147,19 +160,44 @@
     const seen=new Set();
     return arr(calls).filter(row=>{if(!row.callRef)return true;if(seen.has(row.callRef))return false;seen.add(row.callRef);return true;});
   }
+  function compilerCallsForTrack(track) {
+    const runtimeRefs=new Set([...arr(track.runtimeCommands),...arr(track.activityInvitations)]
+      .flatMap(entry=>arr(entry.aiCalls)).map(call=>call.callRef).filter(Boolean));
+    return uniqueCalls(arr(track.compilerCalls || track.compileCalls || track.aiCalls).filter(call=>
+      !runtimeRefs.has(call.callRef) && (call.ownerDomain==='creator_platform' || Boolean(track.compilerCalls || track.compileCalls))));
+  }
   function compileCalls(result) {
-    return uniqueCalls(arr(result?.trace?.tracks).flatMap(track=>{
-      const runtimeRefs=new Set(arr(track.runtimeCommands).flatMap(command=>arr(command.aiCalls)).map(call=>call.callRef).filter(Boolean));
-      return arr(track.compilerCalls || track.compileCalls || track.aiCalls).filter(call=>
-        !runtimeRefs.has(call.callRef) && (call.ownerDomain==='creator_platform' || Boolean(track.compilerCalls || track.compileCalls)));
-    }));
+    return uniqueCalls(arr(result?.trace?.tracks).flatMap(compilerCallsForTrack));
+  }
+  function compileUsageGroups(result) {
+    const tracks=arr(result?.trace?.tracks),owners=new Map();
+    for(const track of tracks)for(const call of compilerCallsForTrack(track)) {
+      if(!call.callRef)continue;
+      if(!owners.has(call.callRef))owners.set(call.callRef,new Set());
+      owners.get(call.callRef).add(track.trackCode);
+    }
+    const shared=new Set([...owners].filter(([,codes])=>codes.size>1).map(([ref])=>ref));
+    const groups=['current','v2_candidate'].map(trackCode=>{
+      const selected=tracks.filter(track=>track.trackCode===trackCode);
+      return {trackCode,title:trackCode==='current'?'Compiler Current':'Compiler V2 Candidate',
+        calls:uniqueCalls(selected.flatMap(compilerCallsForTrack)).filter(call=>!shared.has(call.callRef)),
+        callsRecorded:selected.length>0 && selected.every(track=>Array.isArray(track.compilerCalls || track.compileCalls || track.aiCalls))};
+    });
+    if(shared.size)groups.push({trackCode:'shared',title:'两轨共同引用的编译调用',
+      calls:compileCalls(result).filter(call=>shared.has(call.callRef)),callsRecorded:true});
+    return groups;
+  }
+  function compileUsageHtml(result) {
+    return '<p class="notice">编译调用按真实轨道分列。共同引用的调用单独列出，合计按 callRef 去重；当前游玩仅执行 Current。</p>'+
+      compileUsageGroups(result).map(group=>'<section class="evidence-section"><h3>'+esc(group.title)+'</h3>'+
+        usageHtml(usage(group.calls,{callsRecorded:group.callsRecorded}))+'</section>').join('');
   }
   function callsFor(result, step) {
     if (step?.kind==='runtime') return uniqueCalls(step.trace?.aiCalls);
     if (step?.kind==='compile') return compileCalls(result);
     return [];
   }
-  function usage(calls) {
+  function usage(calls, {callsRecorded=false} = {}) {
     const seen = new Set();
     const rows = arr(calls).filter((row)=>{if(!row.callRef)return true;if(seen.has(row.callRef))return false;seen.add(row.callRef);return true;});
     const sum = (key) => rows.length && rows.every((row)=>number(row[key])!==null) ? rows.reduce((n,r)=>n+r[key],0) : null;
@@ -169,18 +207,26 @@
       if(!row.currency || number(row.costMinor)===null) {missingCost++;continue;}
       costs.set(row.currency,(costs.get(row.currency)||0)+row.costMinor);
     }
-    return {count:rows.length,inputTokens:sum('inputTokens'),outputTokens:sum('outputTokens'),cost:[...costs].map(([currency,n])=>currency+' '+(n/100).toFixed(4)).join(' + '),missingCost};
+    return {count:rows.length || (callsRecorded?0:null),inputTokens:sum('inputTokens'),outputTokens:sum('outputTokens'),cost:[...costs].map(([currency,n])=>currency+' '+(n/100).toFixed(4)).join(' + '),missingCost};
+  }
+  function stepUsage(result,step) {
+    const diagnostics=step?.trace?.diagnostics;
+    const callsRecorded=diagnostics?.evidence?.callAttribution!=='unavailable'
+      && diagnostics?.evidence?.aiCalls!=='unavailable'
+      && (diagnostics?.evidence?.aiCalls==='none_recorded' || diagnostics?.usage?.recordedCallCount===0);
+    return usage(callsFor(result,step),{callsRecorded});
   }
   function allCalls(result) {
     const currentIds=new Set([result?.opening?.current,...arr(result?.turns).map(turn=>turn.current)]
       .flatMap(execution=>[execution?.command?.commandId,execution?.accepted?.commandId]).filter(Boolean));
     const runId=result?.previewRuns?.current?.runId;
     const runtime=arr(trace(result).runtimeCommands).filter(command=>command.runId ? command.runId===runId : currentIds.has(command.commandId));
-    return uniqueCalls([...compileCalls(result),...runtime.flatMap(command=>arr(command.aiCalls))]);
+    const invitations=runId?arr(trace(result).activityInvitations).filter(row=>row.runId===runId):[];
+    return uniqueCalls([...compileCalls(result),...runtime.flatMap(command=>arr(command.aiCalls)),...invitations.flatMap(row=>arr(row.aiCalls))]);
   }
   function usageHtml(value) {
     const n=(v)=>number(v)===null?'未采集':v.toLocaleString();
-    return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ (value.count || '未采集') +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>账本费用</small><strong>'+esc(value.cost || '未采集')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>';
+    return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ n(value.count) +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>账本费用</small><strong>'+esc(value.cost || '未采集')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>';
   }
   function modelRequests(calls) {
     if(!calls.length)return '<p class="missing">实际模型请求未采集。</p>';
@@ -223,40 +269,102 @@
     }).join(''):'<p class="missing">具体失败原因未采集；当前只能查看后台返回的通用错误码。</p>';
     return '<section class="evidence-section"><h3>失败原因与环节</h3>'+body+'</section>';
   }
+  function invitationModelEvidence(calls, contextOnly=false) {
+    if(!calls.length)return section('活动邀请模型上下文',null);
+    return calls.map(call=>{
+      const evidence=call.modelEvidenceStatus==='captured'?call.modelEvidence:null;
+      const note=call.modelEvidenceStatus==='unavailable'?'这次调用的模型证据暂时无法读取。':evidence?'来自本次邀请调用，校验状态：'+(evidence.validationStatus==='validated'?'已校验':'已拒绝'):'这次邀请调用未采集模型输入与候选。';
+      return '<article class="request-call"><div class="section-heading"><h3>'+esc(call.model || '模型调用')+'</h3><span class="mono">'+esc(call.callRef || '')+'</span></div><p class="muted">'+esc(note)+'</p>'+
+        section('活动邀请模型上下文',evidence?.modelInput)+(!contextOnly?
+          section('模型原始候选',evidence?.modelCandidate)+section('Gateway 校验后的候选',evidence?.validatedCandidate,'这里只表示模型输出的校验结果；实际邀请决定见本次操作的已保存结果。'):'')+'</article>';
+    }).join('');
+  }
   function modelObjects(debug) {
     if (!debug) return null;
     const entries=Object.entries(debug).filter(([key])=>/model|provider|candidate|proposal|prompt/i.test(key));
     return entries.length ? Object.fromEntries(entries) : null;
   }
+  function compileTrackEvidence(track) {
+    const record=(value)=>{const parsed=parse(value); return parsed && typeof parsed==='object' && !Array.isArray(parsed)?parsed:null;};
+    const available=track?.status==='available';
+    const plan=available?record(track.planJson):null;
+    const display=available?record(track.displayJson):null;
+    const config=available?record(track.gameConfigJson):null;
+    const policyKeys=['playModePolicies','relationshipPolicy','goalCompletionPolicy','outcomePolicy','aiContextPolicy','budgets','registryVersions','narrativePolicyPins'];
+    return {
+      worldCore:display?.worldCore ?? null,
+      experienceSpine:plan?.experienceSpine ?? null,
+      chapterPlan:plan?.experienceSpine?.chapterPlan ?? null,
+      agencyGraph:plan?.agencyGraph ?? null,
+      narrativeSeeds:plan?.narrativeSeeds ?? null,
+      runtimePolicy:available?{
+        worldDefinition:{characterMode:display?.characterMode ?? null,identityPolicy:display?.identityPolicy ?? null,defaultPlayMode:display?.defaultPlayMode ?? null},
+        worldGameConfig:Object.fromEntries(policyKeys.map(key=>[key,config?.[key] ?? null])),
+      }:null,
+      gameConfig:config,
+      opening:available?record(track.openingJson):null,
+      selectionTrace:available?record(track.selectionTraceJson):null,
+      selectionTraceNotApplicable:available && track.trackCode==='current' && track.selectionTraceJson===null,
+      provenance:plan?.provenance ?? null,
+      display,
+    };
+  }
+  function compiledPlansHtml(result) {
+    return ['current','v2_candidate'].map(trackCode=>{
+      const matches=arr(result?.compiledPlans?.tracks).filter(row=>row.trackCode===trackCode);
+      const track=matches.length===1?matches[0]:null, value=compileTrackEvidence(track);
+      const title=trackCode==='current'?'Compiler Current':'Compiler V2 Candidate';
+      const selectionNote=value.selectionTraceNotApplicable
+        ? 'N/A · Current 编译器不生成 Game Design Selection Trace；这不是采集失败。'
+        : '来自本轨实际保存的 Game Design Selection Trace；缺失时不推断选择理由。';
+      return '<article class="compiled-track"><div class="section-heading"><h3>'+title+'</h3>'+badge(track?.status)+'</div>'+
+        section('编译产物标识',{compileJobId:track?.compileJobId,compilerVersion:track?.compilerVersion,definitionDigest:track?.definitionDigest,planDigest:track?.planDigest})+
+        section('World Core · 世界设定',value.worldCore,'来自已校验摘要的不可变 WorldDefinition；与当前编辑中的输入分开。')+
+        section('Experience Spine · 体验主线',value.experienceSpine)+
+        section('Chapter Plan · 章节计划',value.chapterPlan,'来自 Playable World Plan 的 experienceSpine.chapterPlan；不根据剧情文本补写。')+
+        section('Agency Graph · 人物与关系',value.agencyGraph)+
+        section('Narrative Seeds · 剧情种子',value.narrativeSeeds)+
+        section('Runtime Policy · 运行规则',value.runtimePolicy,'分别列出 WorldDefinition 的身份规则与 WorldGameConfig 中固定的策略和预算。')+
+        section('Game Config · 完整游戏配置',value.gameConfig)+
+        section('Opening Config · 开场配置',value.opening)+
+        (value.selectionTraceNotApplicable?'<section class="evidence-section"><h3>Selection Trace · 编译选择依据</h3><p class="muted">'+esc(selectionNote)+'</p></section>':section('Selection Trace · 编译选择依据',value.selectionTrace,selectionNote))+
+        section('Provenance · 来源依据',value.provenance)+
+        section('编译目标与展示投影',value.display?{goal:value.display.goal,displayProjection:value.display.displayProjection}:null);
+    }).join('');
+  }
   function diagnostic(result, step, tab) {
     if (!step) return empty('选择一条操作记录','每次操作的输入、调度、模型调用和结果会在这里关联展示。');
     const outcome=step.outcome||{}, debug=outcome.debugEvidence, command=step.trace||{};
+    const invitation=step.observationKind==='activity_invitation';
+    const invitationResult=invitation?{observation:step.execution?.invitationResolution,attempt:step.execution?.activityResponse || step.execution?.accepted}:null;
     const inputNotice=step.execution?.payload?.bodyTruncated && !command.input?'<p class="notice">摘要，完整输入待读取。原正文 '+esc(step.execution.payload.originalBodyLength)+' 字；刷新后从后端 Trace 读取完整内容。</p>':'';
     if(tab==='input') return inputNotice+section('本次实际输入',command.input || step.input || step.execution?.payload)+section('操作提交结果',step.execution?.accepted || step.output);
+    if(tab==='context' && invitation)return invitationModelEvidence(callsFor(result,step),true)+section('独立记忆召回证据',null,'邀请链未单独采集 Memory / Director 证据；上方展示实际送入邀请模型的上下文。');
     if(tab==='context') return section('召回与过滤证据',outcome.memoryEvidence)+section('实际记忆与人物视角',debug?.memory)+section('上下文组成与预算',debug?.engineering?.contextManifest)+raw('全部上下文过程证据',debug);
+    if(tab==='decisions' && invitation)return failureDetails(command.diagnostics,step.status)+section('活动邀请判定与结果',invitationResult)+section('后台处理过程',command.diagnostics);
     if(tab==='decisions') return failureDetails(command.diagnostics,step.status)+section('用户意图与可执行结果',outcome.attemptInterpretation)+section('调度、人物与内容选择',outcome.directorDecision)+section('工程决策',debug?.engineering)+section('章节触发依据',outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive);
     if(tab==='model') {
       const calls=callsFor(result,step);
       const requests=calls.map(call=>({callRef:call.callRef,model:call.model,requestEvidenceStatus:call.requestEvidenceStatus || 'not_collected',
         ...(call.requestEvidence?{requestBody:call.requestEvidence.requestBody,captureStage:call.requestEvidence.captureStage,dispatchState:call.requestEvidence.dispatchState,providerStatus:call.requestEvidence.providerStatus}:{}),
         explanation:call.requestEvidence?.dispatchState==='acceptance_unknown'?'发送尝试已记录，Provider 是否接收未知':call.requestEvidenceStatus==='captured'?'来自 Transport 发送边界的真实请求体':'最终提示词未采集'}));
-      return usageHtml(usage(calls))+'<section class="evidence-section"><h3>实际模型请求</h3>'+modelRequests(calls)+'</section>'+
-        section('Runtime 组装上下文',debug?.modelInput)+section('模型原始候选',debug?.modelCandidate)+section('工程绑定后的结果',debug?.authorityBoundProposal)+section('模型调用明细',calls);
+      return (step.kind==='compile'?compileUsageHtml(result):usageHtml(stepUsage(result,step)))+'<section class="evidence-section"><h3>实际模型请求</h3>'+modelRequests(calls)+'</section>'+
+        (invitation?invitationModelEvidence(calls):section('Runtime 组装上下文',debug?.modelInput)+section('模型原始候选',debug?.modelCandidate)+section('工程绑定后的结果',debug?.authorityBoundProposal))+section('模型调用明细',calls);
     }
+    if(tab==='applied' && invitation)return section('活动邀请处理与结果',invitationResult)+section('操作后的读取结果',step.execution?.projections);
     if(tab==='applied') return section('结果摘要',outcome.narrativeSummary)+section('最终应用到产品的变化',outcome.gameplayEvidence)+section('剧情与章节结果',{narrativeEffects:outcome.narrativeEffects,chapterState:outcome.chapterState,chapterSettlement:outcome.chapterSettlement})+section('操作后的读取结果',step.execution?.projections || step.output);
-    if(tab==='cost') return (step.kind==='compile'?'<p class="notice">包含本实验 Current 与 V2 两轨的真实编译调用，按 callRef 去重；当前游玩仅执行 Current。</p>':'')+usageHtml(usage(callsFor(result,step)))+section('独立阶段耗时',outcome.stageTimings || debug?.stageTimings,'只显示实际采集的耗时。并行步骤不相加冒充用户等待时间。')+section('后端用量汇总',command.diagnostics?.usage || command.usage)+section('全部调用账单',callsFor(result,step));
+    if(tab==='cost') return (step.kind==='compile'?compileUsageHtml(result):usageHtml(stepUsage(result,step)))+section('独立阶段耗时',outcome.stageTimings || debug?.stageTimings,'只显示实际采集的耗时。并行步骤不相加冒充用户等待时间。')+section('后端用量汇总',command.diagnostics?.usage || command.usage)+section('全部调用账单',callsFor(result,step));
     if(tab==='raw') return raw('完整操作证据',step)+raw('编译与运行 Trace',result?.trace)+raw('API 请求记录',step.kind==='workspace'?step.operations:result?.operations);
     if(step.kind==='compile') {
-      const compiled=arr(result.compiledPlans?.tracks).find((row)=>row.trackCode==='current');
-      const plan=parse(compiled?.planJson);
-      return usageHtml(usage(callsFor(result,step)))+section('编译状态',result.experiment)+section('世界编译结果',plan)+section('游戏配置',parse(compiled?.gameConfigJson))+section('编译选择依据',parse(compiled?.selectionTraceJson))+raw('完整编译产物',result.compiledPlans);
+      return compileUsageHtml(result)+section('编译状态',result?.experiment)+compiledPlansHtml(result)+raw('完整编译产物',result?.compiledPlans);
     }
     if(step.kind==='workspace')return section('执行状态',{status:step.status,error:step.error})+arr(step.operations).map(operation=>section('实际输入 · '+operation.operationId,operation.input)+section('实际输出',operation.output)+section('操作结果',{status:operation.status,httpStatus:operation.httpStatus,durationMs:operation.durationMs,error:operation.error})).join('');
     if(step.kind==='publish')return '<p class="notice">'+esc('正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。')+'</p>'+section('测试发布状态与结果',step.output)+section('本次发布使用的剧本',step.input);
     if(step.kind==='source' || step.kind==='start') return section(step.kind==='source'?'输入内容':'所选人物',step.input)+section(step.kind==='source'?'已保存的剧本':'开局结果',step.output)+(step.kind==='source'?section('保存剧本与预制活动的真实操作',arr(result.operations).filter(operation=>/WorldDraft|ActivityDefinition/.test(operation.operationId))):'');
+    if(invitation)return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+section('活动邀请处理与结果',invitationResult)+failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+section('后台邀请任务与证据覆盖',command.diagnostics || {status:step.status})+section('异常与错误',command.diagnostics?.errors || step.execution?.error)+raw('原始操作记录',step);
     return inputNotice+'<div class="diagnostic-title">'+badge(step.status)+'<span class="mono">'+esc(step.commandId || '')+'</span></div>'+
       (outcome.narrativeSummary?'<p class="result-summary">'+esc(outcome.narrativeSummary)+'</p>':'')+
-      failureDetails(command.diagnostics,step.status)+usageHtml(usage(callsFor(result,step)))+
+      failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+
       observedStages(outcome,command.diagnostics)+section('流程执行状态',command.diagnostics || {executionStatus:step.status},'展示真实后台状态；“已接收”表示操作已提交，最终结果以应用状态为准。')+
       section('调度决策',outcome.directorDecision)+section('实际应用的产品变化',outcome.gameplayEvidence)+
       section('异常与错误',command.diagnostics?.errors || step.execution?.error || command.error)+
@@ -268,5 +376,5 @@
     if(projection.value?.truncated || projection.value?.pageInfo?.hasMore || projection.value?.pageInfo?.nextCursor)return '<p class="notice">当前只展示已读取的'+esc(noun)+'，结果尚未完整加载。</p>';
     return '';
   }
-  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,uniqueCalls,modelRequests,startSelection,failureDetails,clearLazyEvidence:()=>lazyValues.clear()});
+  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,failureDetails,invitationTraceFor,compileTrackEvidence,clearLazyEvidence:()=>lazyValues.clear()});
 })(typeof window !== 'undefined' ? window : globalThis);
