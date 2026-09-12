@@ -991,15 +991,17 @@
   async function getScenario(row) {
     const worldDraftId = row.worldDraftId || row.id;
     const draft = await T.call('evalGetWorldDraft', { params: { worldDraftId } });
-    const revisions = items(await T.call('evalListWorldDraftRevisions', { params: { worldDraftId } }));
-    const latest = revisions.find((row) => row.worldDraftRevisionId === draft.currentRevisionId) || revisions.slice().sort((a, b) => Number(b.revisionNumber || b.revision || 0) - Number(a.revisionNumber || a.revision || 0))[0];
+    const worldDraftRevisionId = draft.currentRevisionId || null;
     let content = null;
-    if (latest?.worldDraftRevisionId) {
-      const revision = await T.call('evalGetWorldDraftRevision', { params: { worldDraftId, worldDraftRevisionId: latest.worldDraftRevisionId } });
+    if (worldDraftRevisionId) {
+      const revision = await T.call('evalGetWorldDraftRevision', { params: { worldDraftId, worldDraftRevisionId } });
+      if (revision.worldDraftRevisionId !== worldDraftRevisionId) {
+        throw fail('读取到的剧本修订与当前绑定不一致，请重新读取剧本', 'SLICE_EVAL_SOURCE_REVISION_MISMATCH');
+      }
       content = revision.content;
     }
     const selected = scenarioRow({ ...draft, ...(content ? { content } : {}), worldDraftId,
-      worldDraftRevisionId: latest?.worldDraftRevisionId || draft.currentRevisionId || null });
+      worldDraftRevisionId });
     const ownCharacters = await listCharacters({ worldDraftId });
     const byId = new Map(ownCharacters.map((entry) => [entry.characterVersionId, entry]));
     if (!selected.characterVersionIds.length && Array.isArray(draft.seed?.characterVersionIds)) {
