@@ -802,9 +802,10 @@
     }));
     return {
       ...row, id: row.worldDraftId || row.id || row.worldId,
-      title: core.title || row.title || '未命名剧本',
-      description: core.description || row.worldDescription || '',
-      setting: core.setting || row.worldSetting || '', goal: core.goal || row.worldGoal || '',
+      title: core.worldName || core.title || row.title || '未命名剧本',
+      description: core.worldDescription || core.description || row.worldDescription || '',
+      setting: core.worldSetting || core.setting || row.worldSetting || '',
+      goal: core.worldGoal || core.goal || row.worldGoal || '',
       highlightDescription: content.highlightDescription || row.highlightDescription || '',
       topicTags: content.topicTags || row.topicTags || [],
       sourceDocument: clone(content.sourceDocument || null), sourceHasDocument: Boolean(content.sourceDocument),
@@ -844,7 +845,10 @@
       selected.characterVersionIds = draft.seed.characterVersionIds;
       selected.characters = draft.seed.characterVersionIds.map((characterVersionId) => ({ characterVersionId }));
     }
-    selected.characters = selected.characters.map((entry) => ({ ...entry, ...(byId.get(entry.characterVersionId) || {}) }));
+    selected.characters = selected.characters.map((entry) => {
+      const candidate = byId.get(entry.characterVersionId);
+      return { ...(candidate || {}), ...entry, displayName: candidate?.displayName || entry.displayName };
+    });
     selected.activityDefinitions = items(await T.call('evalListActivityDefinitions', { params: { worldDraftId } })).filter((row) => row.status !== 'archived');
     selected.originalActivityDefinitionIds = selected.activityDefinitions.map((row) => row.activityDefinitionId);
     selected.sourceDraft = clone(draft);

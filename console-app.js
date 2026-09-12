@@ -212,7 +212,7 @@
     const data=new FormData(form);
     for(const key of ['title','description','setting','goal','highlightDescription'])state.draft[key]=String(data.get(key) || '');
     state.draft.characterVersionIds=data.getAll('characterVersionIds');
-    const all=[...state.characters,...A(state.draft.characters)];
+    const all=[...A(state.draft.characters),...state.characters];
     state.draft.characters=state.draft.characterVersionIds.map(id=>all.find(row=>row.characterVersionId===id) || {characterVersionId:id});
   }
   function progress(event) {
