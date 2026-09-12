@@ -1846,7 +1846,8 @@
 
   function canContinueEvaluation(result) {
     return Boolean(
-      result?.previewRuns?.current?.runId
+      result?.runtimePhase === 'waiting_for_user'
+      && result?.previewRuns?.current?.runId
       && result?.previewRuns?.v2Candidate?.runId
       && result?.opening?.current?.status === 'applied'
       && result?.opening?.v2Candidate?.status === 'applied'
@@ -2076,6 +2077,9 @@
       if (result.status === 'compiled_waiting_for_user') {
         $('#experience-progress').textContent = '双轨编译完成并已暂停。先检查完整编译产物，再点击“进入 Runtime”。';
         showToast('编译完成：尚未创建 Run，等待你决定下一步');
+      } else if (result.status === 'waiting_for_backend') {
+        $('#experience-progress').textContent = '当前步骤仍在后端处理，已保留原 commandId；终态返回前不会开放下一步世界写入。';
+        showToast('当前步骤仍在处理，下一步输入已锁定');
       } else if (['waiting_for_user', 'waiting_with_issues'].includes(result.status)) {
         $('#experience-progress').textContent = result.status === 'waiting_for_user'
           ? 'Opening 已完成并暂停。现在可逐步模拟手机端操作。'

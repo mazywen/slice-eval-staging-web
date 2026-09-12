@@ -10,7 +10,7 @@
   const narrative = { OPENING_HOOK: '开场钩子', BOND: '关系推进', INVESTIGATE: '调查', NEGOTIATE: '协商', PUBLIC_CHALLENGE: '公开挑战', PRIVATE_TEST: '私下试探', COMPLICATION: '矛盾升级', REVEAL: '揭示', REVERSAL: '反转', BETRAYAL: '背叛', RESCUE: '救援', REUNION: '重逢', BREAKTHROUGH: '突破', CRISIS_CHOICE: '危机抉择', AFTERMATH: '余波', RECOVERY: '恢复', ENDING_GATE: '结局条件', EPILOGUE: '尾声' };
   const tension = { QUIET: '平静', BUILD: '铺垫', PRESSURE: '施压', PEAK: '高潮', RELEASE: '释放', RECOVERY: '恢复' };
   const chapterEffects = { RELATIONSHIP: '关系', KNOWLEDGE: '知识', RESOURCE: '资源', ACTIVE_CONFLICT: '冲突', OPEN_LOOP: '未决线索', MILESTONE_PATH: '阶段推进', ENDING_EVIDENCE: '结局证据' };
-  const status = { running: '执行中', compiled_waiting_for_user: '编译完成，等待进入 Runtime', waiting_for_user: '已暂停，等待用户输入', waiting_with_issues: '已暂停，存在可定位问题', completed: '流程执行结束', coverage_incomplete: '流程结束，玩法覆盖未通过', verified: '玩法覆盖通过', completed_with_issues: '流程结束，有问题', stopped: '已停止', failed: '失败', applied: '已生效', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
+  const status = { running: '执行中', compiled_waiting_for_user: '编译完成，等待进入 Runtime', waiting_for_backend: '后端处理中，下一步已锁定', waiting_for_user: '已暂停，等待用户输入', waiting_with_issues: '已暂停，存在可定位问题', completed: '流程执行结束', coverage_incomplete: '流程结束，玩法覆盖未通过', verified: '玩法覆盖通过', completed_with_issues: '流程结束，有问题', stopped: '已停止', failed: '失败', applied: '已生效', processing: '处理中', rejected: '被拒绝', succeeded: '成功', queued: '排队中' };
   function duration(ms) { return number(ms) === null ? '未回传' : ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`; }
   function uniqueCalls(calls) {
     const seen = new Set();

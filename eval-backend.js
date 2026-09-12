@@ -94,7 +94,7 @@
   const PROJECTION_READ_CONCURRENCY = 2;
   const PROJECTION_TRANSIENT_RETRY_DELAYS_MS = Object.freeze([250, 1000]);
   const COMMAND_POLL_DELAYS_MS = Object.freeze([1000, 2000, 3000, 5000]);
-  const COMMAND_POLL_BUDGET_MS = 65000;
+  const COMMAND_POLL_BUDGET_MS = 180000;
   let projectionReadsInFlight = 0;
   const projectionReadWaiters = [];
   function idempotency(prefix) { return `${prefix}-${Date.now()}-${crypto.randomUUID()}`; }
@@ -878,7 +878,13 @@
         if (remaining <= 0) break;
         await sleep(Math.min(delay, remaining));
       }
-      throw new Error('Runtime 在 65 秒轮询预算内没有完成');
+      return {
+        status: 'processing', payload: cloneEvidence(payload),
+        durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+        runBefore: run, accepted, command, outcome: null, feed: null,
+        projections: null, projectionIssues: [], error: null,
+        pendingReason: 'command_poll_budget_exhausted',
+      };
     } catch (error) {
       error.runtimeEvidence = { runBefore: run, accepted, command, payload: cloneEvidence(payload) };
       error.runtimeDurationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
@@ -1366,7 +1372,13 @@
         attempt += 1;
         await sleep(delay);
       }
-      throw new Error('Activity Turn 在 65 秒轮询预算内没有完成');
+      return {
+        status: 'processing', payload: cloneEvidence(payload),
+        durationMs: Math.max(0, Math.round(performance.now() - startedAtMs)),
+        runBefore: run, accepted, command, outcome: null, activityResponse: accepted,
+        feed: null, projections: null, projectionIssues: [], error: null,
+        pendingReason: 'command_poll_budget_exhausted',
+      };
     } catch (error) {
       error.runtimeEvidence = { runBefore: run, accepted, command, payload: cloneEvidence(payload) };
       error.runtimeDurationMs = Math.max(0, Math.round(performance.now() - startedAtMs));
@@ -1542,15 +1554,18 @@
         v2Candidate: projectionIssues(candidateExecution.projections),
       };
       await refreshTrace(result);
+      const currentRoundPending = [currentExecution, candidateExecution]
+        .some((execution) => execution.status === 'processing');
       const currentRoundHasIssue = [currentExecution, candidateExecution].some((execution) =>
-        execution.status !== 'applied' || (execution.projectionIssues || []).length > 0);
+        !['applied', 'processing'].includes(execution.status) || (execution.projectionIssues || []).length > 0);
       const historicalIssue = Boolean(result.error || result.traceError)
         || result.turns.slice(0, -1).some((turn) => [turn.current, turn.v2Candidate]
           .some((execution) => execution?.status !== 'applied' || (execution?.projectionIssues || []).length > 0))
         || [result.opening?.current, result.opening?.v2Candidate]
           .some((execution) => execution && execution.status !== 'applied');
-      result.status = currentRoundHasIssue || historicalIssue ? 'waiting_with_issues' : 'waiting_for_user';
-      result.runtimePhase = 'waiting_for_user';
+      result.status = currentRoundPending ? 'waiting_for_backend'
+        : currentRoundHasIssue || historicalIssue ? 'waiting_with_issues' : 'waiting_for_user';
+      result.runtimePhase = currentRoundPending ? 'waiting_for_backend' : 'waiting_for_user';
       result.lastContinuation = {
         action,
         actionPayload: cloneEvidence(normalizedAction),
@@ -1562,9 +1577,11 @@
       result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
       publish({
         kind: 'complete', step: 'runtime', index: result.turns.length - 1,
-        message: currentRoundHasIssue
-          ? '这一轮已返回并保留双轨状态；存在异常，仍可继续输入下一轮行为'
-          : '这一轮已写入同一双轨 Run，可继续输入下一轮行为',
+        message: currentRoundPending
+          ? '这一轮仍在后端处理；保留原 commandId，完成前不会开放下一步世界写入'
+          : currentRoundHasIssue
+            ? '这一轮已返回并保留双轨状态；存在异常，可检查证据后决定下一步'
+            : '这一轮已写入同一双轨 Run，可继续输入下一轮行为',
       });
       return result;
     } catch (error) {
@@ -1643,15 +1660,18 @@
         v2Candidate: projectionIssues(candidateOpening.projections),
       };
       await refreshTrace(result);
+      const pending = [currentOpening, candidateOpening].some((execution) => execution.status === 'processing');
       const issue = [currentOpening, candidateOpening].some((execution) =>
-        execution.status !== 'applied' || (execution.projectionIssues || []).length > 0) || Boolean(result.traceError);
-      result.status = issue ? 'waiting_with_issues' : 'waiting_for_user';
-      result.runtimePhase = 'waiting_for_user';
+        !['applied', 'processing'].includes(execution.status) || (execution.projectionIssues || []).length > 0) || Boolean(result.traceError);
+      result.status = pending ? 'waiting_for_backend' : issue ? 'waiting_with_issues' : 'waiting_for_user';
+      result.runtimePhase = pending ? 'waiting_for_backend' : 'waiting_for_user';
       result.completedAt = new Date().toISOString();
       result.durationMs = previousDurationMs + Math.max(0, Math.round(performance.now() - startedAtMs));
-      publish({ kind: 'complete', step: 'opening', message: issue
-        ? 'Opening 已返回并暂停；存在可定位问题，先检查证据再决定是否继续'
-        : 'Opening 已完成并暂停；现在等待你输入下一步手机端操作' });
+      publish({ kind: 'complete', step: 'opening', message: pending
+        ? 'Opening 仍在后端处理；保留原 commandId，终态前不开放玩家下一步输入'
+        : issue
+          ? 'Opening 已返回并暂停；存在可定位问题，先检查证据再决定是否继续'
+          : 'Opening 已完成并暂停；现在等待你输入下一步手机端操作' });
       return result;
     } catch (error) {
       if (result.experiment?.experimentId) { try { await refreshTrace(result); } catch {} }
