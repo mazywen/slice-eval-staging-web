@@ -74,12 +74,14 @@
       experiment: result.experiment ? { experimentId: result.experiment.experimentId, status: result.experiment.status } : null,
       compiledPlans: null, compilerTracks: result.compilerTracks, runtimeTracks: result.runtimeTracks,
       previewRuns: { current: result.previewRuns?.current ? { runId: result.previewRuns.current.runId,
-        identitySnapshot: result.previewRuns.current.identitySnapshot, actorStates: result.previewRuns.current.actorStates } : null },
+        identitySnapshot: result.previewRuns.current.identitySnapshot, actorStates: result.previewRuns.current.actorStates,
+        opening: clone(result.previewRuns.current.opening) } : null },
+      openingEditor: clone(result.openingEditor),
       opening: { current: compactExecution(result.opening?.current) },
       pendingCommand: clone(pending),
       pendingStart: clone(result.pendingStart), release: clone(result.release),
       turns: (result.turns || []).map((turn) => ({ kind: turn.kind || turn.current?.payload?.type, status: turn.status,
-        current: compactExecution(turn.current) })), 
+        current: compactExecution(turn.current) })),
       initialProjections: { current: null }, finalProjections: { current: null }, finalProjectionIssues: { current: [] },
       trace: null, traceError: null, operations: [], error: clone(result.error), evidenceNeedsRefresh: true,
     };
@@ -438,6 +440,26 @@
     }
     result.finalProjectionIssues.current = T.projectionIssues(result.finalProjections.current);
   }
+  async function refreshOpening(previous) {
+    const result = clone(previous);
+    const runId = result?.previewRuns?.current?.runId;
+    if (!runId || result.runtimePhase !== 'opening_waiting_for_user' || result.pendingCommand) return result;
+    if (!B.connected()) throw fail('请先登录测试环境', 'SLICE_EVAL_SESSION_EXPIRED');
+    if (result.workspaceId && result.workspaceId !== B.workspaceId()) throw fail('该会话属于其他评测工作区', 'SLICE_EVAL_WORKSPACE_MISMATCH');
+    // The UI adopts and persists this observation only if the same Run is still
+    // selected. This GET never acquires or joins a concurrent player's write telemetry.
+    const run = await T.call('evalGetRun', { params: { runId }, recordTelemetry: false });
+    if (run.runId !== runId || !['pending', 'ready', 'failed'].includes(run.opening?.generationStatus)) {
+      throw fail('开局状态与当前游玩会话不一致', 'SLICE_EVAL_OPENING_STATUS_INVALID');
+    }
+    result.previewRuns.current = { ...result.previewRuns.current, ...run };
+    result.finalProjections.current ||= {};
+    result.finalProjections.current.run = { status: 'succeeded', value: run, error: null };
+    result.error = null;
+    result.status = 'opening_waiting_for_user';
+    // Full model evidence is read by explicit refresh or the next user action.
+    return result;
+  }
   async function start(previous, selection = {}, onProgress = () => {}) {
     const result = clone(previous);
     if (!result?.compiledPlans || result.previewRuns?.current || result.pendingCommand) throw fail('请从已编译且尚未开局的剧本开始');
@@ -523,7 +545,10 @@
     const expectedRunRevision = run.revision;
     const payload = clone(action);
     let operationId = 'evalSubmitWorldCommand', params = { runId }, body;
-    if (action.type === 'confirm_opening_post') payload.body ||= T.readOpeningBody(run);
+    if (action.type === 'confirm_opening_post') {
+      if (!payload.body && !run.opening?.firstPostDraft?.trim() && run.opening?.generationStatus === 'pending') throw fail('正在根据所选身份准备开场，也可以自己写一条', 'SLICE_EVAL_OPENING_PENDING');
+      payload.body ||= T.readOpeningBody(run);
+    }
     if (action.type === 'dm_message') {
       if (!action.channelId) {
         const cast = await T.call('evalListRunCast', { params: { runId } });
@@ -1168,7 +1193,7 @@
   window.SliceEvalConsoleClient = Object.freeze({
     connected: B.connected, connect: B.connect, disconnect: B.disconnect, capabilities,
     listScenarios, getScenario, listCharacters, createCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
-    saveDraft, compile, start, act, publish, refresh, restore, saveSession, listSessions, restoreSession,
+    saveDraft, compile, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,
     __testing: Object.freeze({ sourceFingerprint, activityDefinitionRequest, normalizeAction, scenarioRow, normalizedInput, newResult, observePending, resolveMutation }),
   });
 })();

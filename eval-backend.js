@@ -257,7 +257,7 @@
     if (Object.hasOwn(safe, 'accessToken')) safe.accessToken = '[redacted]';
     return safe;
   }
-  async function call(operationId, { params, query, body, key, useSession = true } = {}) {
+  async function call(operationId, { params, query, body, key, useSession = true, recordTelemetry = true } = {}) {
     await loadContract();
     const operation = state.operations.get(operationId);
     // Additional console operations use the generated Eval bearer surface only.
@@ -272,7 +272,8 @@
       throw new Error(operationId + ' 缺少 Idempotency-Key');
     }
     const path = operationPath(operation, params, query);
-    const activeOperation = beginOperation(operation, path, { params, query, body, key });
+    const activeOperation = recordTelemetry === false && operation.httpMethod.toUpperCase() === 'GET'
+      ? null : beginOperation(operation, path, { params, query, body, key });
     if (useSession && !connected()) {
       const error = new Error('Eval Session 已过期，请重新登录');
       error.code = 'SLICE_EVAL_SESSION_EXPIRED';
@@ -599,16 +600,8 @@
   }
   function readOpeningBody(run) {
     const opening = run?.opening;
-    const candidates = [
-      opening?.firstPostDraft,
-      opening?.playerPost?.body, opening?.playerPost?.text,
-      opening?.post?.body, opening?.post?.text,
-      opening?.draft?.body, opening?.draft?.text,
-      opening?.body, opening?.text,
-      opening?.openingHook,
-    ];
-    const body = candidates.find((value) => typeof value === 'string' && value.trim().length >= 1);
-    if (!body) {
+    const body = opening?.firstPostDraft;
+    if (typeof body !== 'string' || !body.trim()) {
       const error = new Error('Preview Run 没有返回可确认的服务端 Opening Post');
       error.code = 'SLICE_EVAL_OPENING_MISSING';
       throw error;

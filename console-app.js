@@ -9,13 +9,14 @@
     draft:null,result:null,busy:false,message:'',error:null,search:'',
     selectedStepId:null,diagnosticTab:'overview',drawer:false,compose:null,composeBody:'',
     selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,
-    characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,
+    characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,
   };
   const pageNames={scripts:'剧本与创作',play:'交互运行',records:'操作与诊断',guide:'流程总览'};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
   const blankDraft=()=>({title:'',description:'',setting:'',goal:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
-  const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown';
+  const openingPending=()=>state.result?.runtimePhase==='opening_waiting_for_user' && V.openingSnapshot(state.result).generationStatus==='pending' && !V.openingSnapshot(state.result).firstPostDraft?.trim();
+  const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown' || openingPending();
   const locked=()=>state.busy || !!state.result?.pendingCommand || state.result?.runtimePhase==='waiting_for_backend' || pendingRelease();
   const playerActorId=()=>A(V.projections(state.result).run?.value?.actorStates || V.preview(state.result).actorStates).find(row=>row.kind==='player')?.actorId;
   const visibleNpcs=()=>V.cast(state.result).filter(row=>row.actorId && row.actorId!==playerActorId() && row.kind!=='player');
@@ -58,6 +59,7 @@
     return '<section class="panel login-empty">'+V.empty('连接你的测试工作区','在同一条真实业务链路里创建剧本、选择人物、亲自操作，并观察每一步的处理结果。').replace('</div>','<button class="button primary" type="button" data-open-login>登录工作区</button></div>')+'</section>';
   }
   function render() {
+    const activeOpening=document.activeElement?.id==='opening-body' ? {start:document.activeElement.selectionStart,end:document.activeElement.selectionEnd} : null;
     V.clearLazyEvidence();
     syncHeader();
     let html='';
@@ -67,6 +69,7 @@
     else if(state.page==='play')html=renderPlay();
     else html=renderRecords();
     $('#console-main').innerHTML=html;
+    if(activeOpening && $('#opening-body')){$('#opening-body').focus({preventScroll:true});$('#opening-body').setSelectionRange(activeOpening.start,activeOpening.end);}
     if(state.drawer)renderDrawer();
     else $('#diagnostics').hidden=true;
   }
@@ -117,8 +120,15 @@
     return steps.map(step=>'<button class="step-button'+(selectedStep()?.id===step.id?' active':'')+'" type="button" data-inspect-step="'+e(step.id)+'"><span class="step-dot"></span><span><strong>'+e(step.index?String(step.index).padStart(2,'0')+' · '+step.title:step.title)+'</strong><small>'+e(step.action || V.label(step.status))+'</small></span>'+V.badge(step.status)+'</button>').join('') || '<p class="muted">尚无操作记录</p>';
   }
   function openingBody() {
-    const p=V.projections(state.result),run=V.preview(state.result),opening=p.run?.status==='succeeded'?p.run.value?.opening:run.opening;
-    return [opening?.firstPostDraft,opening?.playerPost?.body,opening?.playerPost?.text,opening?.post?.body,opening?.post?.text,opening?.draft?.body,opening?.draft?.text,opening?.body,opening?.text,opening?.openingHook].find(value=>typeof value==='string'&&value.trim()) || null;
+    return V.openingDraftValue(state.result).trim();
+  }
+  function renderOpening() {
+    const opening=V.openingSnapshot(state.result),pending=openingPending(),failed=opening.generationStatus==='failed';
+    const message=pending?'正在根据你的身份和处境准备开场帖子。你可以先了解这个世界，也可以自己写一条。':failed?'开场帖子暂时没有生成成功。你可以根据下面的背景和处境，自己写一条开始。':'看看你的处境，修改下面的帖子，准备好后再发布。';
+    return '<section class="panel" style="margin-bottom:20px"><div class="section-heading"><h3>你的开场</h3>'+V.badge(pending?'processing':failed?'failed':'waiting_for_user')+'</div><p class="muted" role="status">'+message+'</p>'+
+      V.section('世界背景',opening.background)+V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.openingHook)+
+      '<label>开场帖子<textarea id="opening-body" rows="5" maxlength="4000" placeholder="以你的身份，说说此刻想说的话。"'+disable(locked())+'>'+e(V.openingDraftValue(state.result))+'</textarea></label>'+
+      '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !openingBody())+'>确认并发布开场</button></section>';
   }
   function renderPlay() {
     const result=state.result,run=V.preview(result),p=V.projections(result);
@@ -126,7 +136,7 @@
     if(!run.runId)return heading+renderSetup();
     const opening=result.runtimePhase==='opening_waiting_for_user';
     return heading+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
-      (opening?'<section class="panel" style="margin-bottom:20px"><div class="section-heading"><h3>确认开场</h3>'+V.badge('waiting_for_user')+'</div><p class="muted">开局已经建立。确认后提交开场帖子，随后查看世界动态与处理过程。</p>'+V.section('将要发布的开场帖子',openingBody())+(openingBody()?'':'<p class="notice">开场正文尚未读取，请刷新后再确认。</p>')+'<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !openingBody())+'>确认开场</button></section>':'')+
+      (opening?renderOpening():'')+
       '<div class="play-layout"><section class="panel play-content"><div id="play-tabs" class="tabs" role="tablist">'+Object.entries({feed:'世界动态',dm:'私聊',events:'事件',activities:'活动',cast:'人物',chapter:'章节'}).map(([key,label])=>'<button type="button" role="tab" aria-selected="'+(state.playTab===key)+'" class="'+(state.playTab===key?'active':'')+'" data-play-tab="'+key+'">'+label+'</button>').join('')+'</div>'+renderSurface()+'</section><aside class="session-aside"><section class="panel"><div class="section-heading"><h3>会话消耗</h3><small>已采集部分</small></div>'+V.usageHtml(V.usage(V.allCalls(result)))+'<p class="muted">汇总实验编译、当前游玩与邀请的已采集调用。缺失记录不等于零；尚未计量的发布编译不计入此小计。</p></section><section class="panel"><div class="section-heading"><h3>最近操作</h3><button class="text-button" type="button" data-page="records">全部</button></div><div class="step-list">'+stepButtons(5)+'</div></section></aside></div>';
   }
   function composeForm(defaultType='post',target={}) {
@@ -239,7 +249,7 @@
       if(error.partialResult){state.result=error.partialResult;C.saveSession(state.result);}
       showError(error);return null;
     } finally {
-      state.busy=false;state.message=(state.result?.pendingCommand?.status==='admission_unknown' || state.result?.release?.status==='admission_unknown')?'接收状态未知，原操作记录已保留。刷新只读取后台证据，不会重新提交。':needsPolling()?'本次操作已提交，后台仍在处理。正在持续读取同一任务。':'';
+      state.busy=false;state.message=(state.result?.pendingCommand?.status==='admission_unknown' || state.result?.release?.status==='admission_unknown')?'接收状态未知，原操作记录已保留。刷新只读取后台证据，不会重新提交。':openingPending()?'正在准备你的开场帖子，你可以先阅读背景或自己写。':needsPolling()?'本次操作已提交，后台仍在处理。正在持续读取同一任务。':'';
       if(renderEnd)render();else syncHeader();
       schedulePoll();
     }
@@ -248,7 +258,17 @@
     window.clearTimeout(state.pollTimer);
     if(!C.connected() || !needsPolling())return;
     state.pollTimer=window.setTimeout(async()=>{
-      if(state.busy){schedulePoll();return;}
+      if(state.busy || state.openingPolling){schedulePoll();return;}
+      if(openingPending() && !state.result?.pendingCommand && !pendingRelease()) {
+        const previous=state.result;state.openingPolling=true;
+        try {
+          const result=await C.refreshOpening(previous);
+          if(state.result===previous && !state.busy){result.openingEditor=state.result.openingEditor;state.result=result;C.saveSession(result);state.error=null;state.message=openingPending()?'正在准备你的开场帖子，你可以先阅读背景或自己写。':'';render();}
+        } catch(error) {
+          if(state.result===previous && !state.busy)showError(error);
+        } finally {state.openingPolling=false;schedulePoll();}
+        return;
+      }
       await task('正在读取本次后台处理状态…',(onProgress)=>C.refresh(state.result,onProgress));
     },3000);
   }
@@ -408,6 +428,11 @@
     }
     if(event.target.closest('#draft-form'))captureDraft();
     if(event.target.id==='action-body')state.composeBody=event.target.value;
+    if(event.target.id==='opening-body' && state.result) {
+      state.result.openingEditor={runId:V.preview(state.result).runId,body:event.target.value,edited:true};
+      C.saveSession(state.result);
+      $('#confirm-opening').disabled=locked() || !openingBody();
+    }
   });
   document.addEventListener('change',async(event)=>{
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
@@ -483,7 +508,7 @@
   window.SliceEvalConsole=Object.freeze({
     getState:()=>Object.freeze({page:state.page,connected:C.connected(),busy:state.busy,phase:state.result?.runtimePhase || null,
       selectedScenarioId:state.selectedScenarioId,runId:V.preview(state.result).runId || null,hasResult:!!state.result,
-      currentOperationStatus:state.result?.status || null,characterOptionCount:A(state.draft?.characters).length,
+      currentOperationStatus:state.result?.status || null,openingGenerationStatus:V.openingSnapshot(state.result).generationStatus || null,characterOptionCount:A(state.draft?.characters).length,
       selectedPlayerCharacterVersionId:state.selectedPlayerCharacterVersionId,playerCharacterVersionId:state.result?.input?.playerCharacterVersionId || null,
       selectedFirstFollowerCharacterVersionId:state.selectedFirstFollowerCharacterVersionId,firstFollowerCharacterVersionId:state.result?.input?.firstFollowerCharacterVersionId || null,defaultPlayerSelected:state.selectedPlayerCharacterVersionId==='__default_player__',
       currentRevision:state.result?.scenario?.worldDraftRevisionId || null,operationCount:A(state.result?.operations).length,turnCount:A(state.result?.turns).length}),

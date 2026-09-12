@@ -119,6 +119,16 @@
   }
   function trace(result) { return arr(result?.trace?.tracks).find((row) => row.trackCode === 'current') || {}; }
   function preview(result) { return result?.previewRuns?.current || {}; }
+  function openingSnapshot(result) {
+    const projected = projections(result).run;
+    return (projected?.status === 'succeeded' ? projected.value?.opening : preview(result).opening) || {};
+  }
+  function openingDraftValue(result) {
+    const editor = result?.openingEditor;
+    if (editor?.runId === preview(result).runId && editor.edited) return String(editor.body ?? '');
+    const opening = openingSnapshot(result);
+    return typeof opening.firstPostDraft === 'string' ? opening.firstPostDraft : '';
+  }
   function cast(result) {
     const p = projections(result);
     if (p.cast?.status === 'succeeded') return items(p.cast);
@@ -145,7 +155,11 @@
     if (result.scenario || result.input) list.push({id:'source',title:'剧本输入与保存',kind:'source',status:result.scenario ? 'succeeded' : 'draft',input:result.input,output:result.scenario});
     if (result.release) list.push({id:'publish',title:'发布到测试环境',kind:'publish',status:result.release.status,input:result.scenario,output:result.release});
     if (result.experiment) list.push({id:'compile',title:'编译剧本',kind:'compile',status:result.experiment.status,output:result.compiledPlans,input:result.input});
-    if (preview(result).runId) list.push({id:'start',title:'开局与选角',kind:'start',status:'succeeded',input:{playerCharacterVersionId:result.input?.playerCharacterVersionId,firstFollowerCharacterVersionId:result.input?.firstFollowerCharacterVersionId},output:preview(result)});
+    if (preview(result).runId) {
+      const opening=openingSnapshot(result);
+      const status=({pending:'processing',ready:'succeeded',failed:'failed'})[opening.generationStatus] || '未采集';
+      list.push({id:'start',title:'开局与选角',kind:'start',status,input:{playerCharacterVersionId:result.input?.playerCharacterVersionId,firstFollowerCharacterVersionId:result.input?.firstFollowerCharacterVersionId},output:{...preview(result),opening}});
+    }
     const opening = result.opening?.current;
     const openingId=opening?.command?.commandId || opening?.accepted?.commandId;
     const openingAlreadyListed=arr(result.turns).some(turn => openingId
@@ -171,7 +185,7 @@
     const runtimeRefs=new Set([...arr(track.runtimeCommands),...arr(track.activityInvitations)]
       .flatMap(entry=>arr(entry.aiCalls)).map(call=>call.callRef).filter(Boolean));
     return uniqueCalls(arr(track.compilerCalls || track.compileCalls || track.aiCalls).filter(call=>
-      !runtimeRefs.has(call.callRef) && (call.ownerDomain==='creator_platform' || Boolean(track.compilerCalls || track.compileCalls))));
+      !runtimeRefs.has(call.callRef) && call.ownerDomain!=='world_runtime' && call.businessSubjectType!=='runtime_run' && (call.ownerDomain==='creator_platform' || Boolean(track.compilerCalls || track.compileCalls))));
   }
   function compileCalls(result) {
     return uniqueCalls(arr(result?.trace?.tracks).flatMap(compilerCallsForTrack));
@@ -199,9 +213,16 @@
       compileUsageGroups(result).map(group=>'<section class="evidence-section"><h3>'+esc(group.title)+'</h3>'+
         usageHtml(usage(group.calls,{callsRecorded:group.callsRecorded}))+'</section>').join('');
   }
+  function runOpeningCalls(result) {
+    const runId=preview(result).runId;
+    if(!runId)return [];
+    return uniqueCalls(arr(trace(result).aiCalls).filter(call=>
+      call.ownerDomain==='world_runtime' && call.businessSubjectType==='runtime_run' && call.runId===runId));
+  }
   function callsFor(result, step) {
     if (step?.kind==='runtime') return uniqueCalls(step.trace?.aiCalls);
     if (step?.kind==='compile') return compileCalls(result);
+    if (step?.kind==='start') return runOpeningCalls(result);
     return [];
   }
   function usage(calls, {callsRecorded=false} = {}) {
@@ -229,7 +250,7 @@
     const runId=result?.previewRuns?.current?.runId;
     const runtime=arr(trace(result).runtimeCommands).filter(command=>command.runId ? command.runId===runId : currentIds.has(command.commandId));
     const invitations=runId?arr(trace(result).activityInvitations).filter(row=>row.runId===runId):[];
-    return uniqueCalls([...compileCalls(result),...runtime.flatMap(command=>arr(command.aiCalls)),...invitations.flatMap(row=>arr(row.aiCalls))]);
+    return uniqueCalls([...compileCalls(result),...runOpeningCalls(result),...runtime.flatMap(command=>arr(command.aiCalls)),...invitations.flatMap(row=>arr(row.aiCalls))]);
   }
   function usageHtml(value) {
     const n=(v)=>number(v)===null?'未采集':v.toLocaleString();
@@ -347,6 +368,7 @@
     const invitationResult=invitation?{observation:step.execution?.invitationResolution,attempt:step.execution?.activityResponse || step.execution?.accepted}:null;
     const inputNotice=step.execution?.payload?.bodyTruncated && !command.input?'<p class="notice">摘要，完整输入待读取。原正文 '+esc(step.execution.payload.originalBodyLength)+' 字；刷新后从后端 Trace 读取完整内容。</p>':'';
     if(tab==='input') return inputNotice+section('本次实际输入',command.input || step.input || step.execution?.payload)+section('操作提交结果',step.execution?.accepted || step.output);
+    if(tab==='context' && step.kind==='start')return '<section class="evidence-section"><h3>开局模型实际上下文</h3>'+modelRequests(callsFor(result,step))+'</section>';
     if(tab==='context' && invitation)return invitationModelEvidence(callsFor(result,step),true)+section('独立记忆召回证据',null,'邀请链未单独采集 Memory / Director 证据；上方展示实际送入邀请模型的上下文。');
     if(tab==='context') return section('召回与过滤证据',outcome.memoryEvidence)+section('实际记忆与人物视角',debug?.memory)+section('上下文组成与预算',debug?.engineering?.contextManifest)+raw('全部上下文过程证据',debug);
     if(tab==='decisions' && activityOpening)return failureDetails(command.diagnostics,step.status)+section('活动实例与开场状态',openingResult)+section('异常与错误',step.execution?.error);
@@ -358,8 +380,9 @@
         ...(call.requestEvidence?{requestBody:call.requestEvidence.requestBody,captureStage:call.requestEvidence.captureStage,dispatchState:call.requestEvidence.dispatchState,providerStatus:call.requestEvidence.providerStatus}:{}),
         explanation:call.requestEvidence?.dispatchState==='acceptance_unknown'?'发送尝试已记录，Provider 是否接收未知':call.requestEvidenceStatus==='captured'?'来自 Transport 发送边界的真实请求体':'最终提示词未采集'}));
       return (step.kind==='compile'?compileUsageHtml(result):usageHtml(stepUsage(result,step)))+'<section class="evidence-section"><h3>实际模型请求</h3>'+modelRequests(calls)+'</section>'+
-        (invitation?invitationModelEvidence(calls):section('Runtime 组装上下文',debug?.modelInput)+section('模型原始候选',debug?.modelCandidate)+section('工程绑定后的结果',debug?.authorityBoundProposal))+section('模型调用明细',calls);
+        (step.kind==='start'?section('已返回开局内容',openingSnapshot(result)):invitation?invitationModelEvidence(calls):section('Runtime 组装上下文',debug?.modelInput)+section('模型原始候选',debug?.modelCandidate)+section('工程绑定后的结果',debug?.authorityBoundProposal))+section('模型调用明细',calls);
     }
+    if(tab==='applied' && step.kind==='start')return section('开局生成状态',openingSnapshot(result).generationStatus)+section('当前开局内容',openingSnapshot(result),'首帖仍需玩家明确确认；生成草稿不表示已经发布帖子。');
     if(tab==='applied' && activityOpening)return section('活动实例与开场状态',openingResult,'实例已创建与开场已完成分开记录；只有读取到 active 才表示本次进入操作已完成。')+section('操作后的读取结果',step.execution?.projections);
     if(tab==='applied' && invitation)return section('活动邀请处理与结果',invitationResult)+section('操作后的读取结果',step.execution?.projections);
     if(tab==='applied') return section('结果摘要',outcome.narrativeSummary)+section('最终应用到产品的变化',outcome.gameplayEvidence)+section('剧情与章节结果',{narrativeEffects:outcome.narrativeEffects,chapterState:outcome.chapterState,chapterSettlement:outcome.chapterSettlement})+section('操作后的读取结果',step.execution?.projections || step.output);
@@ -370,6 +393,7 @@
     }
     if(step.kind==='workspace')return section('执行状态',{status:step.status,error:step.error})+arr(step.operations).map(operation=>section('实际输入 · '+operation.operationId,operation.input)+section('实际输出',operation.output)+section('操作结果',{status:operation.status,httpStatus:operation.httpStatus,durationMs:operation.durationMs,error:operation.error})).join('');
     if(step.kind==='publish')return '<p class="notice">'+esc('正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。')+'</p>'+section('测试发布状态与结果',step.output)+section('本次发布使用的剧本',step.input);
+    if(step.kind==='start')return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+usageHtml(stepUsage(result,step))+section('所选人物',step.input)+section('开局结果',step.output);
     if(step.kind==='source' || step.kind==='start') return section(step.kind==='source'?'输入内容':'所选人物',step.input)+section(step.kind==='source'?'已保存的剧本':'开局结果',step.output)+(step.kind==='source'?section('保存剧本与预制活动的真实操作',arr(result.operations).filter(operation=>/WorldDraft|ActivityDefinition/.test(operation.operationId))):'');
     if(activityOpening)return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+section('活动实例与开场状态',openingResult)+failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+section('异常与错误',step.execution?.error)+raw('原始操作记录',step);
     if(invitation)return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+section('活动邀请处理与结果',invitationResult)+failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+section('后台邀请任务与证据覆盖',command.diagnostics || {status:step.status})+section('异常与错误',command.diagnostics?.errors || step.execution?.error)+raw('原始操作记录',step);
@@ -387,5 +411,5 @@
     if(projection.value?.truncated || projection.value?.pageInfo?.hasMore || projection.value?.pageInfo?.nextCursor)return '<p class="notice">当前只展示已读取的'+esc(noun)+'，结果尚未完整加载。</p>';
     return '';
   }
-  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,failureDetails,chapterSettlementValue,invitationTraceFor,compileTrackEvidence,clearLazyEvidence:()=>lazyValues.clear()});
+  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,compileCalls,runOpeningCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,openingSnapshot,openingDraftValue,failureDetails,chapterSettlementValue,invitationTraceFor,compileTrackEvidence,clearLazyEvidence:()=>lazyValues.clear()});
 })(typeof window !== 'undefined' ? window : globalThis);
