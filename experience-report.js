@@ -265,7 +265,7 @@
     const peakSeed = [...seedCounts.entries()].sort((a, b) => b[1] - a[1])[0] || [null, 0];
     const peakActor = [...actorCounts.entries()].sort((a, b) => b[1] - a[1])[0] || [null, 0];
     const observations = [];
-    if (applied.length >= 10 && applied.filter((model) => model.noVisibleFeedback).length / applied.length >= 0.35) observations.push('超过三分之一已应用回合没有观测到新增 NPC 可见反馈');
+    if (applied.length >= 10 && applied.filter((model) => model.noVisibleFeedback).length / applied.length >= 0.35) observations.push('超过三分之一已应用回合没有新增 NPC 可见反馈；结合本轮候选资格与角色意图评估沉默是否合理，零回应本身不构成失败');
     if (directors.length >= 10 && peakSeed[1] / directors.length >= 0.5) observations.push(`剧情种子 ${peakSeed[0]} 占 Director 决策 ${Math.round(peakSeed[1] / directors.length * 100)}%，建议检查重复选择`);
     if (aiSurfaces.length >= 10 && actorCounts.size <= 1 && (plan?.actors || 0) >= 3) observations.push('长局 AI 可见输出几乎只来自一个角色，角色轮转不足');
     const active = last?.chapterState?.activeChapter || null;
@@ -326,7 +326,7 @@
     return `<section class="experience-track">
       <div class="experience-track-head"><strong>${model.track.label}</strong><span class="experience-status ${execution.status === 'applied' ? '' : 'has-issue'}">${esc(status[execution.status] || execution.status)}</span></div>
       <p class="experience-summary">${esc(outcome.narrativeSummary || execution.activityResponse?.currentScene?.summary || execution.activityResponse?.setup?.title || execution.activityResponse?.outcomeSummary || execution.error?.message || '本步为同步产品操作，没有 Runtime 剧情摘要')}</p>
-      ${model.noVisibleFeedback ? '<p class="experience-warning">玩法观察：命令已生效，但完整快照中没有新增 NPC 回应。玩家自己的帖子、经验奖励和剧情摘要均不能替代 NPC 互动。</p>' : ''}
+      ${model.noVisibleFeedback ? '<p class="experience-muted">本轮没有新增 NPC 回应。公开行动允许角色保持沉默；可结合候选资格、角色意图和真实结果评估合理性。</p>' : ''}
       <h4>本轮 Runtime 调度链</h4>
       ${runtimeProcessHtml(model)}
       ${director ? `<div class="experience-director"><strong>${esc(narrative[director.narrativeFunction] || director.narrativeFunction)} · ${esc(tension[director.tensionBand] || director.tensionBand)}</strong><p>${esc(director.reason)}</p><small>聚焦：${esc(array(director.spotlightActorIds).map((id) => names.get(id) || id).join('、') || '无')} · 剧情种子 ${esc(director.seedRef || '未回传')}</small></div>` : '<p class="experience-muted">本轮 Director 决策未回传；不从生成文字推测。</p>'}
@@ -502,7 +502,7 @@
   function coverageHtml(result, track) {
     const preview = result?.previewRuns?.[track.key];
     const acceptance = gameplayAcceptance(result, track);
-    return `<section class="experience-track"><h3>${esc(track.label)} · 实际玩法覆盖</h3><p class="${acceptance.passed ? 'experience-muted' : 'experience-warning'}">${acceptance.passed ? '本轨道核心玩法覆盖通过' : '核心玩法验收未通过'} · 流程${acceptance.workflowFinished ? '已结束' : '尚未完整结束'} · 手机设备未验收</p><details><summary>连续链与持久化验收 ${acceptance.checks.filter((row) => row.observed).length} / ${acceptance.checks.length}</summary>${acceptance.checks.map((row) => `<p>${esc(row.label)}：${row.observed ? '有回读证据' : esc(row.reason)}</p>`).join('')}</details><p>玩家：<strong>${esc(preview?.identitySnapshot?.displayName || '尚未创建')}</strong> · 身份来源：${esc(preview?.identitySnapshot?.sourceType || '未回传')}</p><p>首位互动 NPC：${esc(preview?.firstFollower?.displayName || array(preview?.castSnapshot?.entries).find((row) => row.characterVersionId === preview?.firstFollower?.characterVersionId)?.displayName || '未回传')}</p><div class="experience-effects">${gameplayCoverage(result, track).map((item) => `<span>${item.label}：<b>${item.observed ? '已观测' : '未观测 / 未验证'}</b></span>`).join('')}</div><small>这是本次运行的覆盖情况，不是全部功能已完成的认证；私信不产生经验、技能或里程碑奖励。</small></section>`;
+    return `<section class="experience-track"><h3>${esc(track.label)} · 实际玩法覆盖</h3><p class="${acceptance.passed ? 'experience-muted' : 'experience-warning'}">${acceptance.passed ? '本轨道核心玩法覆盖通过' : '本次运行尚未覆盖全部玩法'} · 流程${acceptance.workflowFinished ? '已结束' : '尚未完整结束'} · 手机设备未验收</p><details><summary>连续链与持久化验收 ${acceptance.checks.filter((row) => row.observed).length} / ${acceptance.checks.length}</summary>${acceptance.checks.map((row) => `<p>${esc(row.label)}：${row.observed ? '有回读证据' : esc(row.reason)}</p>`).join('')}</details><p>玩家：<strong>${esc(preview?.identitySnapshot?.displayName || '尚未创建')}</strong> · 身份来源：${esc(preview?.identitySnapshot?.sourceType || '未回传')}</p><p>首位互动 NPC：${esc(preview?.firstFollower?.displayName || array(preview?.castSnapshot?.entries).find((row) => row.characterVersionId === preview?.firstFollower?.characterVersionId)?.displayName || '未回传')}</p><div class="experience-effects">${gameplayCoverage(result, track).map((item) => `<span>${item.label}：<b>${item.observed ? '已观测' : '未观测 / 未验证'}</b></span>`).join('')}</div><small>这是本次运行的覆盖情况，不是全部功能已完成的认证。Event、公开回应、主动私信和数值变化均按真实情境可选产生，未观测到不等于 Runtime 失败；私信不产生经验、技能或里程碑奖励。</small></section>`;
   }
   function selectedTracks(code) { return code === 'both' ? tracks : tracks.filter((track) => track.code === code); }
   function operationLedgerHtml(result) {
