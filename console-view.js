@@ -175,6 +175,12 @@
       const invitationTrace=commandId?null:invitationTraceFor(result,row.execution);
       list.push({...row,kind:'runtime',commandId,status:commandTrace?.diagnostics?.executionStatus || row.execution?.status || '未采集',trace:commandTrace || invitationTrace,observationKind:row.execution?.openingResolution?'activity_opening':invitationTrace || row.execution?.invitationResolution?'activity_invitation':'runtime_command',outcome:{...row.execution?.outcome,...commandTrace?.outcome},durationMs:row.execution?.durationMs});
     }
+    const runId=preview(result).runId;
+    for(const call of arr(trace(result).aiCalls)) {
+      if(call.stage==='character_onboarding' && call.runId===runId)
+        list.push({id:'ai-'+call.callRef,title:'人物加入 · Agency',kind:'ai_stage',status:call.status,
+          input:call.engineeringInput,output:call.serverProcessing?.normalizedOutput,aiCalls:[call]});
+    }
     return list;
   }
   function uniqueCalls(calls) {
@@ -217,10 +223,14 @@
     const runId=preview(result).runId;
     if(!runId)return [];
     return uniqueCalls(arr(trace(result).aiCalls).filter(call=>
-      call.ownerDomain==='world_runtime' && call.businessSubjectType==='runtime_run' && call.runId===runId));
+      call.ownerDomain==='world_runtime' && call.businessSubjectType==='runtime_run' && call.runId===runId
+      && (!call.stage || call.stage==='run_birth' || call.trigger?.useCase==='world_runtime.run_birth_compile')));
   }
   function callsFor(result, step) {
-    if (step?.kind==='runtime') return uniqueCalls(step.trace?.aiCalls);
+    if (step?.kind==='ai_stage') return uniqueCalls(step.aiCalls);
+    if (step?.kind==='runtime') return uniqueCalls([...arr(step.trace?.aiCalls),
+      ...arr(trace(result).aiCalls).filter(call=>step.outcome?.outcomeId
+        && call.businessReferenceType==='runtime_outcome' && call.businessReferenceId===step.outcome.outcomeId)]);
     if (step?.kind==='compile') return compileCalls(result);
     if (step?.kind==='start') return runOpeningCalls(result);
     return [];
@@ -235,7 +245,7 @@
       if(!row.currency || number(row.costMinor)===null) {missingCost++;continue;}
       costs.set(row.currency,(costs.get(row.currency)||0)+row.costMinor);
     }
-    return {count:rows.length || (callsRecorded?0:null),inputTokens:sum('inputTokens'),outputTokens:sum('outputTokens'),cost:[...costs].map(([currency,n])=>currency+' '+(n/100).toFixed(4)).join(' + '),missingCost};
+    return {count:rows.length || (callsRecorded?0:null),inputTokens:sum('inputTokens'),outputTokens:sum('outputTokens'),cacheHit:sum('promptCacheHitTokens'),cacheMiss:sum('promptCacheMissTokens'),estimate:root.SliceCostEstimate?.estimateCalls(rows),cost:[...costs].map(([currency,n])=>currency+' '+(n/100).toFixed(4)).join(' + '),missingCost};
   }
   function stepUsage(result,step) {
     const diagnostics=step?.trace?.diagnostics;
@@ -250,31 +260,60 @@
     const runId=result?.previewRuns?.current?.runId;
     const runtime=arr(trace(result).runtimeCommands).filter(command=>command.runId ? command.runId===runId : currentIds.has(command.commandId));
     const invitations=runId?arr(trace(result).activityInvitations).filter(row=>row.runId===runId):[];
-    return uniqueCalls([...compileCalls(result),...runOpeningCalls(result),...runtime.flatMap(command=>arr(command.aiCalls)),...invitations.flatMap(row=>arr(row.aiCalls))]);
+    const outcomeIds=new Set(runtime.map(command=>command.outcome?.outcomeId).filter(Boolean));
+    const ownedCalls=arr(trace(result).aiCalls).filter(call=>call.runId===runId && runId
+      || call.businessReferenceType==='runtime_outcome' && outcomeIds.has(call.businessReferenceId));
+    return uniqueCalls([...compileCalls(result),...ownedCalls,...runtime.flatMap(command=>arr(command.aiCalls)),...invitations.flatMap(row=>arr(row.aiCalls))]);
   }
   function usageHtml(value) {
     const n=(v)=>number(v)===null?'未采集':v.toLocaleString();
-    return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ n(value.count) +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>账本费用</small><strong>'+esc(value.cost || '未采集')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>';
+    return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ n(value.count) +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>输入缓存命中 / 未命中</small><strong>'+n(value.cacheHit)+' / '+n(value.cacheMiss)+'</strong></div><div><small>账本费用</small><strong>'+esc(value.cost || '未采集')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>'+
+      (value.estimate?.pricedCalls?'<p class="muted">Provider 价格估算：'+esc(root.SliceCostEstimate.money(value.estimate.offPeakCny))+'～'+esc(root.SliceCostEstimate.money(value.estimate.peakCny))+' · 按已登记价格与真实 Token / Cache 计算；与账本金额分别展示。'+(value.estimate.unpriced.length?' '+value.estimate.unpriced.length+' 次调用尚无价格或用量。':'')+'</p>':'');
   }
   function modelRequests(calls) {
     if(!calls.length)return '<p class="missing">实际模型请求未采集。</p>';
+    const stageNames={world_base_compile:'World Base Compile',run_birth:'Run Birth Compile',dynamic_chapter:'Chapter Generation',character_onboarding:'Character Onboarding',runtime_turn:'Runtime Turn',activity_invitation:'Activity Invitation',activity_opening:'Activity Opening',private_pov:'人物当前视角',runtime_repair_l1_field:'字段修复',runtime_repair_l2_module:'模块修复',runtime_repair_l3_full:'完整重试'};
     return calls.map(call=>{
       const evidence=call.requestEvidence,body=evidence?.requestBody;
+      const repair=call.repair || null,processing=call.serverProcessing || {};
       const explanation=evidence?.dispatchState==='acceptance_unknown'?'发送尝试已记录，Provider 是否接收未知':
         evidence?.dispatchState==='response_received'?'已收到 Provider 响应 · HTTP '+String(evidence.providerStatus ?? '未回传'):
         call.requestEvidenceStatus==='unavailable'?'请求证据暂时无法读取':'最终提示词未采集';
-      return '<article class="request-call"><div class="section-heading"><h3>'+esc(body?.model || call.model || '模型未回传')+'</h3><span class="badge">'+(call.requestEvidenceStatus==='captured'?'请求已采集':call.requestEvidenceStatus==='unavailable'?'读取失败':'未采集')+'</span></div><p class="muted">'+esc(explanation)+'</p>'+
+      return '<article class="request-call"><div class="section-heading"><h3>'+esc(stageNames[call.stage] || call.stage || 'AI Call')+'</h3>'+badge(call.status)+'</div><p class="muted">'+esc(body?.model || call.model || '模型未回传')+' · '+esc(explanation)+'</p>'+
+        section('Trigger · 实际触发',call.trigger)+section('Engineering Input · 工程输入',call.engineeringInput)+
         (body?section('调用参数',Object.fromEntries(Object.entries(body).filter(([key])=>key!=='messages')))+arr(body.messages).map(message=>'<div class="request-message"><small>'+esc(message.role)+'</small>'+raw(message.role==='system'?'完整 System 提示词':'完整 '+(message.role || '消息')+' 内容',message.content)+'</div>').join(''):'')+
-        raw('完整请求与用量记录',call)+'</article>';
+        usageHtml(usage([call]))+section('缓存命中率',call.promptCacheHitRatio==null?null:(call.promptCacheHitRatio*100).toFixed(1)+'%')+
+        raw('Raw AI Output · 原始输出',call.rawAiOutput)+section('Server Normalize / Derive · 工程校验',processing)+
+        section('Repair · 本次修复',repair || (processing.processingEvidenceStatus==='captured'?{occurred:false}:null))+
+        section('Latency · 实际耗时',{providerMs:call.providerLatencyMs ?? call.latencyMs})+
+        section('校验后交给产品的候选',call.userVisibleResult,'最终是否应用，以这次操作的已落库结果为准。')+
+        section('Downstream Consumer · 下游消费',call.downstreamConsumer)+raw('完整请求与用量记录',call)+'</article>';
     }).join('');
   }
   function observedStages(outcome, diagnostics) {
     const timing=outcome.stageTimings || outcome.debugEvidence?.stageTimings;
-    const rows=[['调度','directorMs'],['记忆召回','retrievalMs'],['人物独立视角','privatePovMs'],['主模型','mainRuntimeMs'],['结果校验','validationMs'],['规则结算','finalizationMs'],['内容物化','materializationMs'],['数据库提交','persistenceMs']];
+    const rows=[['调度','directorMs'],['记忆召回','retrievalMs'],['人物独立视角','privatePovMs'],['主模型','mainRuntimeMs'],['结果校验','validationMs'],['规则结算','finalizationMs'],['内容物化','materializationMs'],['数据库提交','persistenceMs']].filter(([,key])=>number(timing?.[key])!==null && timing[key]>0);
     const names={input:'操作输入',modelInput:'Runtime 上下文',finalPrompt:'最终模型请求',modelCandidate:'模型候选',authorityBoundProposal:'工程绑定后结果',memory:'记忆证据',stageTimings:'阶段耗时',outcome:'已落库结果',aiCalls:'AI 调用记录',failureDetails:'失败原因详情'};
     const coverage=Object.entries(diagnostics?.evidence || {}).map(([key,status])=>'<div class="observed-stage"><span class="step-dot"></span><strong>'+esc(names[key] || key)+'</strong><span>'+esc({captured:'已采集',not_collected:'未采集',partial:'部分采集',unavailable:'读取失败',none_recorded:'无调用记录'}[status] || status)+'</span></div>').join('');
-    return '<section class="evidence-section"><h3>执行阶段耗时</h3><div class="observed-stages">'+rows.map(([title,key],i)=>'<div class="observed-stage"><small>'+String(i+1).padStart(2,'0')+'</small><strong>'+title+'</strong><span>'+duration(timing?.[key])+'</span></div>').join('')+'</div><p class="muted">阶段顺序为诊断分组。未采集耗时不能据此判断该步骤未执行；并行与包含关系不重复加总。</p></section>'+
+    return executedGameplayStages(outcome)+'<section class="evidence-section"><h3>执行阶段耗时</h3><div class="observed-stages">'+rows.map(([title,key],i)=>'<div class="observed-stage"><small>'+String(i+1).padStart(2,'0')+'</small><strong>'+title+'</strong><span>'+duration(timing?.[key])+'</span></div>').join('')+'</div><p class="muted">只列出实际记录了耗时的阶段。没有耗时记录不能据此判断未执行；并行与包含关系不重复加总。</p></section>'+
       (coverage?'<section class="evidence-section"><h3>本次证据覆盖</h3>'+coverage+'</section>':'');
+  }
+  function executedGameplayStages(outcome) {
+    const evidence=outcome.gameplayEvidence || {},progress=evidence.gameplayProgression;
+    const rows=[],counts=outcome.writeCounts || {};
+    const add=(title,value)=>{if(value!=null)rows.push(section(title,value));};
+    if(evidence.contentOnly===true)add('Content-only Free Play · 状态已冻结',{contentOnly:true});
+    add('Chapter · 已提交章节结算',outcome.chapterSettlement);
+    const dynamic=evidence.dynamicNarrativeState;
+    if(arr(dynamic?.currentTensions || dynamic?.tensions).length)add('Current Tension · 当前矛盾',dynamic.currentTensions || dynamic.tensions);
+    if(arr(dynamic?.beatCandidates || dynamic?.beats).length)add('Dynamic Beat · 近期候选',dynamic.beatCandidates || dynamic.beats);
+    if(progress)add('Valid Outcome / XP / Goal · 工程结算',progress);
+    if(progress?.goalState==='completed' || progress?.goalState==='world_complete')add('World Complete · 完成判定',progress);
+    for(const [pattern,title] of [[/relationship/i,'Relationship · 实际变化'],[/memory|knowledge|episode|belief/i,'Memory · 实际写入'],[/event/i,'Event · 实际写入'],[/activity/i,'Activity · 实际写入']]) {
+      const written=Object.fromEntries(Object.entries(counts).filter(([key,value])=>pattern.test(key) && Number(value)>0));
+      if(Object.keys(written).length)add(title,written);
+    }
+    return rows.length?'<div class="observed-gameplay-stages">'+rows.join('')+'</div>':'';
   }
   function failureDetails(diagnostics, status) {
     const rows=arr(diagnostics?.failureEvidence);
@@ -321,10 +360,8 @@
     const policyKeys=['playModePolicies','relationshipPolicy','goalCompletionPolicy','outcomePolicy','aiContextPolicy','budgets','registryVersions','narrativePolicyPins'];
     return {
       worldCore:display?.worldCore ?? null,
-      experienceSpine:plan?.experienceSpine ?? null,
-      chapterPlan:plan?.experienceSpine?.chapterPlan ?? null,
-      agencyGraph:plan?.agencyGraph ?? null,
-      narrativeSeeds:plan?.narrativeSeeds ?? null,
+      worldBase:display?.worldBase ?? null,
+      compiler:display?.compiler ?? null,
       runtimePolicy:available?{
         worldDefinition:{characterMode:display?.characterMode ?? null,identityPolicy:display?.identityPolicy ?? null,defaultPlayMode:display?.defaultPlayMode ?? null},
         worldGameConfig:Object.fromEntries(policyKeys.map(key=>[key,config?.[key] ?? null])),
@@ -348,10 +385,8 @@
       return '<article class="compiled-track"><div class="section-heading"><h3>'+title+'</h3>'+badge(track?.status)+'</div>'+
         section('编译产物标识',{compileJobId:track?.compileJobId,compilerVersion:track?.compilerVersion,definitionDigest:track?.definitionDigest,planDigest:track?.planDigest})+
         section('World Core · 世界设定',value.worldCore,'来自已校验摘要的不可变 WorldDefinition；与当前编辑中的输入分开。')+
-        section('Experience Spine · 体验主线',value.experienceSpine)+
-        section('Chapter Plan · 章节计划',value.chapterPlan,'来自 Playable World Plan 的 experienceSpine.chapterPlan；不根据剧情文本补写。')+
-        section('Agency Graph · 人物与关系',value.agencyGraph)+
-        section('Narrative Seeds · 剧情种子',value.narrativeSeeds)+
+        section('World Base · 世界基础',value.worldBase)+
+        section('Compiler · 实际执行',value.compiler,value.compiler?.deterministic?'由工程直接整理的世界基础没有 Provider Prompt 或 Token 费用。':'来自实际编译记录。')+
         section('Runtime Policy · 运行规则',value.runtimePolicy,'分别列出 WorldDefinition 的身份规则与 WorldGameConfig 中固定的策略和预算。')+
         section('Game Config · 完整游戏配置',value.gameConfig)+
         section('Opening Config · 开场配置',value.opening)+
@@ -385,7 +420,7 @@
     if(tab==='applied' && step.kind==='start')return section('开局生成状态',openingSnapshot(result).generationStatus)+section('当前开局内容',openingSnapshot(result),'首帖仍需玩家明确确认；生成草稿不表示已经发布帖子。');
     if(tab==='applied' && activityOpening)return section('活动实例与开场状态',openingResult,'实例已创建与开场已完成分开记录；只有读取到 active 才表示本次进入操作已完成。')+section('操作后的读取结果',step.execution?.projections);
     if(tab==='applied' && invitation)return section('活动邀请处理与结果',invitationResult)+section('操作后的读取结果',step.execution?.projections);
-    if(tab==='applied') return section('结果摘要',outcome.narrativeSummary)+section('最终应用到产品的变化',outcome.gameplayEvidence)+section('剧情与章节结果',{narrativeEffects:outcome.narrativeEffects,chapterState:outcome.chapterState,chapterSettlement:outcome.chapterSettlement})+section('操作后的读取结果',step.execution?.projections || step.output);
+    if(tab==='applied') return executedGameplayStages(outcome)+section('结果摘要',outcome.narrativeSummary)+section('最终应用到产品的变化',outcome.gameplayEvidence)+section('剧情与章节结果',{narrativeEffects:outcome.narrativeEffects,chapterState:outcome.chapterState,chapterSettlement:outcome.chapterSettlement})+section('操作后的读取结果',step.execution?.projections || step.output);
     if(tab==='cost') return (step.kind==='compile'?compileUsageHtml(result):usageHtml(stepUsage(result,step)))+section('独立阶段耗时',outcome.stageTimings || debug?.stageTimings,'只显示实际采集的耗时。并行步骤不相加冒充用户等待时间。')+section('后端用量汇总',command.diagnostics?.usage || command.usage)+section('全部调用账单',callsFor(result,step));
     if(tab==='raw') return raw('完整操作证据',step)+raw('编译与运行 Trace',result?.trace)+raw('API 请求记录',step.kind==='workspace'?step.operations:result?.operations);
     if(step.kind==='compile') {
@@ -393,6 +428,7 @@
     }
     if(step.kind==='workspace')return section('执行状态',{status:step.status,error:step.error})+arr(step.operations).map(operation=>section('实际输入 · '+operation.operationId,operation.input)+section('实际输出',operation.output)+section('操作结果',{status:operation.status,httpStatus:operation.httpStatus,durationMs:operation.durationMs,error:operation.error})).join('');
     if(step.kind==='publish')return '<p class="notice">'+esc('正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。')+'</p>'+section('测试发布状态与结果',step.output)+section('本次发布使用的剧本',step.input);
+    if(step.kind==='ai_stage')return modelRequests(callsFor(result,step));
     if(step.kind==='start')return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+usageHtml(stepUsage(result,step))+section('所选人物',step.input)+section('开局结果',step.output);
     if(step.kind==='source' || step.kind==='start') return section(step.kind==='source'?'输入内容':'所选人物',step.input)+section(step.kind==='source'?'已保存的剧本':'开局结果',step.output)+(step.kind==='source'?section('保存剧本与预制活动的真实操作',arr(result.operations).filter(operation=>/WorldDraft|ActivityDefinition/.test(operation.operationId))):'');
     if(activityOpening)return '<div class="diagnostic-title">'+badge(step.status)+'</div>'+section('活动实例与开场状态',openingResult)+failureDetails(command.diagnostics,step.status)+usageHtml(stepUsage(result,step))+section('异常与错误',step.execution?.error)+raw('原始操作记录',step);
