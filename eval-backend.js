@@ -35,7 +35,7 @@
     evalRespondActivityInvite: ['POST', '/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}/invite-response', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
     evalEnterActivity: ['POST', '/eval-api/v1/runs/{runId}/activity-attempts/{activityAttemptId}/enter', 201, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
     evalSubmitActivityAction: ['POST', '/eval-api/v1/runs/{runId}/activity-instances/{activityId}/actions', 202, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
-    evalExitActivity: ['POST', '/eval-api/v1/runs/{runId}/activity-instances/{activityId}/exit', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
+    evalExitActivity: ['POST', '/eval-api/v1/runs/{runId}/activity-instances/{activityId}/exit', 202, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'required'],
     evalListActivityHistory: ['GET', '/eval-api/v1/runs/{runId}/activity-history', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListRunCast: ['GET', '/eval-api/v1/runs/{runId}/cast', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
     evalListRunHistory: ['GET', '/eval-api/v1/runs/{runId}/history', 200, 'compiler_runtime_eval_bearer', 'compiler_runtime_eval', 'none'],
