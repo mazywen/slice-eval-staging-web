@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-12T13:25:17.000Z",
   "sourceBaseCommit": "a6303aae3446af6811f1ac949df1b0f00f92df11",
-  "routeRegistrySha256": "5ca89b7a9d32f90e6c34fb709c0478f84369c09bb2a1efa15e9d989393e1f66f",
+  "routeRegistrySha256": "0489ac69def860595f6ca6672436380676ed7adf4d1232c423bdef9e07a3598b",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -5153,7 +5153,7 @@
       "responseTransport": "json",
       "responseType": "ActivityResultV1",
       "routePath": "/eval-api/v1/runs/{runId}/activity-instances/{activityId}/exit",
-      "successStatus": 200
+      "successStatus": 202
     },
     {
       "authClass": "compiler_runtime_eval_bearer",
@@ -6030,9 +6030,9 @@
       "requestHashPolicy": "canonical_json_sha256",
       "requestType": "ExitActivityRequestV1",
       "responseTransport": "json",
-      "responseType": "ActivityResultV1",
+      "responseType": "ActivityExitResponseV1",
       "routePath": "/v4/runs/{runId}/activity-instances/{activityId}/exit",
-      "successStatus": 200
+      "successStatus": 202
     },
     {
       "authClass": "mobile_bearer",

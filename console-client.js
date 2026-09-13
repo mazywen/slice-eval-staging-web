@@ -30,7 +30,7 @@
   }
   function compactActivityInstance(activity) {
     if (!activity?.activityId) return null;
-    return { activityId: activity.activityId, runId: activity.runId, source: clone(activity.source),
+    return { activityId: activity.activityId, activityAttemptId: activity.activityAttemptId, runId: activity.runId, source: clone(activity.source),
       status: activity.status, sceneRevision: activity.sceneRevision, currentScene: clone(activity.currentScene),
       participantStates: clone(activity.participantStates), invitationStates: clone(activity.invitationStates),
       turnCount: activity.turnCount, openSceneThreads: clone(activity.openSceneThreads),
@@ -756,7 +756,16 @@
       });
       execution.accepted = clone(receipt);
       if (!receipt?.commandId) {
-        if (['evalSubmitWorldCommand', 'evalSubmitActivityAction'].includes(pending.operationId)) {
+        const settledExit = pending.operationId === 'evalExitActivity'
+          && receipt?.runId === pending.params.runId && receipt?.activityId === pending.params.activityId
+          && typeof receipt.activityResultId === 'string' && receipt.activityResultId.length > 0
+          && receipt.lastOutcomeId === receipt.activityResultId
+          && ['completed', 'exited'].includes(receipt.status);
+        if (settledExit) {
+          execution.status = 'applied'; execution.activityResponse = clone(receipt);
+          execution.completedAt = now(); finishFence(result, execution); return;
+        }
+        if (['evalSubmitWorldCommand', 'evalSubmitActivityAction', 'evalExitActivity'].includes(pending.operationId)) {
           pending.status = 'admission_unknown';
           throw fail('已接收操作但未返回命令 ID，请检查接口记录', 'SLICE_EVAL_COMMAND_ID_MISSING');
         }
