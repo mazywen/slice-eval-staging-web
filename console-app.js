@@ -11,7 +11,8 @@
     selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,editingCharacter:null,
     characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,
   };
-  const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'章节实验',records:'操作与诊断',guide:'流程总览'};
+  const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'剧情评审',records:'操作与诊断',guide:'流程总览'};
+  let advancedChapterLab=false;
   const chapterLabUi={form:{playerCharacterVersionId:'',firstFollowerCharacterVersionId:'',talentChoiceId:'',goalOverride:'',storyRewrite:'',extraCharacterVersionIds:[]}};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
   const blankDraft=()=>({title:'',description:'',setting:'',goal:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
@@ -104,7 +105,8 @@
       (compiled?'<div class="form-section"><div class="section-heading"><h3>编译结果已返回</h3><button class="text-button" type="button" data-inspect-step="compile">查看完整编译结果 →</button></div><p class="notice">'+e(C.capabilities().compilerNotice || '编译费用以实际调用为准。')+'</p><div class="inline-controls"><button class="button primary" data-page="play" type="button">选择人物并开始</button>'+(typeof C.publish==='function'?'<button id="publish-draft" class="button" type="button"'+disable(locked())+'>发布到测试环境</button>':'')+'</div>'+(typeof C.publish==='function'?'<p class="muted" style="margin-top:10px">正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。</p>':'')+'</div>':'');
   }
   function renderChapterLab() {
-    return window.SliceChapterLab.render({draft:state.draft,scenarios:state.scenarios,characters:state.characters,selectedScenarioId:state.selectedScenarioId,busy:state.busy,message:state.message,error:state.error,form:chapterLabUi.form});
+    if(!advancedChapterLab)return window.SliceChapterLab.renderReview(state.result,V);
+    return '<button class="button" type="button" id="story-review-return">← 返回当前会话剧情评审</button>'+window.SliceChapterLab.render({draft:state.draft,scenarios:state.scenarios,characters:state.characters,selectedScenarioId:state.selectedScenarioId,busy:state.busy,message:state.message,error:state.error,form:chapterLabUi.form});
   }
   async function runChapterLab(variant) {
     if(locked()){toast('当前后台任务仍在处理，请等待返回后继续。');return;}
@@ -156,7 +158,7 @@
   }
   function renderPlay() {
     const result=state.result,run=V.preview(result),p=V.projections(result);
-    const heading=pageHeading('亲自操作，观察系统回应','后台自然完成本次处理后，等待你的下一次输入。');
+    const heading=pageHeading('亲自操作，观察系统回应','后台自然完成本次处理后，等待你的下一次输入。','<button class="button primary" type="button" data-page="chapterLab">阅读剧情与每日日程</button>');
     if(!run.runId)return heading+window.SliceProductWorkbench.render(result,V.steps(result).find(step=>step.id===state.workbenchStepId),renderSetup(),V);
     const opening=result.runtimePhase==='opening_waiting_for_user';
     const failure=V.runtimeFailureMessage(result);
@@ -393,6 +395,8 @@
     if(button.dataset.removePreset!==undefined){captureDraft();const index=Number(button.dataset.removePreset),row=state.draft.activityDefinitions[index];if(row?.activityDefinitionId){state.draft.removedActivityDefinitionIds ||= [];state.draft.removedActivityDefinitionIds.push(row.activityDefinitionId);}state.draft.activityDefinitions.splice(index,1);render();return;}
     if(button.dataset.closeDialog!==undefined){button.closest('dialog')?.close();return;}
     if(button.dataset.openLogin!==undefined){$('#auth-dialog').showModal();return;}
+    if(button.id==='story-review-advanced'){advancedChapterLab=true;render();return;}
+    if(button.id==='story-review-return'){window.SliceChapterSandbox.capture();chapterLabUi.form=window.SliceChapterLab.readForm();advancedChapterLab=false;render();return;}
     if(button.dataset.page){captureDraft();state.page=button.dataset.page;state.drawer=false;render();return;}
     if(button.dataset.chapterLabNode || button.dataset.chapterLabResult)return;
     if(button.dataset.chapterSandboxHistory){
@@ -595,7 +599,7 @@
         const values=Object.fromEntries(new FormData(form));
         const editing=state.editingCharacter;
         const row=editing
-          ? await C.updateCharacter({...values,characterId:editing.characterId})
+          ? await C.updateCharacter({...values,characterId:editing.characterId,characterVersionId:editing.characterVersionId})
           : await C.createCharacter(values);
         state.characters=editing
           ? state.characters.map(item=>item.characterId===row.characterId?row:item)

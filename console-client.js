@@ -1245,8 +1245,9 @@
   }
   async function updateCharacter(input) {
     const characterId = requiredId(input.characterId, '人物');
-    const current = await T.call('evalGetCharacter', { params: { characterId } });
-    const version = current.currentVersion;
+    const version = input.characterVersionId
+      ? await T.call('evalGetCharacterVersion', { params: { characterId, characterVersionId: input.characterVersionId } })
+      : (await T.call('evalGetCharacter', { params: { characterId } })).currentVersion;
     if (!version?.characterVersionId || !version.content) throw fail('人物当前版本不可编辑', 'SLICE_EVAL_CHARACTER_VERSION_MISSING');
     const content = characterContent({
       ...version.content,

@@ -245,6 +245,73 @@
     if (!snapshot) return '<div class="chapter-lab-metric"><small>章节生成费用</small><strong>尚未运行</strong></div>';
     return '<div class="chapter-lab-metric"><small>章节相关模型调用</small><strong>'+snapshot.chapterCalls.length+' 次</strong><span>'+esc(snapshot.cost?.display || '待计价')+'</span></div>';
   }
+  // Read-only review of the existing session. No compiler, Run or state is created here.
+  function reviewDays(result, V) {
+    const rows = [];
+    for (const step of V.steps(result)) {
+      const projection = step.execution?.projections?.chapter;
+      const line = projection?.status === 'succeeded' ? projection.value?.mainline : null;
+      if (line?.activeChapter?.dayCard) rows.push({stepId:step.id, line});
+    }
+    const projection = result?.finalProjections?.current?.chapter;
+    const current = projection?.status === 'succeeded' ? projection.value?.mainline : null;
+    if (current?.activeChapter?.dayCard) rows.push({stepId:null, line:current});
+    const days = new Map();
+    for (const row of rows) {
+      const key = [row.line.activeChapter.chapterRef, row.line.day].join(':');
+      const previous = days.get(key);
+      days.set(key, {...row, versions:(previous?.versions || 0) + 1});
+    }
+    return [...days.values()];
+  }
+  function renderReview(result, V) {
+    const P = root.SliceProductWorkbench;
+    const field = (title,value) => '<div class="story-review-field"><h3>'+esc(title)+'</h3>'+readable(value)+'</div>';
+    const panel = (id,title,body) => '<section id="story-review-'+id+'" class="panel story-review-section"><h2>'+title+'</h2>'+body+'</section>';
+    const tracks = arr(result?.compiledPlans?.tracks).filter(row=>row.trackCode==='current');
+    const track = tracks.length===1 ? tracks[0] : null;
+    const compiled = V.compileTrackEvidence(track);
+    const plan = track?.status==='available' ? parse(track.planJson) : null;
+    const spine = plan && typeof plan==='object' ? plan.experienceSpine : null;
+    const projection = result?.finalProjections?.current?.chapter;
+    const line = projection?.status==='succeeded' ? projection.value?.mainline : null;
+    const chapter = line?.activeChapter;
+    const steps = V.steps(result).filter(row=>row.kind==='runtime');
+    const days = reviewDays(result,V);
+    const opening = V.openingSnapshot(result);
+    const name = id => arr(result?.input?.characters).find(row=>row.characterVersionId===id)?.displayName || '未采集';
+    const conditionRows = arr(chapter?.conditions).map(condition=>{
+      const progress=line.conditionState?.[condition.id];
+      const status=progress?.satisfied===true?'已满足':progress?.satisfied===false?'未满足':'未采集';
+      return '<tr><td>'+esc(condition.label)+'</td><td>'+(condition.kind==='numeric'?'数值':'事实')+'</td><td>'+status+'</td><td>'
+        +(condition.kind==='numeric'?esc(progress?.currentValue??'未采集')+' '+esc(condition.operator==='gte'?'≥':condition.operator==='lte'?'≤':'比较方式未采集')+' '+esc(condition.threshold):'依据见对应操作；当前章节投影未提供证据明细')+'</td></tr>';
+    }).join('');
+    return '<div class="page-heading"><div><span class="eyebrow">STORY REVIEW</span><h1>剧情评审</h1><p>先看故事，再看判定。这里读取当前会话已有的编译、开局与正式游玩结果。</p></div></div>'
+      +'<section class="panel story-review-context"><div><strong>'+esc(result?.input?.title||'尚未选择评测剧本')+'</strong><p class="muted">我扮演 '+esc(name(result?.input?.playerCharacterVersionId))+' · 首位关联 '+esc(name(result?.input?.firstFollowerCharacterVersionId))+'</p></div><div class="inline-controls"><button class="button" type="button" data-page="scripts">修改剧本与人物</button><button class="button primary" type="button" data-page="play">'+(V.preview(result).runId?'继续本局游玩':'选择人物与开局')+'</button><button class="text-button" type="button" id="story-review-advanced">高级隔离实验</button></div><p class="muted">修改输入后沿原流程保存、编译并开新局；下方始终标明当前结果所属剧本，不把未提交的编辑当作生成结果。</p></section>'
+      +'<nav class="story-review-nav" aria-label="剧情审核内容">'+[['spine','编译与 Spine'],['opening','开局'],['chapter','章节判定'],['days','每日日程'],['story','实际剧情'],['loops','伏笔回收'],['numbers','数值']].map(([key,label])=>'<a href="#story-review-'+key+'">'+label+'</a>').join('')+'</nav>'
+      +panel('spine','01 · 编译与故事方向',field('本次编译输入的目标',result?.input?.goal)
+        +(spine?'<p class="notice">该记录实际返回了 experienceSpine；历史编译规划不代表后续内容已经发生，也不证明当前主线仍使用旧规划。</p>'+field('编译返回的 Spine',spine):'<p class="notice">本次记录未提供独立 Spine。以下为实际编译世界基础；作品目标不冒充已生成大纲。</p>')
+        +field('编译后的世界基础',compiled.worldBase||compiled.worldCore)
+        +'<button class="text-button" type="button" data-inspect-step="compile">查看完整编译证据</button>')
+      +panel('opening','02 · 开局与人物',field('出生处境',opening.currentSituation||opening.openingHook)+field('身份与目标',{identity:opening.identity,goal:opening.goal})+field('本局天赋',line?.selectedTalent))
+      +panel('chapter','03 · 当前章与过章判定',V.projectionNotice(projection,'章节')+(chapter?'<h3>'+esc(chapter.title)+'</h3><p>'+esc(chapter.narrativeObjective)+'</p><div class="story-review-table"><table><thead><tr><th>条件</th><th>类型</th><th>正式状态</th><th>当前值 / 依据</th></tr></thead><tbody>'+conditionRows+'</tbody></table></div>':'<p class="muted">当前章尚未返回。请先完成原有开局与天赋确认。</p>')
+        +'<p class="notice">条件满足与章末过章分开。章末结果：'+(line?.settlementPassed===true?'通过':line?.settlementPassed===false?'未通过':'未返回正式结算')+'。技术异常不等于游戏失败。</p>')
+      +panel('days','04 · 每一天怎么展开','<p class="muted">按已采集游戏日排列；同一天展示最后一次记录。未来日程按游玩展开，未采集的历史不拿今天的安排补齐。</p>'
+        +(days.length?days.map(({line:day,stepId})=>'<article class="story-review-day"><span class="eyebrow">第 '+esc(day.day)+' 天 · 第 '+esc(day.activeChapter.ordinal)+' 章</span><h3>'+esc(day.activeChapter.dayCard.title)+'</h3><p>'+esc(day.activeChapter.dayCard.description)+'</p>'+field('今日方向',day.activeChapter.dayCard.focus)+field('当时的快捷草稿',day.activeChapter.suggestedInputs)+(stepId?'<button class="text-button" type="button" data-inspect-step="'+esc(stepId)+'">查看当时记录</button>':'<small class="muted">当前正式投影</small>')+'</article>').join(''):'<p class="muted">尚未采集日程。</p>'))
+      +panel('story','05 · 玩家输入与实际剧情',steps.length?steps.map(step=>{
+        const delivered=P?.deliveredForStep(result,step)||[];
+        const input=step.input||step.execution?.payload||step.trace?.input;
+        return '<article class="story-review-turn"><div class="section-heading"><h3>'+esc(step.title)+'</h3>'+V.badge(step.status)+'</div>'+field('我的输入',input?.body||input?.text||input)
+          +(delivered.length?delivered.map(row=>'<blockquote><small>'+esc(row.author||'已保存正文')+'</small><p>'+esc(row.body)+'</p></blockquote>').join(''):'<p class="muted">该操作未采集到可关联的已保存正文。</p>')
+          +field('后端记录的结果摘要',step.outcome?.narrativeSummary)+'<button class="text-button" type="button" data-inspect-step="'+esc(step.id)+'">判定依据与原始记录</button></article>';
+      }).join(''):'<p class="muted">尚未执行玩家操作。先确认开局，再回到这里阅读。</p>')
+      +panel('loops','06 · 伏笔与回收','<p class="notice">当前主线投影没有提供完整的伏笔台账，暂时不能判断是否全部回收。不能把“没有返回”显示成“没有伏笔”或“已经回收”。</p>'
+        +steps.filter(step=>step.outcome?.narrativeEffects?.openLoopChanges?.length).map(step=>'<article>'+field('本次记录的伏笔变化',step.outcome.narrativeEffects.openLoopChanges)+'<button class="text-button" type="button" data-inspect-step="'+esc(step.id)+'">查看来源操作</button></article>').join(''))
+      +panel('numbers','07 · 数值与剧情代价',field('本局能力',line?.selectedTalent?.skills)+field('未分配能力点',line?.abilityPoints)+field('当前运行节奏',line?.policy)
+        +field('后端正式成长状态',result?.finalProjections?.current?.progression?.status==='succeeded'?result.finalProjections.current.progression.value:null)
+        +'<p class="muted">以上只读本局后端数据。v0.5 表格的首测参数尚不等于当前运行配置；本页不自行计算或补发经验、关系与过章结果。</p>'
+        +'<button class="button" type="button" data-page="play">回到游玩查看人物关系与继续操作</button>');
+  }
   function render({draft,scenarios,characters,selectedScenarioId,busy,message,error,form={}}) {
     const map=characterMap(draft,characters), ids=arr(draft?.characterVersionIds);
     const defaultPlayer=[form.playerCharacterVersionId,state.variant?.form?.playerCharacterVersionId,state.baseline?.form?.playerCharacterVersionId,...ids].find(id=>ids.includes(id))||'';
@@ -281,5 +348,5 @@
       if(button.dataset.chapterLabResult){state.active=button.dataset.chapterLabResult;root.dispatchEvent(new CustomEvent('slice-chapter-lab-render'));return;}
     });
   }
-  root.SliceChapterLab = Object.freeze({state,reset,render,readForm,runExperiment,experimentInput,buildSnapshot,diff,mainline,chapter});
+  root.SliceChapterLab = Object.freeze({state,reset,render,renderReview,reviewDays,readForm,runExperiment,experimentInput,buildSnapshot,diff,mainline,chapter});
 })(typeof window==='undefined'?globalThis:window);
