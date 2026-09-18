@@ -1027,13 +1027,13 @@
     const baseLimit = Math.max(0, 4000 - suffixChars.length);
     return `${[...base].slice(0, baseLimit).join('')}${suffixChars.slice(0, 4000).join('')}`;
   }
-  async function createCompilerExperimentWithRecovery(input, revisionId, onProgress) {
+  async function createCompilerExperimentWithRecovery(input, revisionId, onProgress, recovery = {}) {
     // HTTP/network retries reuse the same idempotency key for one explicit Eval run.
     // The public CreateCompilerExperimentRequest contract currently accepts only
     // evaluationInstruction; do not send frontend-only attempt identities.
     const options = {
       params: { worldDraftRevisionId: revisionId },
-      key: idempotency('eval-compile'),
+      key: recovery.key || idempotency('eval-compile'),
       body: buildCreateCompilerExperimentRequest(input),
     };
     const started = performance.now();
@@ -1052,6 +1052,7 @@
     const now = options.now || (() => performance.now());
     const pause = options.pause || sleep;
     const budgetMs = options.budgetMs ?? 600000;
+    const requiredTracks = options.requiredTracks || ['current', 'v2_candidate'];
     const started = now();
     let lastTraceAt = Number.NEGATIVE_INFINITY;
     let failures = 0;
@@ -1074,7 +1075,7 @@
       }
       const tracks = Array.isArray(experiment.tracks) ? experiment.tracks : [];
       if (['succeeded', 'partial', 'failed'].includes(experiment.status)) {
-        if (!['current', 'v2_candidate'].every((code) => tracks.some((track) => track.trackCode === code && track.status === 'succeeded'))) {
+        if (!requiredTracks.every((code) => tracks.some((track) => track.trackCode === code && track.status === 'succeeded'))) {
           const error = new Error(`Compiler Experiment 已结束：${experiment.status}；${tracks.filter((track) => track.status !== 'succeeded').map((track) => track.errorCode || track.status).join(' / ')}`);
           error.code = 'SLICE_EVAL_COMPILER_FAILED'; error.experiment = experiment; throw error;
         }
@@ -1088,7 +1089,7 @@
       }
       const stage = job?.status === 'queued' ? (job.attemptCount ? '等待恢复重试' : '排队中')
         : job?.status === 'running' || job?.status === 'leased' ? 'Worker 编译中' : '等待 Worker';
-      onProgress({ kind: 'checkpoint', step: 'compile', message: `${stage} · ${tracks.filter((track) => track.status === 'succeeded').length}/2 轨已完成${job ? ` · 尝试 ${job.attemptCount}/${job.maxAttempts}` : ''}${job?.errorCode ? ` · ${job.errorCode}` : ''}` });
+      onProgress({ kind: 'checkpoint', step: 'compile', message: `${stage} · ${tracks.filter((track) => requiredTracks.includes(track.trackCode) && track.status === 'succeeded').length}/${requiredTracks.length} 轨已完成${job ? ` · 尝试 ${job.attemptCount}/${job.maxAttempts}` : ''}${job?.errorCode ? ` · ${job.errorCode}` : ''}` });
       await pause(Math.min(attempt < 5 ? 1000 : 3000, Math.max(0, budgetMs - (now() - started))));
     }
     const error = new Error('页面等待预算已用完；编译任务仍在后端。已保留实验身份，可继续等待同一实验，不会重新编译计费。');

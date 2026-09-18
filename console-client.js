@@ -79,7 +79,7 @@
       openingEditor: clone(result.openingEditor),
       opening: { current: compactExecution(result.opening?.current) },
       pendingCommand: clone(pending),
-      pendingStart: clone(result.pendingStart), release: clone(result.release),
+      pendingStart: clone(result.pendingStart), pendingCompile: clone(result.pendingCompile), release: clone(result.release),
       turns: (result.turns || []).map((turn) => ({ kind: turn.kind || turn.current?.payload?.type, status: turn.status,
         current: compactExecution(turn.current) })),
       initialProjections: { current: null }, finalProjections: { current: null }, finalProjectionIssues: { current: [] },
@@ -410,13 +410,17 @@
     return operation(result, onProgress, async (emit) => {
       result.status = 'running'; result.runtimePhase = 'compiling'; result.error = null;
       if (!result.experiment?.experimentId) {
+        result.pendingCompile ||= { key: 'console-compile-' + uid(), worldDraftRevisionId: result.scenario.worldDraftRevisionId };
+        if (result.pendingCompile.worldDraftRevisionId !== result.scenario.worldDraftRevisionId) throw fail('待恢复的编译请求属于另一份剧本版本');
+        emit({ kind: 'checkpoint', step: 'compile', message: '已保存本次编译请求身份，异常恢复不会创建另一组实验' });
         result.experiment = await T.createCompilerExperimentWithRecovery(
           { ...result.input, evaluationMode: 'experience', evaluationInstruction: '', playerActions: [] },
-          result.scenario.worldDraftRevisionId, emit,
+          result.scenario.worldDraftRevisionId, emit, result.pendingCompile,
         );
+        result.pendingCompile = null;
         emit({ kind: 'checkpoint', step: 'compile', message: capabilities().compilerNotice });
       }
-      result.experiment = await T.waitForExperiment(result.experiment.experimentId, emit, { result });
+      result.experiment = await T.waitForExperiment(result.experiment.experimentId, emit, { result, requiredTracks: ['current'] });
       result.compiledPlans = await T.call('getCompilerRuntimeEvalPlans', {
         params: { experimentId: result.experiment.experimentId },
       });
