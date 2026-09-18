@@ -13,9 +13,9 @@
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const capabilities = () => Object.freeze({
     environment: 'staging', images: false, diagnosticsOnly: true, manualActions: true,
-    compilerTracks: ['current', 'v2_candidate'], runtimeTracks: ['current'],
+    compilerTracks: ['current'], runtimeTracks: ['current'],
     onlineTuning: false, publishing: true,
-    compilerNotice: '共享编译引擎当前实际运行 Current 与 V2 两轨，全部调用和成本均展示；仅 Current 建立人工游玩会话。',
+    compilerNotice: '新实验只整理一份 World Base，不预写未来剧情；V2 的有界设计参考后移到当前阶段。历史双轨记录仍按实际证据显示，不自动重跑。',
   });
 
   function storagePrefix() {
@@ -156,7 +156,7 @@
       schemaVersion: SCHEMA, consoleSessionId: uid(), workspaceId: B.workspaceId(),
       startedAt: now(), updatedAt: now(), status: 'draft', runtimePhase: 'draft',
       input, scenario: null, experiment: null, compiledPlans: null,
-      compilerTracks: ['current', 'v2_candidate'], runtimeTracks: ['current'],
+      compilerTracks: ['current'], runtimeTracks: ['current'],
       previewRuns: { current: null }, opening: { current: null }, turns: [],
       initialProjections: { current: null }, finalProjections: { current: null },
       finalProjectionIssues: { current: [] }, trace: null, traceError: null,
@@ -425,6 +425,7 @@
         || !result.compiledPlans.tracks?.some((track) => track.trackCode === 'current' && track.status === 'available' && track.planJson)) {
         throw fail('当前编译产物与剧本版本不一致或缺失', 'SLICE_EVAL_PLAN_PIN_MISMATCH');
       }
+      result.compilerTracks = result.compiledPlans.tracks.map(track => track.trackCode);
       await T.refreshTrace(result);
       result.status = 'compiled_waiting_for_user'; result.runtimePhase = 'compiled_waiting_for_user';
       result.evidenceNeedsRefresh = false;
@@ -439,6 +440,11 @@
       catch (error) { if (error.status === 401) throw error; result.finalProjections.current[name] = { status: 'failed', value: null, error: T.compactError(error) }; }
     }
     result.finalProjectionIssues.current = T.projectionIssues(result.finalProjections.current);
+    const mainline = result.finalProjections.current.chapter?.value?.mainline;
+    if (mainline && !result.pendingCommand) {
+      result.runtimePhase = result.opening.current?.status === 'applied'
+        ? 'waiting_for_user' : 'opening_waiting_for_user';
+    }
   }
   async function refreshOpening(previous) {
     const result = clone(previous);
@@ -457,6 +463,10 @@
     result.finalProjections.current.run = { status: 'succeeded', value: run, error: null };
     result.error = null;
     result.status = 'opening_waiting_for_user';
+    if (run.opening.generationStatus === 'ready') {
+      const chapter = await T.call('evalGetRunChapter', { params: { runId }, recordTelemetry: false });
+      result.finalProjections.current.chapter = { status: 'succeeded', value: chapter, error: null };
+    }
     // Full model evidence is read by explicit refresh or the next user action.
     return result;
   }
@@ -502,6 +512,16 @@
   function normalizeAction(input) {
     const action = clone(input || {});
     const type = action.type;
+    if (type === 'confirm_talent') {
+      if (!['first_1', 'first_2', 'first_3'].includes(action.choiceId)
+        || !['baseline', 'guided'].includes(action.plannerStrategy)) throw fail('请选择能力卡和本局规划策略');
+      return { type, choiceId: action.choiceId, plannerStrategy: action.plannerStrategy };
+    }
+    if (type === 'advance_day') return { type };
+    if (type === 'allocate_points') {
+      if (typeof action.amount !== 'number' || !Number.isFinite(action.amount) || action.amount <= 0 || action.amount > 100) throw fail('分配点数必须在 0–100 之间');
+      return { type, skillCode: requiredId(action.skillCode, '能力'), amount: action.amount };
+    }
     if (type === 'confirm_opening_post') return { type, ...(action.body ? { body: requiredBody(action.body) } : {}) };
     if (type === 'post') return { type, body: requiredBody(action.body), visibility: action.visibility || 'public' };
     if (type === 'comment') return { type, rootPostId: requiredId(action.rootPostId || action.postId, '帖子'), body: requiredBody(action.body) };
@@ -878,7 +898,12 @@
     if (!result?.previewRuns?.current?.runId) throw fail('请先选角并开始游玩');
     if (result.pendingCommand) throw fail('上一条操作仍在后端处理，请等待完成', 'SLICE_EVAL_WRITE_PENDING');
     const action = normalizeAction(rawAction);
-    if (result.runtimePhase === 'opening_waiting_for_user' && action.type !== 'confirm_opening_post') throw fail('请先确认开场帖子');
+    if (result.runtimePhase === 'opening_waiting_for_user'
+      && !['confirm_opening_post', 'confirm_talent'].includes(action.type)) throw fail('请先确认开局配置并发布开场帖子');
+    const mainline = result.finalProjections?.current?.chapter?.value?.mainline;
+    if (mainline && action.type !== 'confirm_talent'
+      && !['playing', 'epilogue'].includes(mainline.phase)) throw fail('本章尚未准备完成，或已经失败；不能提交新的剧情行动');
+    if (mainline && action.type === 'confirm_talent' && mainline.phase !== 'awaiting_talent') throw fail('本局能力卡已经确认');
     if (action.type === 'confirm_opening_post' && result.opening.current?.status === 'applied') throw fail('开场帖子已经确认');
     return operation(result, onProgress, async (emit) => {
       result.error = null;
@@ -899,6 +924,7 @@
       await admitPending(result, emit);
       if (result.pendingCommand) await observePending(result, emit, { budgetMs: 45000 });
       await readCurrent(result);
+      if (action.type === 'confirm_talent' && !result.pendingCommand) result.runtimePhase = 'opening_waiting_for_user';
       execution.projections = clone(result.finalProjections.current);
       execution.projectionIssues = clone(result.finalProjectionIssues.current);
       execution.durationMs = Date.now() - Date.parse(execution.startedAt);

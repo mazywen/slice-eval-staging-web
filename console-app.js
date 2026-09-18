@@ -1,7 +1,7 @@
 /* Slice staging console. UI calls only the shared console client. */
 (() => {
   'use strict';
-  const C=window.SliceEvalConsoleClient, V=window.SliceEvalConsoleView;
+  const C=window.SliceEvalConsoleClient, V=window.SliceEvalConsoleView, M=window.SliceMainlineView;
   const $=(selector,root=document)=>root.querySelector(selector);
   const e=V.esc, A=V.arr, I=V.items;
   const state={
@@ -15,12 +15,12 @@
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
   const blankDraft=()=>({title:'',description:'',setting:'',goal:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
-  const openingPending=()=>state.result?.runtimePhase==='opening_waiting_for_user' && V.openingSnapshot(state.result).generationStatus==='pending' && !V.openingSnapshot(state.result).firstPostDraft?.trim();
-  const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown' || openingPending();
+  const openingPending=()=>state.result?.runtimePhase==='opening_waiting_for_user' && V.openingSnapshot(state.result).generationStatus==='pending';
+  const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown' || openingPending() || M.preparing(state.result);
   const locked=()=>state.busy || !!state.result?.pendingCommand || state.result?.runtimePhase==='waiting_for_backend' || pendingRelease();
   const playerActorId=()=>A(V.projections(state.result).run?.value?.actorStates || V.preview(state.result).actorStates).find(row=>row.kind==='player')?.actorId;
   const visibleNpcs=()=>V.cast(state.result).filter(row=>row.actorId && row.actorId!==playerActorId() && row.kind!=='player');
-  const canAct=()=>!!V.preview(state.result).runId && !locked() && state.result?.runtimePhase==='waiting_for_user';
+  const canAct=()=>!!V.preview(state.result).runId && !locked() && state.result?.runtimePhase==='waiting_for_user' && (!M.isLatest(state.result) || M.canContinue(state.result));
   const disable=(condition)=>condition?' disabled':'';
   const workspaceSteps=()=>A(C.listWorkspaceOperations?.()).map(operation=>({id:'workspace-'+operation.consoleOperationId,title:operation.label || '创建人物',kind:'workspace',status:operation.status,operations:operation.operations,error:operation.error,input:operation.operations?.[0]?.input,output:operation.operations?.at(-1)?.output}));
   const consoleSteps=()=>[...workspaceSteps(),...V.steps(state.result)];
@@ -125,25 +125,28 @@
   function renderOpening() {
     const opening=V.openingSnapshot(state.result),pending=opening.generationStatus==='pending',failed=opening.generationStatus==='failed';
     const roleReady=!pending&&!failed,playerName=V.preview(state.result).identitySnapshot?.displayName || '所选人物';
-    const message=pending?'正在根据你的身份和处境准备开场帖子。你可以先了解这个世界，也可以自己写一条。':failed?'开场帖子暂时没有生成成功。你可以根据公开背景，以所选人物的身份自己写一条开始。':'看看你的处境，修改下面的帖子，准备好后再发布。';
+    const ready=M.readyForFirstPost(state.result);
+    const message=pending?'正在根据所选身份准备出生内容，请先阅读已有背景。':failed?'开局生成没有完成。请查看真实失败原因并恢复原任务，不能跳过开局直接发帖。':M.isLatest(state.result)&&!ready?'确认能力后，等待首章、日程和快捷输入准备完成，再发布第一条动态。':'看看你的处境，修改下面的帖子，准备好后再发布。';
     return '<section class="panel" style="margin-bottom:20px"><div class="section-heading"><h3>你的开场</h3>'+V.badge(pending?'processing':failed?'failed':'waiting_for_user')+'</div><p class="muted" role="status">'+message+'</p>'+
-      V.section('世界背景',opening.background)+(roleReady?V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.openingHook):V.section('你选择的身份',playerName))+
-      '<label>开场帖子<textarea id="opening-body" rows="5" maxlength="4000" placeholder="以你的身份，说说此刻想说的话。"'+disable(locked())+'>'+e(V.openingDraftValue(state.result))+'</textarea></label>'+
-      '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !openingBody())+'>确认并发布开场</button></section>';
+      V.section('世界背景',opening.background)+(roleReady?V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.currentSituation || opening.openingHook):V.section('你选择的身份',playerName))+
+      M.suggestions(state.result,locked() || !ready,'opening')+
+      '<label>开场帖子<textarea id="opening-body" rows="5" maxlength="4000" placeholder="以你的身份，说说此刻想说的话。"'+disable(locked() || !ready)+'>'+e(V.openingDraftValue(state.result))+'</textarea></label>'+
+      '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !ready || !openingBody())+'>确认并发布开场</button></section>';
   }
   function renderPlay() {
     const result=state.result,run=V.preview(result),p=V.projections(result);
     const heading=pageHeading('亲自操作，观察系统回应','后台自然完成本次处理后，等待你的下一次输入。');
     if(!run.runId)return heading+renderSetup();
     const opening=result.runtimePhase==='opening_waiting_for_user';
-    return heading+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
-      (opening?renderOpening():'')+
+    return heading+M.journey(result)+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
+      M.talentPanel(result,locked())+M.dayCard(result,locked())+(opening?renderOpening():'')+
       '<div class="play-layout"><section class="panel play-content"><div id="play-tabs" class="tabs" role="tablist">'+Object.entries({feed:'世界动态',dm:'私聊',events:'事件',activities:'活动',cast:'人物',chapter:'章节'}).map(([key,label])=>'<button type="button" role="tab" aria-selected="'+(state.playTab===key)+'" class="'+(state.playTab===key?'active':'')+'" data-play-tab="'+key+'">'+label+'</button>').join('')+'</div>'+renderSurface()+'</section><aside class="session-aside"><section class="panel"><div class="section-heading"><h3>会话消耗</h3><small>已采集部分</small></div>'+V.usageHtml(V.usage(V.allCalls(result)))+'<p class="muted">汇总实验编译、当前游玩与邀请的已采集调用。缺失记录不等于零；尚未计量的发布编译不计入此小计。</p></section><section class="panel"><div class="section-heading"><h3>最近操作</h3><button class="text-button" type="button" data-page="records">全部</button></div><div class="step-list">'+stepButtons(5)+'</div></section></aside></div>';
   }
   function composeForm(defaultType='post',target={}) {
     const selected=state.compose || {type:defaultType,...target};
     const type=selected.type,title=V.label(type);
-    return '<form id="action-form" class="compose" data-action-type="'+e(type)+'"><div class="compose-header"><strong>'+e(title)+(selected.label?' · '+e(selected.label):'')+'</strong>'+(state.compose?'<button class="text-button" type="button" id="cancel-compose">取消</button>':'')+'</div><textarea id="action-body" rows="3" maxlength="4000" placeholder="'+(type==='post'?'以当前人物的身份发一条动态…':'输入这次真实发送的内容…')+'" aria-label="'+e(title)+'正文" required'+disable(!canAct())+'>'+e(state.composeBody)+'</textarea><div class="compose-actions"><small>'+(!canAct()?'完成开场或等待后台返回后可继续输入。':'发送后，后台按实际产品流程执行。')+'</small><button id="action-submit" class="button primary" type="submit"'+disable(!canAct())+'>'+e(title)+'</button></div></form>';
+    const allowed=canAct() && (type!=='post' || !M.isLatest(state.result) || M.canPost(state.result));
+    return (type==='post'?M.suggestions(state.result,!allowed):'')+'<form id="action-form" class="compose" data-action-type="'+e(type)+'"><div class="compose-header"><strong>'+e(title)+(selected.label?' · '+e(selected.label):'')+'</strong>'+(state.compose?'<button class="text-button" type="button" id="cancel-compose">取消</button>':'')+'</div><textarea id="action-body" rows="3" maxlength="4000" placeholder="'+(type==='post'?'以当前人物的身份发一条动态…':'输入这次真实发送的内容…')+'" aria-label="'+e(title)+'正文" required'+disable(!allowed)+'>'+e(state.composeBody)+'</textarea><div class="compose-actions"><small>'+(!allowed?'完成当前准备，或公开行动用完后手动进入下一日。':'发送后，后台按实际产品流程执行。')+'</small><button id="action-submit" class="button primary" type="submit"'+disable(!allowed)+'>'+e(title)+'</button></div></form>';
   }
   function renderFeed(p) {
     const posts=I(p.feed),replyThreads=I(p.replies);
@@ -195,7 +198,7 @@
     if(state.playTab==='activities')return renderActivities(p);
     if(state.playTab==='cast')return V.projectionNotice(p.cast,'人物')+(V.cast(state.result).map(row=>'<article class="message-card"><div class="message-head">'+V.avatar(row.displayName)+'<span><strong>'+e(row.displayName || V.actorName(state.result,row.actorId))+'</strong><small>'+e(row.role || row.kind || '')+'</small></span></div>'+V.renderValue(row)+'</article>').join('') || V.empty('尚未读取人物'))+V.section('人物关系',p.relationships?.status==='succeeded'?I(p.relationships):null);
     const last=V.steps(state.result).filter(row=>row.kind==='runtime').at(-1),outcome=last?.outcome || {},chapter=p.chapter?.status==='succeeded'?p.chapter.value:null;
-    return '<p class="notice">章节按后台规则推进与总结。这里显示当前章节、完成依据与实际结算结果。</p>'+V.projectionNotice(p.chapter,'章节')+V.section('当前章节',chapter)+V.section('章节总结与结算',V.chapterSettlementValue(p.chapter))+V.section('章节调度依据',outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive)+V.section('总体进度',p.progression?.status==='succeeded'?p.progression.value:null)+V.section('游玩历史',p.history?.status==='succeeded'?I(p.history):null);
+    return M.chapterDetails(state.result)+'<p class="notice">章节与数值只读取后台正式结果。条件及时判断，章末正式结算；没有返回的状态不在前端推算。</p>'+V.projectionNotice(p.chapter,'章节')+V.section('当前章节',chapter)+V.section('章节总结与结算',V.chapterSettlementValue(p.chapter))+V.section('章节调度依据',outcome.chapterDirective || outcome.gameplayEvidence?.chapter?.directive)+V.section('总体进度',p.progression?.status==='succeeded'?p.progression.value:null)+V.section('游玩历史',p.history?.status==='succeeded'?I(p.history):null);
   }
   function tabsHtml() {
     return '<div id="diagnostic-tabs" class="tabs" role="tablist">'+Object.entries(diagnosticTabs).map(([key,text])=>'<button type="button" data-diagnostic-tab="'+key+'" role="tab" aria-selected="'+(state.diagnosticTab===key)+'" class="'+(state.diagnosticTab===key?'active':'')+'">'+text+'</button>').join('')+'</div>';
@@ -213,9 +216,9 @@
   }
   function renderGuide() {
     const definitions=[
-      ['01','创作与编译','编辑世界设定、人物与预制活动。保存剧本后执行真实编译，查看系统如何转成可运行的世界。'],
-      ['02','选角与开场','编译完成后由你选择扮演人物并开始。开局建立后，等待你确认开场内容。'],
-      ['03','交互与观察','你自己发帖、评论、私聊、回应事件或进入活动。后台正常处理，并留下可以查看的过程证据。'],
+      ['01','只整理世界基础','保存世界、人物和活动原材料。新编译不提前生成必要因果、活动种子或未来章节；历史产物保留其原版本。'],
+      ['02','选角、能力、当前章','选择身份与首位关联 AI，读取真实出生结果，确认服务端能力候选，再生成本章条件、日程和快捷输入。首帖必须手动发布。'],
+      ['03','逐次行动、手动推进','公开发帖、评论、私聊和场景输入走同一后端。使用当前阶段参考规则或无规则基线进行对照；条件及时更新，章末正式结算。'],
     ];
     const stages=[['输入与当前状态','提交的正文、目标人物与业务对象，以及本轮开始时的世界和人物状态。'],['记忆与上下文','召回查询、共享记忆、人物私有视角，以及实际进入 Runtime 的上下文。'],['调度与规则判定','本轮选择谁参与、在哪个位置回应、事件活动与章节如何触发。'],['模型与校验','模型调用记录、Runtime 组装上下文、模型候选与经过工程绑定的结果。'],['应用与返回','内容、关系、技能、经验、事件、活动和章节实际写入了什么，接口读取返回了什么。']];
     return pageHeading('看懂从创作到游玩的流程','以下是业务流程说明；实际执行和跳过原因以每次操作的诊断记录为准。')+
@@ -264,7 +267,7 @@
         const previous=state.result;state.openingPolling=true;
         try {
           const result=await C.refreshOpening(previous);
-          if(state.result===previous && !state.busy){result.openingEditor=state.result.openingEditor;state.result=result;C.saveSession(result);state.error=null;state.message=openingPending()?'正在准备你的开场帖子，你可以先阅读背景或自己写。':'';render();}
+          if(state.result===previous && !state.busy){result.openingEditor=state.result.openingEditor;state.result=result;C.saveSession(result);state.error=null;state.message=openingPending()?'正在准备开局内容，请先阅读已有背景。':'';render();}
         } catch(error) {
           if(state.result===previous && !state.busy)showError(error);
         } finally {state.openingPolling=false;schedulePoll();}
@@ -319,7 +322,10 @@
     if(result){state.draft={...result.input};toast(compile?'编译结果已返回，可选择人物开始游玩。':'测试草稿已保存。');render();}
   }
   async function perform(action) {
-    if(locked() || (!canAct() && action.type!=='confirm_opening_post'))return;
+    if(locked() || (!canAct() && !['confirm_opening_post','confirm_talent'].includes(action.type)))return;
+    if(action.type==='confirm_opening_post' && !M.readyForFirstPost(state.result))return;
+    if(action.type==='post' && M.isLatest(state.result) && !M.canPost(state.result))return;
+    if(action.type==='advance_day' && !M.canAdvance(state.result))return;
     if(action.type==='confirm_opening_post' && (!openingBody() || state.result?.runtimePhase!=='opening_waiting_for_user'))return;
     const previousBody=state.composeBody;
     const result=await task('正在提交'+V.label(action.type)+'…',onProgress=>C.act(state.result,action,onProgress));
@@ -366,6 +372,15 @@
       if(step)inspect(step.id);else toast('这条内容未回传关联命令，无法确定其生成步骤。');
       return;
     }
+    if(button.dataset.confirmTalent){await perform({type:'confirm_talent',choiceId:button.dataset.confirmTalent,plannerStrategy:$('#planner-strategy')?.value || state.result?.plannerStrategy || 'guided'});return;}
+    if(button.dataset.mainlineSuggestion!==undefined){
+      const text=M.current(state.result)?.activeChapter?.suggestedInputs?.[Number(button.dataset.mainlineSuggestion)];
+      if(typeof text!=='string' || !M.canPost(state.result))return;
+      if(button.dataset.suggestionLocation==='opening'){
+        state.result.openingEditor={runId:V.preview(state.result).runId,body:text,edited:true};C.saveSession(state.result);render();$('#opening-body')?.focus();
+      }else{state.compose={type:'post'};state.composeBody=text;render();$('#action-body')?.focus();}
+      return;
+    }
     if(button.dataset.eventInput){activateCompose({type:'event_action',eventId:button.dataset.eventInput,label:'事件回应'});return;}
     if(button.dataset.eventChoice){await perform({type:'event_action',eventId:button.dataset.eventId,choiceId:button.dataset.eventChoice});return;}
     if(button.dataset.activityEnter){await perform({type:'activity_enter',activityAttemptId:button.dataset.activityEnter});return;}
@@ -398,6 +413,7 @@
         await task('正在创建所选人物的游玩会话…',onProgress=>C.start(state.result,{playerCharacterVersionId:startIds.playerCharacterVersionId || null,firstFollowerCharacterVersionId:startIds.firstFollowerCharacterVersionId || null},onProgress));break;
       }
       case 'confirm-opening':await perform({type:'confirm_opening_post',body:openingBody()});break;
+      case 'advance-day':await perform({type:'advance_day'});break;
       case 'refresh-button':
         captureDraft();
         if(state.result?.experiment || V.preview(state.result).runId)await task('正在读取最新后台状态…',onProgress=>C.refresh(state.result,onProgress));
@@ -432,11 +448,12 @@
     if(event.target.id==='opening-body' && state.result) {
       state.result.openingEditor={runId:V.preview(state.result).runId,body:event.target.value,edited:true};
       C.saveSession(state.result);
-      $('#confirm-opening').disabled=locked() || !openingBody();
+      $('#confirm-opening').disabled=locked() || !M.readyForFirstPost(state.result) || !openingBody();
     }
   });
   document.addEventListener('change',async(event)=>{
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
+    if(event.target.id==='planner-strategy' && state.result){state.result.plannerStrategy=event.target.value;C.saveSession(state.result);return;}
     if(event.target.id==='scenario-select'){await selectScenario(event.target.value);return;}
     if(event.target.id==='player-character'){
       state.selectedPlayerCharacterVersionId=event.target.value;

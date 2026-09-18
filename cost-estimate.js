@@ -2,13 +2,14 @@
 (function (root) {
   'use strict';
   const PRICING = Object.freeze({
-    checkedAt: '2026-09-05', effectiveFrom: '2026-08-17T00:00:00+08:00', currency: 'CNY',
+    checkedAt: '2026-09-18', effectiveFrom: '2026-09-10T12:00:00+08:00', currency: 'CNY',
     source: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/',
     unitTokens: 1000000,
     models: Object.freeze({
       'deepseek-v4-pro': Object.freeze({ inputMiss: 4.5, inputHit: 0.15, output: 13.5, peakMultiplier: 2 }),
-      'deepseek-v4-flash': Object.freeze({ inputMiss: 1.5, inputHit: 0.05, output: 4.5, peakMultiplier: 2 }),
-      'deepseek-v4-flash-vision-exp': Object.freeze({ inputMiss: 1.5, inputHit: 0.05, output: 4.5, peakMultiplier: 2 }),
+      'deepseek-flash': Object.freeze({ inputMiss: 1, inputHit: 0.02, output: 4, peakMultiplier: 2 }),
+      'deepseek-v4-flash': Object.freeze({ inputMiss: 1, inputHit: 0.02, output: 4, peakMultiplier: 2 }),
+      'deepseek-v4-flash-vision-exp': Object.freeze({ inputMiss: 1, inputHit: 0.02, output: 4, peakMultiplier: 2 }),
     }),
   });
   const list = (value) => Array.isArray(value) ? value : [];
@@ -17,29 +18,73 @@
     const seen = new Set();
     return list(calls).filter((call) => { if (!call) return false; if (!call.callRef) return true; if (seen.has(call.callRef)) return false; seen.add(call.callRef); return true; });
   }
+  const FLASH_PRICE_CUTOVER = Date.parse('2026-09-10T12:00:00+08:00');
+  const HISTORICAL_FROM = Date.parse('2026-08-17T00:00:00+08:00');
+  const HISTORICAL_FLASH = Object.freeze({ inputMiss: 1.5, inputHit: 0.05, output: 4.5, peakMultiplier: 2 });
+  function callTimestamp(call) {
+    const value = call.startedAt || call.providerStartedAt;
+    // A naive date must not be interpreted differently in each tester's timezone.
+    if (typeof value !== 'string' || !/(Z|[+-]\d\d:\d\d)$/.test(value)) return null;
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : null;
+  }
+  function rateForCall(call) {
+    if (String(call.modelProvider || '').toLowerCase() !== 'deepseek') return null;
+    const rate = PRICING.models[call.model];
+    if (!rate) return null;
+    const at = callTimestamp(call);
+    if (at !== null && at < HISTORICAL_FROM) return null;
+    if (call.model === 'deepseek-v4-pro') {
+      // Current pricing explicitly supersedes the earlier planned Pro retirement.
+      return { rate, version: 'pro-0817-confirmed-20260918', at };
+    }
+    if (at === null) return null;
+    if (at < FLASH_PRICE_CUTOVER) {
+      if (call.model === 'deepseek-flash') return null;
+      return { rate: HISTORICAL_FLASH, version: 'flash-recorded-20260905', at };
+    }
+    return { rate, version: 'flash-20260910', at };
+  }
   function estimateCalls(calls) {
     const rows = deduplicate(calls);
     let inputTokens = 0, outputTokens = 0, offPeakCny = 0, peakCny = 0, lowerBoundCny = 0, pricedCalls = 0, cacheUnknownCalls = 0;
-    const unpriced = [], models = new Set();
+    const unpriced = [], models = new Set(), priceEvidence = [];
     for (const call of rows) {
-      const rate = String(call.modelProvider || '').toLowerCase() === 'deepseek' ? PRICING.models[call.model] : null;
+      const selected = rateForCall(call);
       const input = token(call.inputTokens), output = token(call.outputTokens);
-      if (!rate || input === null || output === null) { unpriced.push({ callRef: call.callRef || null, model: call.model || null, reason: !rate ? 'price_not_verified' : 'usage_not_returned' }); continue; }
-      pricedCalls += 1; models.add(call.model); inputTokens += input; outputTokens += output;
+      if (!selected || input === null || output === null) {
+        unpriced.push({ callRef: call.callRef || null, model: call.model || null,
+          reason: !selected ? 'price_or_call_date_not_verified' : 'usage_not_returned' });
+        continue;
+      }
+      const { rate } = selected;
       const reportedHit = token(call.cacheHitInputTokens ?? call.promptCacheHitTokens);
-      const hit = reportedHit !== null && reportedHit <= input ? reportedHit : null;
+      const reportedMiss = token(call.cacheMissInputTokens ?? call.promptCacheMissTokens);
+      if (reportedHit !== null && reportedHit > input || reportedMiss !== null && reportedMiss > input
+          || reportedHit !== null && reportedMiss !== null && reportedHit + reportedMiss !== input) {
+        unpriced.push({ callRef: call.callRef || null, model: call.model, reason: 'cache_usage_inconsistent' });
+        continue;
+      }
+      const hit = reportedHit !== null ? reportedHit : reportedMiss !== null ? input - reportedMiss : null;
+      pricedCalls += 1; models.add(call.model); inputTokens += input; outputTokens += output;
       if (hit === null) cacheUnknownCalls += 1;
       const conservative = ((input - (hit || 0)) * rate.inputMiss + (hit || 0) * rate.inputHit + output * rate.output) / PRICING.unitTokens;
       offPeakCny += conservative; peakCny += conservative * rate.peakMultiplier;
       lowerBoundCny += hit === null ? (input * rate.inputHit + output * rate.output) / PRICING.unitTokens : conservative;
+      priceEvidence.push({ callRef: call.callRef || null, model: call.model,
+        priceVersion: selected.version, startedAt: call.startedAt || call.providerStartedAt || null,
+        inputHit: hit, inputMiss: hit === null ? null : input - hit,
+        offPeakCny: conservative, peakCny: conservative * rate.peakMultiplier,
+        rates: rate, source: PRICING.source, isEstimate: true });
     }
     return {
       pricingVersion: `deepseek-cny-${PRICING.checkedAt}`, currency: 'CNY', totalCalls: rows.length, pricedCalls,
       inputTokens: pricedCalls ? inputTokens : null, outputTokens: pricedCalls ? outputTokens : null,
       offPeakCny: pricedCalls ? offPeakCny : null, peakCny: pricedCalls ? peakCny : null,
       lowerBoundCny: pricedCalls ? lowerBoundCny : null,
-      cacheUnknownCalls, unpriced, models: [...models], complete: rows.length > 0 && unpriced.length === 0,
-      basis: 'Official CNY list price. When cache detail is absent, offPeak/peak assume all input is cache-miss; lowerBound assumes all input is cache-hit. Not a provider invoice.',
+      cacheUnknownCalls, unpriced, priceEvidence, models: [...models], complete: rows.length > 0 && unpriced.length === 0,
+      exactCacheKnown: pricedCalls > 0 && cacheUnknownCalls === 0,
+      basis: 'Dated CNY list-price estimate, not a provider invoice. Flash pricing changes at 2026-09-10T12:00:00+08:00; historical calls retain their recorded price snapshot. Missing date for Flash is unpriced. Off-peak/peak show tariff bounds, not an assertion about supplier billing time. Unknown cache uses miss for conservative totals and hit for the lower bound.',
     };
   }
   function callsForTrack(result, trackCode) {
@@ -88,7 +133,7 @@
     const rows = estimate.tracks.filter((track) => selectedCodes.includes(track.trackCode));
     return `<section class="experience-cost"><h3>人民币 Token 成本预估</h3><p>以 ${PRICING.checkedAt} 核对的官方人民币价计算。缺少缓存明细时按全部未命中计价；显示空闲 / 高峰两档，不是实际账单。</p><div class="experience-table-wrap"><table><thead><tr><th>轨道</th><th>一次编译</th><th>开局</th><th>互动 ${list(result.turns).length} 轮</th><th>已观测合计</th><th>复用编译后每局</th></tr></thead><tbody>${rows.map((track) => `<tr><th>${track.trackCode === 'current' ? 'Current' : 'V2'}</th>${[track.compile, track.opening, track.interaction, track.total, track.runtime].map((cost) => `<td>${money(cost.offPeakCny)}<small>高峰 ${money(cost.peakCny)}${cost.unpriced.length ? ' · 部分调用未定价' : ''}</small></td>`).join('')}</tr>`).join('')}</tbody></table></div>${rows.map((track) => track.projection ? `<p>${track.trackCode === 'current' ? 'Current' : 'V2'} · 若一局含 ${track.projection.assumedTurns} 轮、结构接近这 ${track.observedTurns} 轮：复用编译后约 ${money(track.projection.offPeakCny)}–${money(track.projection.peakCny)}。这是线性外推，不是已跑到结局的费用。</p>` : '').join('')}<small>没有编译 Usage 时，编译费用保持未知，不能把“已观测合计”理解为包含首次编译的全成本。公式：（未命中输入 × 输入单价 + 命中输入 × 缓存单价 + 输出 × 输出单价）÷ 1,000,000。缓存全部命中的理论下限、模型单价与缺失项保留在导出数据中。未包含服务器、数据库和存储费用。</small></section>`;
   }
-  const api = Object.freeze({ PRICING, estimateCalls, estimateRun, callsForTrack, render, money });
+  const api = Object.freeze({ PRICING, estimateCalls, estimateRun, callsForTrack, render, money, rateForCall });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SliceCostEstimate = api;
 })(typeof window !== 'undefined' ? window : globalThis);

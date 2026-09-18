@@ -210,7 +210,8 @@
       owners.get(call.callRef).add(track.trackCode);
     }
     const shared=new Set([...owners].filter(([,codes])=>codes.size>1).map(([ref])=>ref));
-    const groups=['current','v2_candidate'].map(trackCode=>{
+    const observedCodes=new Set([...tracks,...arr(result?.compiledPlans?.tracks)].map(track=>track.trackCode));
+    const groups=['current',...(observedCodes.has('v2_candidate')?['v2_candidate']:[])].map(trackCode=>{
       const selected=tracks.filter(track=>track.trackCode===trackCode);
       return {trackCode,title:trackCode==='current'?'Compiler Current':'Compiler V2 Candidate',
         calls:uniqueCalls(selected.flatMap(compilerCallsForTrack)).filter(call=>!shared.has(call.callRef)),
@@ -221,7 +222,7 @@
     return groups;
   }
   function compileUsageHtml(result) {
-    return '<p class="notice">编译调用按真实轨道分列。共同引用的调用单独列出，合计按 callRef 去重；当前游玩仅执行 Current。</p>'+
+    return '<p class="notice">新版先整理 World Base，玩法参考留到当前阶段。下方只列实际出现的轨道；历史共同调用按 callRef 去重。开局和章节生成的费用另列，不能把基础编译的零调用当成整局零成本。</p>'+ 
       compileUsageGroups(result).map(group=>'<section class="evidence-section"><h3>'+esc(group.title)+'</h3>'+
         usageHtml(usage(group.calls,{callsRecorded:group.callsRecorded}))+'</section>').join('');
   }
@@ -325,7 +326,7 @@
   function usageHtml(value) {
     const n=(v)=>number(v)===null?'未采集':v.toLocaleString();
     return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ n(value.count) +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>输入缓存命中 / 未命中</small><strong>'+n(value.cacheHit)+' / '+n(value.cacheMiss)+'</strong></div><div><small>账本费用</small><strong>'+esc(value.cost || '未采集')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>'+
-      (value.estimate?.pricedCalls?'<p class="muted">Provider 价格估算：'+esc(root.SliceCostEstimate.money(value.estimate.offPeakCny))+'～'+esc(root.SliceCostEstimate.money(value.estimate.peakCny))+' · 按已登记价格与真实 Token / Cache 计算；与账本金额分别展示。'+(value.estimate.unpriced.length?' '+value.estimate.unpriced.length+' 次调用尚无价格或用量。':'')+'</p>':'');
+      (value.estimate?.pricedCalls?'<p class="muted">Provider 价格估算：'+esc(root.SliceCostEstimate.money(value.estimate.offPeakCny))+'～'+esc(root.SliceCostEstimate.money(value.estimate.peakCny))+' · 按调用日期匹配价格；范围为闲时／高峰价，不是供应商账单。'+(value.estimate.cacheUnknownCalls?' '+value.estimate.cacheUnknownCalls+' 次缓存明细缺失，上述金额按未命中保守计算。':'')+(value.estimate.unpriced.length?' '+value.estimate.unpriced.length+' 次调用日期、价格或用量不完整，未计入。':'')+'</p>'+raw('价格版本与逐次计算依据',value.estimate.priceEvidence):'<p class="missing">尚无完整可计价调用；缺失用量不按零费用处理。</p>');
   }
   function modelRequests(calls) {
     if(!calls.length)return '<p class="missing">实际模型请求未采集。</p>';
@@ -521,7 +522,8 @@
     };
   }
   function compiledPlansHtml(result) {
-    return ['current','v2_candidate'].map(trackCode=>{
+    const observedCodes=new Set(arr(result?.compiledPlans?.tracks).map(track=>track.trackCode));
+    return ['current',...(observedCodes.has('v2_candidate')?['v2_candidate']:[])].map(trackCode=>{
       const matches=arr(result?.compiledPlans?.tracks).filter(row=>row.trackCode===trackCode);
       const track=matches.length===1?matches[0]:null, value=compileTrackEvidence(track);
       const title=trackCode==='current'?'Compiler Current':'Compiler V2 Candidate';
@@ -532,7 +534,8 @@
         section('编译产物标识',{compileJobId:track?.compileJobId,compilerVersion:track?.compilerVersion,definitionDigest:track?.definitionDigest,planDigest:track?.planDigest})+
         section('World Core · 世界设定',value.worldCore,'来自已校验摘要的不可变 WorldDefinition；与当前编辑中的输入分开。')+
         section('World Base · 世界基础',value.worldBase)+
-        section('Compiler · 实际执行',value.compiler,value.compiler?.deterministic?'由工程直接整理的世界基础没有 Provider Prompt 或 Token 费用。':'来自实际编译记录。')+
+        section('Compiler · 实际执行',value.compiler,value.compiler?.deterministic?'由工程整理已有基础，不预生成必要因果或 Activity 种子；本阶段没有 Provider 请求。':'来自实际编译记录。')+
+        section('当前阶段设计辅助',value.compiler?.runtimeDesignAssistance,'这里只是后续使用的策略固定信息，不代表已经生成章节、预先执行活动或授予人物知识。')+
         section('Runtime Policy · 运行规则',value.runtimePolicy,'分别列出 WorldDefinition 的身份规则与 WorldGameConfig 中固定的策略和预算。')+
         section('Game Config · 完整游戏配置',value.gameConfig)+
         section('Opening Config · 开场配置',value.opening)+

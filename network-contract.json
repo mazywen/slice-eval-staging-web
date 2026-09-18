@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "productKey": "slice",
   "contractVersion": "4.0.0",
-  "generatedAt": "2026-09-12T13:25:17.000Z",
-  "sourceBaseCommit": "a6303aae3446af6811f1ac949df1b0f00f92df11",
+  "generatedAt": "2026-09-13T14:16:51.000Z",
+  "sourceBaseCommit": "ec5b0a5d513096031d0adf47737bbc83577fb318",
   "routeRegistrySha256": "0489ac69def860595f6ca6672436380676ed7adf4d1232c423bdef9e07a3598b",
   "operations": [
     {
