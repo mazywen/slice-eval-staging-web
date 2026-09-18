@@ -109,7 +109,14 @@
   }
   function renderSetup() {
     const r=state.result;
-    if(!r?.compiledPlans)return '<section class="panel">'+V.empty('先完成剧本编译','保存剧本并编译后，在这里选择你要扮演的人物。')+'<div class="inline-controls"><button class="button primary" data-page="scripts" type="button">前往剧本与创作</button></div></section>';
+    const compileFailed = r?.experiment?.status === 'failed' || ['dead_letter','failed','cancelled'].includes(r?.experiment?.execution?.status);
+    const compiled = A(r?.compiledPlans?.tracks).some(track => track.trackCode === 'current' && track.status === 'available' && track.planJson);
+    if(!compiled) {
+      const code = r?.experiment?.execution?.errorCode || r?.error?.code;
+      const title = compileFailed ? '编译未完成，当前还不能开始游玩' : r?.experiment ? '正在准备这份剧本' : '先选择一份剧本';
+      const reason = compileFailed ? '后台任务已结束但没有生成可用作品。原输入和失败记录已保留。' : r?.experiment ? '先完成世界基础整理，再选择人物；开局准备好后，会在右侧显示可填写的发帖框。' : '在「剧本与创作」选择或填写世界内容，再进入这里扮演人物。';
+      return '<section class="panel" aria-label="游玩准备状态">'+V.empty(title,reason)+(code?'<p class="notice error">原因：<code>'+e(code)+'</code></p>':'')+'<div class="inline-controls"><button class="button" data-page="scripts" type="button">查看或修改剧本</button>'+(compileFailed?'<button id="recompile-failed-draft" class="button primary" type="button"'+disable(locked())+'>保留原记录，重新编译</button>':r?.experiment?'<button id="refresh-play-state" class="button primary" type="button"'+disable(locked())+'>读取当前进度</button>':'')+'</div></section>';
+    }
     const selection=V.startSelection(r.input,state.selectedPlayerCharacterVersionId,state.selectedFirstFollowerCharacterVersionId);
     const characters=selection.players,followers=selection.followers,pendingStart=!!r.pendingStart;
     return '<section class="panel"><div class="section-heading"><h2>'+e(r.input?.title)+'</h2>'+V.badge(r.status)+'</div><p class="muted">编译已完成。请选择你要扮演的人物，以及初始关联人物，开始当前剧本的一次游玩。</p><div class="form-section"><div class="inline-controls"><label>我扮演谁<select id="player-character"'+disable(locked() || pendingStart)+'><option value="">'+'请选择玩家身份'+'</option><option value="__default_player__"'+(state.selectedPlayerCharacterVersionId==='__default_player__'?' selected':'')+'>使用默认玩家身份</option>'+characters.map(row=>'<option value="'+e(row.characterVersionId)+'"'+(state.selectedPlayerCharacterVersionId===row.characterVersionId?' selected':'')+'>'+e(row.displayName || row.characterVersionId)+'</option>').join('')+'</select></label><label>初始关联人物<select id="first-follower-character"'+disable(locked() || pendingStart || !followers.length || (selection.requiresPlayer&&!selection.playerChoiceMade))+'><option value="">'+(followers.length?'请选择初始关联人物':'当前剧本没有其他可互动人物')+'</option>'+followers.map(row=>'<option value="'+e(row.characterVersionId)+'"'+(state.selectedFirstFollowerCharacterVersionId===row.characterVersionId?' selected':'')+'>'+e(row.displayName || row.characterVersionId)+'</option>').join('')+'</select></label><button id="start-run" class="button primary" type="button"'+disable(locked() || (!pendingStart&&!selection.ready))+'>'+(pendingStart?'继续确认上次开局':'开始游玩')+'</button></div>'+(pendingStart?'<p class="notice" style="margin-top:12px">上次开局的接收状态尚未确认，继续时保留原人物选择和同一请求。</p>':selection.missingInteractionCharacter?'<p class="notice" style="margin-top:12px">所选人物成为玩家后，剧本中没有其他可互动人物。可以选择默认玩家身份，与该人物互动；也可以再绑定一名人物并重新编译。</p>':'')+'</div><div class="form-section"><button class="text-button" type="button" data-inspect-step="compile">查看编译输入与完整结果 →</button><p class="notice" style="margin-top:12px">'+e(C.capabilities().compilerNotice || '')+'</p></div></section>';
@@ -128,10 +135,10 @@
     const ready=M.readyForFirstPost(state.result);
     const message=pending?'正在根据所选身份准备出生内容，请先阅读已有背景。':failed?'开局生成没有完成。请查看真实失败原因并恢复原任务，不能跳过开局直接发帖。':M.isLatest(state.result)&&!ready?'确认能力后，等待首章、日程和快捷输入准备完成，再发布第一条动态。':'看看你的处境，修改下面的帖子，准备好后再发布。';
     return '<section class="panel" style="margin-bottom:20px"><div class="section-heading"><h3>你的开场</h3>'+V.badge(pending?'processing':failed?'failed':'waiting_for_user')+'</div><p class="muted" role="status">'+message+'</p>'+
-      V.section('世界背景',opening.background)+(roleReady?V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.currentSituation || opening.openingHook):V.section('你选择的身份',playerName))+
+      '<p><strong>你扮演：'+e(playerName)+'</strong></p>'+
       M.suggestions(state.result,locked() || !ready,'opening')+
       '<label>开场帖子<textarea id="opening-body" rows="5" maxlength="4000" placeholder="以你的身份，说说此刻想说的话。"'+disable(locked() || !ready)+'>'+e(V.openingDraftValue(state.result))+'</textarea></label>'+
-      '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !ready || !openingBody())+'>确认并发布开场</button></section>';
+      '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !ready || !openingBody())+'>确认并发布开场</button><details class="opening-context"><summary>查看世界背景、身份和眼前处境</summary>'+V.section('世界背景',opening.background)+(roleReady?V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.currentSituation || opening.openingHook):V.section('你选择的身份',playerName))+'</details></section>'; 
   }
   function renderPlay() {
     const result=state.result,run=V.preview(result),p=V.projections(result);
@@ -139,7 +146,7 @@
     if(!run.runId)return heading+window.SlicePromptWorkbench.render(result,V.steps(result).find(step=>step.id===state.workbenchStepId),renderSetup(),V);
     const opening=result.runtimePhase==='opening_waiting_for_user';
     const gameplay=M.journey(result)+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
-      M.talentPanel(result,locked())+M.dayCard(result,locked())+(opening?renderOpening():'')+
+      M.talentPanel(result,locked())+(opening?renderOpening():'')+M.dayCard(result,locked())+
       '<section class="panel play-content"><div id="play-tabs" class="tabs" role="tablist">'+Object.entries({feed:'世界动态',dm:'私聊',events:'事件',activities:'活动',cast:'人物',chapter:'章节'}).map(([key,label])=>'<button type="button" role="tab" aria-selected="'+(state.playTab===key)+'" class="'+(state.playTab===key?'active':'')+'" data-play-tab="'+key+'">'+label+'</button>').join('')+'</div>'+renderSurface()+'</section>';
     const inspected=V.steps(result).find(step=>step.id===state.workbenchStepId);
     return heading+window.SlicePromptWorkbench.render(result,inspected,gameplay,V);
@@ -412,10 +419,22 @@
         const selection=V.startSelection(state.result?.input,state.selectedPlayerCharacterVersionId,state.selectedFirstFollowerCharacterVersionId);
         if(!state.result?.pendingStart && !selection.ready){toast('请明确选择扮演人物和初始关联人物。');break;}
         const startIds=state.result?.pendingStart?.body || {playerCharacterVersionId:selection.playerId,firstFollowerCharacterVersionId:selection.followerId};
-        await task('正在创建所选人物的游玩会话…',onProgress=>C.start(state.result,{playerCharacterVersionId:startIds.playerCharacterVersionId || null,firstFollowerCharacterVersionId:startIds.firstFollowerCharacterVersionId || null},onProgress));break;
+        await task('正在创建所选人物的游玩会话…',onProgress=>C.start(state.result,{playerCharacterVersionId:startIds.playerCharacterVersionId || null,firstFollowerCharacterVersionId:startIds.initialLinkedCharacterVersionId || startIds.firstFollowerCharacterVersionId || null},onProgress));break;
       }
       case 'confirm-opening':await perform({type:'confirm_opening_post',body:openingBody()});break;
       case 'advance-day':await perform({type:'advance_day'});break;
+      case 'recompile-failed-draft': {
+        const previous=state.result;
+        if(V.preview(previous).runId || !(previous?.experiment?.status==='failed' || ['dead_letter','failed','cancelled'].includes(previous?.experiment?.execution?.status)))break;
+        C.saveSession(previous);
+        await task('保留原失败记录，使用当前编译器重新准备…',async onProgress=>{
+          const fresh=await C.saveDraft({...previous.input},onProgress);
+          state.result=fresh;
+          return C.compile(fresh,onProgress);
+        });
+        break;
+      }
+      case 'refresh-play-state':
       case 'refresh-button':
         captureDraft();
         if(state.result?.experiment || V.preview(state.result).runId)await task('正在读取最新后台状态…',onProgress=>C.refresh(state.result,onProgress));

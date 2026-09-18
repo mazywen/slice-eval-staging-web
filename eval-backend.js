@@ -388,7 +388,7 @@
   function previewRunRequest(input, track) {
     return { track,
       ...(input.playerCharacterVersionId ? { playerCharacterVersionId: input.playerCharacterVersionId } : {}),
-      ...(input.firstFollowerCharacterVersionId ? { firstFollowerCharacterVersionId: input.firstFollowerCharacterVersionId } : {}),
+      ...(input.firstFollowerCharacterVersionId ? { initialLinkedCharacterVersionId: input.firstFollowerCharacterVersionId } : {}),
     };
   }
 
@@ -399,7 +399,7 @@
       || (preview.castSnapshot?.entries || []).some((row) => row.characterVersionId === player))) {
       throw Object.assign(new Error('服务端未按所选角色建立玩家身份，或仍把玩家角色当成 NPC；停止开局'), { code: 'SLICE_EVAL_PLAYER_IDENTITY_MISMATCH' });
     }
-    if (input.firstFollowerCharacterVersionId && preview?.firstFollower?.characterVersionId !== input.firstFollowerCharacterVersionId) {
+    if (input.firstFollowerCharacterVersionId && preview?.initialLinkedCharacter?.characterVersionId !== input.firstFollowerCharacterVersionId) {
       throw Object.assign(new Error('服务端首位互动角色与选择不一致；停止开局'), { code: 'SLICE_EVAL_FIRST_FOLLOWER_MISMATCH' });
     }
   }

@@ -485,6 +485,15 @@
       if (followerCandidateIds.length && !input.firstFollowerCharacterVersionId) throw fail('请选择首位互动人物', 'SLICE_EVAL_FIRST_FOLLOWER_MISSING');
       if (input.firstFollowerCharacterVersionId && !followerCandidateIds.includes(input.firstFollowerCharacterVersionId)) throw fail('首位互动人物必须选择本次已绑定且不同于玩家的人物', 'SLICE_EVAL_FIRST_FOLLOWER_INVALID');
       const requestBody = T.previewRunRequest(input, 'current');
+      // A schema rejection proves this write was not admitted. An explicit
+      // retry may create a corrected request; unknown admissions retain their
+      // exact original body and key.
+      const lastStart = [...(result.operations || [])].reverse().find(row =>
+        row.operationId === 'createCompilerExperimentPreviewRun');
+      const knownSchemaRejection = result.pendingStart && lastStart?.httpStatus === 400
+        && lastStart.error?.code === 'SLICE_INPUT_INVALID'
+        && JSON.stringify(lastStart.input?.body) === JSON.stringify(result.pendingStart.body);
+      if (knownSchemaRejection) { result.pendingStart = null; result.error = null; }
       if (result.pendingStart && JSON.stringify(result.pendingStart.body) !== JSON.stringify(requestBody)) throw fail('上次开局的接收状态未知，请先恢复原选择');
       result.input = { ...result.input, ...input, sourceDocument: clone(result.input.sourceDocument) };
       result.pendingStart ||= { key: 'console-preview-' + uid(), body: requestBody };
