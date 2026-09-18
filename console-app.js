@@ -414,8 +414,13 @@
     }
     if(button.dataset.scenarioId){await selectScenario(button.dataset.scenarioId);return;}
     if(button.dataset.editCharacter!==undefined){
-      const row=[...state.characters,...A(state.draft?.characters)].find(item=>item.characterVersionId===button.dataset.editCharacter);
-      if(!row)return;
+      const selected=[...state.characters,...A(state.draft?.characters)].find(item=>item.characterVersionId===button.dataset.editCharacter);
+      if(!selected)return;
+      button.disabled=true;
+      let row;
+      try {row=await C.getCharacterVersion(selected);}
+      catch(error){showError(error);return;}
+      finally{button.disabled=state.busy;}
       state.editingCharacter=row;
       const form=$('#character-form');form.reset();
       form.elements.displayName.value=row.displayName || '';

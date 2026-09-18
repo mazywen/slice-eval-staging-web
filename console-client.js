@@ -1171,6 +1171,12 @@
     return listAllPages(options.worldDraftId ? 'evalListCharacterSlotCandidates' : 'evalListCharacters',
       options.worldDraftId ? { worldDraftId: options.worldDraftId } : null, characterRow, (row) => row.characterVersionId);
   }
+  async function getCharacterVersion(input) {
+    return characterRow(await T.call('evalGetCharacterVersion', { params: {
+      characterId: requiredId(input.characterId, '人物'),
+      characterVersionId: requiredId(input.characterVersionId, '人物版本'),
+    } }));
+  }
   async function listRunCharacterSlots(result) {
     return items(await T.call('evalListRunCharacterSlots', { params: { runId: requiredId(result?.previewRuns?.current?.runId, '游玩会话') } }));
   }
@@ -1277,7 +1283,7 @@
   window.SliceEvalConsoleClient = Object.freeze({
     createChapterExperiment, getChapterExperiment, chapterLabStorage,
     connected: B.connected, connect: B.connect, disconnect: B.disconnect, capabilities,
-    listScenarios, getScenario, listCharacters, createCharacter, updateCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
+    listScenarios, getScenario, listCharacters, getCharacterVersion, createCharacter, updateCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
     saveDraft, compile, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,
     __testing: Object.freeze({ sourceFingerprint, activityDefinitionRequest, normalizeAction, scenarioRow, normalizedInput, newResult, observePending, resolveMutation }),
   });
