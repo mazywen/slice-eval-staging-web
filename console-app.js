@@ -133,23 +133,25 @@
     const opening=V.openingSnapshot(state.result),pending=opening.generationStatus==='pending',failed=opening.generationStatus==='failed';
     const roleReady=!pending&&!failed,playerName=V.preview(state.result).identitySnapshot?.displayName || '所选人物';
     const ready=M.readyForFirstPost(state.result);
-    const message=pending?'正在根据所选身份准备出生内容，请先阅读已有背景。':failed?'开局生成没有完成。请查看真实失败原因并恢复原任务，不能跳过开局直接发帖。':M.isLatest(state.result)&&!ready?'确认能力后，等待首章、日程和快捷输入准备完成，再发布第一条动态。':'看看你的处境，修改下面的帖子，准备好后再发布。';
+    const message=pending?'正在根据所选身份准备出生内容，请先阅读已有背景。':failed?'开局生成没有完成。请查看真实失败原因并恢复原任务，不能跳过开局直接发帖。':M.isLatest(state.result)&&!ready?'确认能力后，等待首章和今日安排准备完成，再发布第一条动态。':'看看你的处境，修改下面的帖子，准备好后再发布。';
     return '<section class="panel" style="margin-bottom:20px"><div class="section-heading"><h3>你的开场</h3>'+V.badge(pending?'processing':failed?'failed':'waiting_for_user')+'</div><p class="muted" role="status">'+message+'</p>'+
       '<p><strong>你扮演：'+e(playerName)+'</strong></p>'+
-      M.suggestions(state.result,locked() || !ready,'opening')+
+      '<p class="pm-scope-note">这是一条公开动态。写我自己的行动、感受和打算；与某人的私下交谈请使用私聊。</p>'+
       '<label>开场帖子<textarea id="opening-body" rows="5" maxlength="4000" placeholder="以你的身份，说说此刻想说的话。"'+disable(locked() || !ready)+'>'+e(V.openingDraftValue(state.result))+'</textarea></label>'+
       '<button id="confirm-opening" class="button primary" type="button"'+disable(locked() || !ready || !openingBody())+'>确认并发布开场</button><details class="opening-context"><summary>查看世界背景、身份和眼前处境</summary>'+V.section('世界背景',opening.background)+(roleReady?V.section('你的身份',opening.identity)+V.section('你的目标',opening.goal)+V.section('眼前的处境',opening.currentSituation || opening.openingHook):V.section('你选择的身份',playerName))+'</details></section>'; 
   }
   function renderPlay() {
     const result=state.result,run=V.preview(result),p=V.projections(result);
     const heading=pageHeading('亲自操作，观察系统回应','后台自然完成本次处理后，等待你的下一次输入。');
-    if(!run.runId)return heading+window.SlicePromptWorkbench.render(result,V.steps(result).find(step=>step.id===state.workbenchStepId),renderSetup(),V);
+    if(!run.runId)return heading+window.SliceProductWorkbench.render(result,V.steps(result).find(step=>step.id===state.workbenchStepId),renderSetup(),V);
     const opening=result.runtimePhase==='opening_waiting_for_user';
+    const failure=V.runtimeFailureMessage(result);
+    const failurePanel=failure?'<section class="notice error" role="alert"><strong>这次没有生成可用结果</strong><p>'+e(failure.message)+'</p>'+(failure.code?'<code>'+e(failure.code)+'</code>':'')+'</section>':'';
     const gameplay=M.journey(result)+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
-      M.talentPanel(result,locked())+(opening?renderOpening():'')+M.dayCard(result,locked())+
+      failurePanel+M.talentPanel(result,locked())+M.dayCard(result,locked())+(opening?renderOpening():'')+
       '<section class="panel play-content"><div id="play-tabs" class="tabs" role="tablist">'+Object.entries({feed:'世界动态',dm:'私聊',events:'事件',activities:'活动',cast:'人物',chapter:'章节'}).map(([key,label])=>'<button type="button" role="tab" aria-selected="'+(state.playTab===key)+'" class="'+(state.playTab===key?'active':'')+'" data-play-tab="'+key+'">'+label+'</button>').join('')+'</div>'+renderSurface()+'</section>';
     const inspected=V.steps(result).find(step=>step.id===state.workbenchStepId);
-    return heading+window.SlicePromptWorkbench.render(result,inspected,gameplay,V);
+    return heading+window.SliceProductWorkbench.render(result,inspected,gameplay,V);
   }
   function composeForm(defaultType='post',target={}) {
     const selected=state.compose || {type:defaultType,...target};
@@ -159,7 +161,7 @@
   }
   function renderFeed(p) {
     const posts=I(p.feed),replyThreads=I(p.replies);
-    return composeForm()+V.projectionNotice(p.feed,'动态')+(posts.length?posts.map(post=>{
+    return (state.result?.runtimePhase==='opening_waiting_for_user'?'':composeForm())+'<p class="pm-scope-note">公开动态会被世界里的人看到。身处房间也可以发公开动态；只想与伙伴说话，请切换到私聊或短互动，现场内容留在对应场景里。</p>'+V.projectionNotice(p.feed,'动态')+(posts.length?posts.map(post=>{
       const name=post.author?.displayName || V.actorName(state.result,post.author?.actorId || post.actorId);
       const replies=I(replyThreads.find(row=>row.postId===post.postId)?.value);
       return '<article class="message-card"><div class="message-head">'+V.avatar(name)+'<span><strong>'+e(name)+'</strong><small>'+e(time(post.createdAt))+'</small></span></div><p class="message-body">'+e(post.body || post.text || post.content?.body || '')+'</p><div class="message-actions"><button class="text-button" type="button" data-comment-post="'+e(post.postId)+'"'+disable(!canAct())+'>评论'+(post.replyCount!==undefined?' · '+e(post.replyCount):'')+'</button><button class="text-button" type="button" data-inspect-content="'+e(post.commandId || post.sourceCommandId || '')+'">查看关联过程</button></div>'+
@@ -338,7 +340,15 @@
     if(action.type==='confirm_opening_post' && (!openingBody() || state.result?.runtimePhase!=='opening_waiting_for_user'))return;
     const previousBody=state.composeBody;
     const result=await task('正在提交'+V.label(action.type)+'…',onProgress=>C.act(state.result,action,onProgress));
-    if(result){state.compose=null;state.composeBody='';state.activityEditing=null;state.selectedStepId=V.steps(result).at(-1)?.id;render();}
+    if(result){
+      const failure=V.runtimeFailureMessage(result);
+      if(failure){
+        state.composeBody=action.body || previousBody;
+        if(action.type==='confirm_opening_post')result.openingEditor={runId:V.preview(result).runId,body:action.body || previousBody,edited:true};
+        C.saveSession(result);state.error=failure.message;
+      }else{state.compose=null;state.composeBody='';state.activityEditing=null;}
+      state.selectedStepId=V.steps(result).at(-1)?.id;render();
+    }
     else {state.composeBody=previousBody;render();}
   }
   function inspect(id) {
@@ -475,7 +485,10 @@
   document.addEventListener('change',async(event)=>{
     if(event.target.id==='pw-step-select'){
       state.workbenchStepId=event.target.value==='__latest__'?null:event.target.value;
-      render();return;
+      // Inspecting history is read-only and must leave the live composer intact.
+      const selected=V.steps(state.result).find(step=>step.id===state.workbenchStepId);
+      if(!window.SliceProductWorkbench.updateInspection(state.result,selected,V))render();
+      return;
     }
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
     if(event.target.id==='planner-strategy' && state.result){state.result.plannerStrategy=event.target.value;C.saveSession(state.result);return;}

@@ -45,10 +45,20 @@
     }
     return { rate, version: 'flash-20260910', at };
   }
+  // Tariff selection uses Beijing time, independent of the tester's timezone.
+  // This is a CNY usage calculation, not a currency relabel of the old USD ledger.
+  function tariffAt(at) {
+    if (!Number.isFinite(at)) return null;
+    const date = new Date(at + 8 * 3600000), day = date.getUTCDay();
+    const minute = date.getUTCHours() * 60 + date.getUTCMinutes();
+    return day >= 1 && day <= 5 && (minute >= 540 && minute < 720 || minute >= 840 && minute < 1080)
+      ? { label: '高峰', multiplier: 2 } : { label: '空闲', multiplier: 1 };
+  }
   function estimateCalls(calls) {
     const rows = deduplicate(calls);
     let inputTokens = 0, outputTokens = 0, offPeakCny = 0, peakCny = 0, lowerBoundCny = 0, pricedCalls = 0, cacheUnknownCalls = 0;
     const unpriced = [], models = new Set(), priceEvidence = [];
+    let cny = 0, timedCalls = 0;
     for (const call of rows) {
       const selected = rateForCall(call);
       const input = token(call.inputTokens), output = token(call.outputTokens);
@@ -71,7 +81,11 @@
       const conservative = ((input - (hit || 0)) * rate.inputMiss + (hit || 0) * rate.inputHit + output * rate.output) / PRICING.unitTokens;
       offPeakCny += conservative; peakCny += conservative * rate.peakMultiplier;
       lowerBoundCny += hit === null ? (input * rate.inputHit + output * rate.output) / PRICING.unitTokens : conservative;
+      const tariff = tariffAt(selected.at);
+      if (tariff) { cny += conservative * tariff.multiplier; timedCalls += 1; }
       priceEvidence.push({ callRef: call.callRef || null, model: call.model,
+        calculatedCny: tariff ? conservative * tariff.multiplier : null,
+        tariff: tariff?.label || null, tariffTimezone: 'Asia/Shanghai',
         priceVersion: selected.version, startedAt: call.startedAt || call.providerStartedAt || null,
         inputHit: hit, inputMiss: hit === null ? null : input - hit,
         offPeakCny: conservative, peakCny: conservative * rate.peakMultiplier,
@@ -79,6 +93,9 @@
     }
     return {
       pricingVersion: `deepseek-cny-${PRICING.checkedAt}`, currency: 'CNY', totalCalls: rows.length, pricedCalls,
+      cny: timedCalls ? cny : null, timedCalls,
+      cnyComplete: rows.length > 0 && timedCalls === rows.length,
+      cnyBasis: '实际用量 × 调用开始时的官方人民币峰谷单价；非供应商账单，跨峰谷边界的长请求需以实际账单核对。',
       inputTokens: pricedCalls ? inputTokens : null, outputTokens: pricedCalls ? outputTokens : null,
       offPeakCny: pricedCalls ? offPeakCny : null, peakCny: pricedCalls ? peakCny : null,
       lowerBoundCny: pricedCalls ? lowerBoundCny : null,
@@ -133,7 +150,8 @@
     const rows = estimate.tracks.filter((track) => selectedCodes.includes(track.trackCode));
     return `<section class="experience-cost"><h3>人民币 Token 成本预估</h3><p>以 ${PRICING.checkedAt} 核对的官方人民币价计算。缺少缓存明细时按全部未命中计价；显示空闲 / 高峰两档，不是实际账单。</p><div class="experience-table-wrap"><table><thead><tr><th>轨道</th><th>一次编译</th><th>开局</th><th>互动 ${list(result.turns).length} 轮</th><th>已观测合计</th><th>复用编译后每局</th></tr></thead><tbody>${rows.map((track) => `<tr><th>${track.trackCode === 'current' ? 'Current' : 'V2'}</th>${[track.compile, track.opening, track.interaction, track.total, track.runtime].map((cost) => `<td>${money(cost.offPeakCny)}<small>高峰 ${money(cost.peakCny)}${cost.unpriced.length ? ' · 部分调用未定价' : ''}</small></td>`).join('')}</tr>`).join('')}</tbody></table></div>${rows.map((track) => track.projection ? `<p>${track.trackCode === 'current' ? 'Current' : 'V2'} · 若一局含 ${track.projection.assumedTurns} 轮、结构接近这 ${track.observedTurns} 轮：复用编译后约 ${money(track.projection.offPeakCny)}–${money(track.projection.peakCny)}。这是线性外推，不是已跑到结局的费用。</p>` : '').join('')}<small>没有编译 Usage 时，编译费用保持未知，不能把“已观测合计”理解为包含首次编译的全成本。公式：（未命中输入 × 输入单价 + 命中输入 × 缓存单价 + 输出 × 输出单价）÷ 1,000,000。缓存全部命中的理论下限、模型单价与缺失项保留在导出数据中。未包含服务器、数据库和存储费用。</small></section>`;
   }
-  const api = Object.freeze({ PRICING, estimateCalls, estimateRun, callsForTrack, render, money, rateForCall });
+  function cnyMoney(value) { return typeof value === 'number' && Number.isFinite(value) ? `¥${value.toFixed(6)}` : '待计价'; }
+  const api = Object.freeze({ PRICING, estimateCalls, estimateRun, callsForTrack, render, money, rateForCall, tariffAt, cnyMoney });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SliceCostEstimate = api;
 })(typeof window !== 'undefined' ? window : globalThis);

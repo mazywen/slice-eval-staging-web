@@ -325,7 +325,7 @@
   }
   function usageHtml(value) {
     const n=(v)=>number(v)===null?'未采集':v.toLocaleString();
-    return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ n(value.count) +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>输入缓存命中 / 未命中</small><strong>'+n(value.cacheHit)+' / '+n(value.cacheMiss)+'</strong></div><div><small>账本费用</small><strong>'+esc(value.cost || '未采集')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>'+
+    return '<div class="metric-strip"><div><small>模型调用</small><strong>'+ n(value.count) +'</strong></div><div><small>输入 Token</small><strong>'+n(value.inputTokens)+'</strong></div><div><small>输出 Token</small><strong>'+n(value.outputTokens)+'</strong></div><div><small>输入缓存命中 / 未命中</small><strong>'+n(value.cacheHit)+' / '+n(value.cacheMiss)+'</strong></div><div><small>人民币费用 · 用量计价</small><strong>'+esc(root.SliceCostEstimate?.cnyMoney(value.estimate?.cny) || '待计价')+'</strong>'+(value.missingCost?'<small>'+value.missingCost+' 次调用费用未采集</small>':'')+'</div></div>'+
       (value.estimate?.pricedCalls?'<p class="muted">Provider 价格估算：'+esc(root.SliceCostEstimate.money(value.estimate.offPeakCny))+'～'+esc(root.SliceCostEstimate.money(value.estimate.peakCny))+' · 按调用日期匹配价格；范围为闲时／高峰价，不是供应商账单。'+(value.estimate.cacheUnknownCalls?' '+value.estimate.cacheUnknownCalls+' 次缓存明细缺失，上述金额按未命中保守计算。':'')+(value.estimate.unpriced.length?' '+value.estimate.unpriced.length+' 次调用日期、价格或用量不完整，未计入。':'')+'</p>'+raw('价格版本与逐次计算依据',value.estimate.priceEvidence):'<p class="missing">尚无完整可计价调用；缺失用量不按零费用处理。</p>');
   }
   function modelRequests(calls) {
@@ -590,11 +590,29 @@
       section('异常与错误',command.diagnostics?.errors || step.execution?.error || command.error)+
       raw('原始操作记录',step);
   }
+  function runtimeFailureMessage(result) {
+    if (!result || result.pendingCommand) return null;
+    const latest = arr(result.turns).at(-1)?.current || result.opening?.current;
+    const commandId = latest?.accepted?.commandId || latest?.command?.commandId;
+    const recorded = commandId ? arr(trace(result).runtimeCommands).find(row =>
+      row.commandId === commandId && (!row.runId || row.runId === preview(result).runId)) : null;
+    if (![latest?.status, latest?.command?.status, recorded?.status].some(status => ['rejected','failed'].includes(status))) return null;
+    const failures = arr(recorded?.diagnostics?.failureEvidence).filter(row => row.status === 'captured');
+    const code = failures.at(-1)?.details?.internalCode || recorded?.errorCode || latest?.command?.errorCode || latest?.error?.code;
+    const description = {
+      SLICE_AI_PROPOSAL_MINIMUM_SOCIAL_DELIVERY_MISSING: 'AI 返回的动态或评论没有满足本次交付要求',
+      SLICE_AI_PROPOSAL_INVALID: 'AI 返回内容没有通过结果格式或业务校验',
+      SLICE_INTERNAL_UNAVAILABLE: '后台处理失败，具体原因见左侧这次操作的诊断',
+    }[code] || '本次输入的后台处理没有完成';
+    return { commandId: commandId || null, code: code || null,
+      message: description + '。原输入保留在下方，可以修改后重新提交；左侧保留这次调用与错误证据。',
+      body: latest?.payload?.body || recorded?.input?.body || '' };
+  }
   function projectionNotice(projection, noun) {
     if(!projection) return '<p class="notice">尚未读取'+esc(noun)+'。</p>';
     if(projection.status!=='succeeded')return '<p class="notice error">'+esc(noun)+'读取失败：'+esc(projection.error?.message || projection.error?.code || projection.status)+'</p>';
     if(projection.value?.truncated || projection.value?.pageInfo?.hasMore || projection.value?.pageInfo?.nextCursor)return '<p class="notice">当前只展示已读取的'+esc(noun)+'，结果尚未完整加载。</p>';
     return '';
   }
-  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,invitationReasonsHtml,activitySceneHtml,activityIdentity,activityOpeningCalls,activityCostGroups,activityCostHtml,activitySettlementHtml,invitationSummary,memoryContextHtml,threadContextHtml,socialDeliveryHtml,eventDecisionHtml,compileCalls,runOpeningCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,openingSnapshot,openingDraftValue,failureDetails,chapterSettlementValue,invitationTraceFor,compileTrackEvidence,clearLazyEvidence:()=>lazyValues.clear()});
+  root.SliceEvalConsoleView=Object.freeze({arr,esc,parse,items,number,duration,label,badge,empty,avatar,raw,renderValue,section,projections,trace,preview,cast,actorName,steps,callsFor,usage,allCalls,usageHtml,diagnostic,projectionNotice,hydrateEvidence,invitationReasonsHtml,activitySceneHtml,activityIdentity,activityOpeningCalls,activityCostGroups,activityCostHtml,activitySettlementHtml,invitationSummary,memoryContextHtml,threadContextHtml,socialDeliveryHtml,eventDecisionHtml,compileCalls,runOpeningCalls,compileUsageGroups,compileUsageHtml,stepUsage,uniqueCalls,modelRequests,startSelection,openingSnapshot,openingDraftValue,failureDetails,chapterSettlementValue,invitationTraceFor,compileTrackEvidence,runtimeFailureMessage,clearLazyEvidence:()=>lazyValues.clear()});
 })(typeof window !== 'undefined' ? window : globalThis);

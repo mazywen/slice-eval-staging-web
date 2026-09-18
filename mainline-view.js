@@ -73,8 +73,10 @@
   function suggestions(result, locked = false, location = 'feed') {
     const state = current(result);
     const rows = arr(state?.activeChapter?.suggestedInputs);
-    if (!rows.length || state.phase !== 'playing') return '';
-    return '<div class="mainline-suggestions"><small>此刻，你也可以这样说</small>'
+    // A first post has its own editable draft. Quick fills start after it is committed.
+    if (location === 'opening' || result?.opening?.current?.status !== 'applied'
+      || !rows.length || state.phase !== 'playing') return '';
+    return '<div class="mainline-suggestions"><small>不知道发什么？选一句填入草稿</small>'
       + rows.map((text, index) => '<button class="button" type="button" data-mainline-suggestion="'
         + index + '" data-suggestion-location="' + location + '"' + disabled(locked || !canPost(result))
         + '>' + esc(text) + '</button>').join('') + '</div>';
@@ -90,9 +92,9 @@
       + '<p class="muted">回溯入口只有在服务端提供可恢复节点时开放；本页不会用重新生成冒充恢复。</p></section>';
     const chapter = state.activeChapter;
     const day = chapter?.dayCard;
-    return '<section class="panel mainline-day"><div class="section-heading"><div>'
+    return '<section id="today-schedule" aria-label="今日安排" class="panel mainline-day"><div class="section-heading"><div><small class="eyebrow">今日安排</small>'
       + '<span class="eyebrow">第 ' + esc(state.day) + ' 天' + (chapter ? ' · 第 ' + esc(chapter.ordinal) + ' 章' : ' · 故事之后')
-      + '</span><h3>' + esc(day?.title || '继续你的故事') + '</h3></div>'
+      + '</span><h3>' + esc(day?.title || (chapter ? '今日安排尚未返回' : '继续你的故事')) + '</h3></div>'
       + '<span class="badge">今日公开行动 ' + esc(state.postsToday) + ' / ' + esc(state.policy.postsPerDay) + '</span></div>'
       + (day?.description ? '<p>' + esc(day.description) + '</p>' : '')
       + (day?.focus ? '<p class="muted">' + esc(day.focus) + '</p>' : '')
