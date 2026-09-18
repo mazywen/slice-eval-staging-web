@@ -1261,7 +1261,20 @@
     return { ...characterRow(captured.value), previousCharacterVersionId: version.characterVersionId, creationEvidence: captured.evidence };
   }
 
+  async function createChapterExperiment(experimentId, body, key) {
+    return T.call('evalCreateChapterExperiment', { params:{experimentId}, body, key });
+  }
+  async function getChapterExperiment(experimentId, jobId) {
+    return T.call('evalGetChapterExperiment', { params:{experimentId,jobId}, recordTelemetry:false });
+  }
+  function chapterLabStorage(value) {
+    const prefix=storagePrefix(); if(!prefix)return null;
+    const key=prefix+'chapter-lab';
+    if(value!==undefined) { localStorage.setItem(key,JSON.stringify(value)); return value; }
+    try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}
+  }
   window.SliceEvalConsoleClient = Object.freeze({
+    createChapterExperiment, getChapterExperiment, chapterLabStorage,
     connected: B.connected, connect: B.connect, disconnect: B.disconnect, capabilities,
     listScenarios, getScenario, listCharacters, createCharacter, updateCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
     saveDraft, compile, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,

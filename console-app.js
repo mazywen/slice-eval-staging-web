@@ -6,9 +6,9 @@
   const e=V.esc, A=V.arr, I=V.items;
   const state={
     page:'scripts',playTab:'feed',scenarios:[],characters:[],selectedScenarioId:'',
-    draft:null,result:null,busy:false,message:'',error:null,search:'',
+    draft:null,result:null,busy:false,message:'',error:null,search:'',draftCharacterDirty:false,
     selectedStepId:null,workbenchStepId:null,diagnosticTab:'overview',drawer:false,compose:null,composeBody:'',
-    selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,
+    selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,editingCharacter:null,
     characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,
   };
   const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'章节实验',records:'操作与诊断',guide:'流程总览'};
@@ -80,7 +80,7 @@
     const map=new Map([...state.characters,...A(state.draft?.characters)].filter(x=>x?.characterVersionId).map(row=>[row.characterVersionId,row]));
     const rows=[...map.values()].sort((a,b)=>Number(selected.has(b.characterVersionId))-Number(selected.has(a.characterVersionId)));
     if(!rows.length)return '<p class="muted">当前没有可用人物。可以先创建人物，或保存零人物的测试剧本。</p>';
-    return '<div class="characters-grid">'+rows.map(row=>'<label class="character-option">'+V.avatar(row.displayName)+'<span><strong>'+e(row.displayName || '未回传姓名')+'</strong><small>'+e(row.description || row.identity || row.characterVersionId)+'</small></span><input type="checkbox" name="characterVersionIds" value="'+e(row.characterVersionId)+'"'+(selected.has(row.characterVersionId)?' checked':'')+disable(state.busy || (!selected.has(row.characterVersionId)&&selected.size>=8))+' aria-label="选择 '+e(row.displayName)+'" /></label>').join('')+'</div>';
+    return '<div class="characters-grid">'+rows.map(row=>'<article class="character-option">'+V.avatar(row.displayName)+'<label class="character-option-main"><span><strong>'+e(row.displayName || '未回传姓名')+'</strong><small>'+e(row.description || row.identity || '人物卡')+'</small></span><input type="checkbox" name="characterVersionIds" value="'+e(row.characterVersionId)+'"'+(selected.has(row.characterVersionId)?' checked':'')+disable(state.busy || (!selected.has(row.characterVersionId)&&selected.size>=8))+' aria-label="选择 '+e(row.displayName)+'" /></label><button type="button" class="text-button character-edit" data-edit-character="'+e(row.characterVersionId)+'"'+disable(state.busy)+'>编辑</button></article>').join('')+'</div>';
   }
   function presetActivities() {
     const rows=A(state.draft?.activityDefinitions),characters=A(state.draft?.characters);
@@ -92,7 +92,7 @@
   }
   function draftEditor() {
     if(!state.draft)return V.empty('选择一个剧本开始','从左侧读取已有剧本，或新建一个文本剧本。');
-    const d=state.draft,compiled=state.result?.compiledPlans && state.result?.input?.title===d.title;
+    const d=state.draft,compiled=state.result?.compiledPlans && state.result?.input?.title===d.title && !state.draftCharacterDirty;
     return '<div class="section-heading"><h2>'+e(d.title || '新建剧本')+'</h2>'+V.badge(state.result?.status || 'draft')+'</div><form id="draft-form"><div class="form-grid">'+
       '<label class="full">剧本名称<input name="title" maxlength="160" value="'+e(d.title)+'" required'+disable(state.busy)+' /></label>'+
       '<label class="full">世界简介<textarea name="description" rows="3" maxlength="4000" required'+disable(state.busy)+'>'+e(d.description)+'</textarea></label>'+
@@ -344,7 +344,7 @@
       state.result=saved;
       return compile?C.compile(saved,onProgress):saved;
     });
-    if(result){state.draft={...result.input};toast(compile?'编译结果已返回，可选择人物开始游玩。':'测试草稿已保存。');render();}
+    if(result){state.draft={...result.input};if(compile)state.draftCharacterDirty=false;toast(compile?'编译结果已返回，可选择人物开始游玩。':'测试草稿已保存。');render();}
   }
   async function perform(action) {
     if(locked() || (!canAct() && !['confirm_opening_post','confirm_talent'].includes(action.type)))return;
@@ -395,7 +395,36 @@
     if(button.dataset.openLogin!==undefined){$('#auth-dialog').showModal();return;}
     if(button.dataset.page){captureDraft();state.page=button.dataset.page;state.drawer=false;render();return;}
     if(button.dataset.chapterLabNode || button.dataset.chapterLabResult)return;
+    if(button.dataset.chapterSandboxHistory){
+      const data=window.SliceChapterSandbox.data;data.selected=button.dataset.chapterSandboxHistory;
+      const row=data.history.find(r=>r.jobId===data.selected);
+      if(row?.result){data.snapshotText=JSON.stringify(row.result.snapshot,null,2);data.historyText=row.result.input.history||'';data.days=row.result.state.policy.daysPerChapter;data.facts=[];}
+      C.chapterLabStorage(data);render();return;
+    }
+    if(button.dataset.chapterSandbox){
+      if(state.busy)return;
+      window.SliceChapterSandbox.capture();
+      const lab=window.SliceChapterLab.state,base=(lab.active==='variant'?lab.variant:lab.baseline)||{title:state.draft?.title,result:{input:state.draft},form:window.SliceChapterLab.readForm()};
+      await task('正在执行隔离章节实验…',onProgress=>window.SliceChapterSandbox.run(button.dataset.chapterSandbox,{client:C,base,onProgress,scenarios:state.scenarios}));
+      return;
+    }
     if(button.dataset.scenarioId){await selectScenario(button.dataset.scenarioId);return;}
+    if(button.dataset.editCharacter!==undefined){
+      const row=[...state.characters,...A(state.draft?.characters)].find(item=>item.characterVersionId===button.dataset.editCharacter);
+      if(!row)return;
+      state.editingCharacter=row;
+      const form=$('#character-form');form.reset();
+      form.elements.displayName.value=row.displayName || '';
+      form.elements.description.value=row.content?.bio || row.description || '';
+      form.elements.personality.value=row.content?.personality || '';
+      form.elements.speakingStyle.value=row.content?.speakingStyle || '';
+      form.elements.background.value=row.content?.backgroundAndKnowledge || row.background || '';
+      form.elements.playable.value=row.content?.playable===false?'false':'true';
+      $('#character-dialog-title').textContent='编辑人物';
+      $('#character-submit-label').textContent='保存新版本';
+      $('#character-error').hidden=true;
+      $('#character-dialog').showModal();return;
+    }
     if(button.dataset.playTab){state.playTab=button.dataset.playTab;state.compose=null;state.composeBody='';render();return;}
     if(button.dataset.inspectStep){inspect(button.dataset.inspectStep);return;}
     if(button.dataset.diagnosticTab){state.diagnosticTab=button.dataset.diagnosticTab;state.drawer?renderDrawer():render();return;}
@@ -434,14 +463,17 @@
     }
     switch(button.id) {
       case 'login-button':
-        if(C.connected()){C.disconnect();window.clearTimeout(state.pollTimer);state.result=null;state.draft=null;state.scenarios=[];state.characters=[];state.error=null;state.message='';render();}
+        if(C.connected()){C.disconnect();window.SliceChapterLab.reset();window.SliceChapterSandbox.reset();window.clearTimeout(state.pollTimer);state.result=null;state.draft=null;state.scenarios=[];state.characters=[];state.error=null;state.message='';render();}
         else $('#auth-dialog').showModal();break;
       case 'new-draft':captureDraft();state.draft=blankDraft();state.selectedScenarioId='';state.result=null;state.selectedPlayerCharacterVersionId='';state.selectedFirstFollowerCharacterVersionId='';state.error=null;render();break;
       case 'compile-draft':await saveOrCompile(true);break;
       case 'chapter-lab-baseline':await runChapterLab(false);break;
       case 'chapter-lab-variant':await runChapterLab(true);break;
       case 'add-preset-activity':captureDraft();state.draft.activityDefinitions ||= [];state.draft.activityDefinitions.push({title:'',locationLabel:'',sceneDescription:'',playerSafeTeaser:'',requiredParticipantActorRefs:['player'],optionalParticipantActorRefs:[]});render();break;
-      case 'create-character':captureDraft();$('#character-error').hidden=true;$('#character-dialog').showModal();break;
+      case 'create-character':
+        captureDraft();state.editingCharacter=null;$('#character-form').reset();
+        $('#character-dialog-title').textContent='创建人物';$('#character-submit-label').textContent='保存人物';
+        $('#character-error').hidden=true;$('#character-dialog').showModal();break;
       case 'start-run': {
         const selection=V.startSelection(state.result?.input,state.selectedPlayerCharacterVersionId,state.selectedFirstFollowerCharacterVersionId);
         if(!state.result?.pendingStart && !selection.ready){toast('请明确选择扮演人物和初始关联人物。');break;}
@@ -510,7 +542,7 @@
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
     if(event.target.id==='planner-strategy' && state.result){state.result.plannerStrategy=event.target.value;C.saveSession(state.result);return;}
     if(event.target.id==='scenario-select'){await selectScenario(event.target.value);return;}
-    if(event.target.id==='chapter-lab-scenario'){await selectScenario(event.target.value);state.page='chapterLab';render();return;}
+    if(event.target.id==='chapter-lab-scenario'){await selectScenario(event.target.value);window.SliceChapterLab.reset();chapterLabUi.form={};window.SliceChapterSandbox.data.snapshotText='';state.page='chapterLab';render();return;}
     if(event.target.id==='chapter-lab-player'){
       chapterLabUi.form=window.SliceChapterLab.readForm();
       const ids=A(state.draft?.characterVersionIds).filter(id=>id!==chapterLabUi.form.playerCharacterVersionId);
@@ -560,10 +592,30 @@
     if(form.id==='character-form') {
       const submit=$('button[type=submit]',form);submit.disabled=true;$('#character-error').hidden=true;
       try {
-        const row=await C.createCharacter(Object.fromEntries(new FormData(form)));
-        state.characters.push(row);
-        if(state.draft && A(state.draft.characterVersionIds).length<8){state.draft.characterVersionIds.push(row.characterVersionId);state.draft.characters.push(row);}
-        form.reset();$('#character-dialog').close();toast('人物已保存。');render();
+        const values=Object.fromEntries(new FormData(form));
+        const editing=state.editingCharacter;
+        const row=editing
+          ? await C.updateCharacter({...values,characterId:editing.characterId})
+          : await C.createCharacter(values);
+        state.characters=editing
+          ? state.characters.map(item=>item.characterId===row.characterId?row:item)
+          : [...state.characters,row];
+        if(state.draft){
+          if(editing){
+            const oldId=row.previousCharacterVersionId || editing.characterVersionId;
+            const used=A(state.draft.characterVersionIds).includes(oldId);
+            state.draft.characterVersionIds=A(state.draft.characterVersionIds).map(id=>id===oldId?row.characterVersionId:id);
+            state.draft.characters=A(state.draft.characters).map(item=>item.characterVersionId===oldId?row:item);
+            for(const activity of A(state.draft.activityDefinitions))for(const key of ['requiredParticipantActorRefs','optionalParticipantActorRefs']) {
+              activity[key]=A(activity[key]).map(ref=>ref==='character:'+oldId?'character:'+row.characterVersionId:ref);
+            }
+            if(used)state.draftCharacterDirty=true;
+          }else if(A(state.draft.characterVersionIds).length<8){
+            state.draft.characterVersionIds.push(row.characterVersionId);state.draft.characters.push(row);
+          }
+        }
+        state.editingCharacter=null;form.reset();$('#character-dialog').close();
+        toast(editing?'人物新版本已保存；当前未开始的剧本重新编译后生效。':'人物已保存。');render();
       }catch(error){$('#character-error').textContent=error.message;$('#character-error').hidden=false;}
       finally{submit.disabled=false;}return;
     }

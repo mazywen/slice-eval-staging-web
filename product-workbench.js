@@ -44,6 +44,8 @@
   const stageNames = {world_base_compile:'整理作品基础', run_birth:'生成出生处境', dynamic_chapter:'准备章节／日程', runtime_turn:'回应玩家与社交生成', private_pov:'角色私密记忆处理', activity_opening:'活动开场', activity_invitation:'活动参与判断', runtime_repair_l1_field:'修复个别字段', runtime_repair_l2_module:'修复一段输出', runtime_repair_l3_full:'完整重试'};
   const panels = new Map();
   let serial = 0, currentSelection = null, touchStart = null, horizontalMotion = 0, lastMotionAt = 0, lastNavigationAt = 0;
+  const canvasState={mode:'step',scale:.72,x:18,y:18,autoFit:true};
+  let canvasPointer=null;
   function human(value, depth = 0) {
     if (value == null) return '<p class="pm-muted">本步未采集这项内容</p>';
     if (typeof value === 'boolean') return value ? '是' : '否';
@@ -236,31 +238,93 @@
     }
     return {nodes,edges,calls};
   }
+  function globalOverview(result,V) {
+    const history=V.steps(result), runtime=history.filter(row=>row.kind==='runtime'), aiStages=history.filter(row=>row.kind==='ai_stage');
+    const source=history.find(row=>row.kind==='source'), compile=history.find(row=>row.kind==='compile'), start=history.find(row=>row.kind==='start');
+    const chapters=aiStages.filter(row=>row.aiCalls?.some(call=>call.stage==='dynamic_chapter'));
+    const calls=V.allCalls(result);
+    const saved=runtime.filter(row=>row.outcome?.outcomeId && row.outcome?.decision!=='rejected');
+    const node=(id,title,note,status,input,output)=>({id,title,note,status,kind:'program',
+      inputHtml:section('这一层接收什么',input),outputHtml:section('这一层交付什么',output),
+      promptHtml:'<p class="pm-muted">全局视图说明职责；实际逐字 Prompt 请切到“本轮”并打开具体 AI 方框。</p>',
+      writeHtml:section('在主链中的位置',{status,note})});
+    return {nodes:[
+      node('author','作者与人物输入','作品进入所有玩家共享的基础层',source?'已观察':'尚未观察',source?.input,source?.output),
+      node('compile','World Base','整理所有 Run 共用的世界基础',compile?'已观察':'尚未观察',compile?.input,compile?.output),
+      node('opening','开局：身份与出生','把共享作品变成这一局的具体起点',start?'已观察':'尚未观察',start?.input,start?.output),
+      node('chapter','章节与今日安排','只展开当前章、今日处境和可执行方向',chapters.length?'已观察':'尚未观察',chapters.map(row=>row.input),chapters.map(row=>row.output)),
+      node('player','玩家世界输入','发帖、评论、私聊、短互动和 Activity 都进入同一世界',runtime.length?runtime.length+' 步':'尚未观察',runtime.map(row=>row.input),runtime.map(row=>row.outcome?.narrativeSummary)),
+      node('context','上下文装配','世界事实＋人物＋POV/Graph Memory＋当前场景按本次任务取用',calls.length?'已观察':'尚未观察',calls.map(call=>requestBlocks(call)),null),
+      node('model','DeepSeek 生成','不同任务身份生成章节、人物回应、现场结果或受限判断',calls.length?calls.length+' 次调用':'尚未观察',calls.map(call=>call.requestEvidence?.requestBody?.messages),calls.map(candidate)),
+      node('check','权限／事实／数值检查','AI 给候选，程序确认哪些真正成立',runtime.length?'已观察':'尚未观察',runtime.map(row=>row.outcome?.debugEvidence?.authorityBoundProposal),runtime.map(row=>row.outcome?.gameplayEvidence)),
+      node('save','Canon / Memory / 关系写回','一次正式结果同时服务下一轮世界、人物记忆和剧情进度',saved.length?saved.length+' 次正式结果':'尚未观察',saved.map(row=>row.outcome?.writeCounts),saved.map(row=>storageDestinations(row))),
+      node('advance','换日／章末／下一章','达到产品边界后才进入新的日程或章节',runtime.some(row=>row.input?.type==='advance_day')?'已观察':'按实际游玩触发',runtime.filter(row=>row.input?.type==='advance_day').map(row=>row.input),runtime.filter(row=>row.input?.type==='advance_day').map(row=>row.outcome))
+    ],edges:[
+      {from:'author',to:'compile'},{from:'compile',to:'opening'},{from:'opening',to:'chapter'},{from:'chapter',to:'player'},
+      {from:'player',to:'context'},{from:'context',to:'model'},{from:'model',to:'check'},{from:'check',to:'save'},
+      {from:'save',to:'advance'},{from:'advance',to:'chapter'}
+    ],calls};
+  }
   function box(node,step,V) {
     const id='pm-'+(++serial); panels.set(id,{...node,stepTitle:stepTitle(step)});
     const status=node.status||'未采集';
     return '<button type="button" class="pm-box '+(node.kind==='ai'?'pm-ai':'')+'" data-pm-node="'+id+'" data-node-kind="'+esc(node.kind)+'" data-node-key="'+esc(node.id)+'"><span class="pm-box-top">'+esc(status)+'</span><strong>'+esc(node.title)+'</strong><small>'+esc(node.note)+'</small>'+(node.call?'<span class="pm-node-cost">'+esc(charge([node.call]).display)+'</span>':'')+'<span class="pm-open">输入 · 提示词 · 输出 ↗</span></button>';
   }
   function graph(result,step,V) {
-    const model=buildGraph(result,step,V);
+    const model=canvasState.mode==='global'?globalOverview(result,V):buildGraph(result,step,V);
     if(!model.nodes.length)return '<p class="pm-muted">右侧提交后，这里显示真实处理过程。</p>';
     const rows=[];
     for(const node of model.nodes){
-      const level=node.kind==='input'?0:node.kind==='material'?1:node.kind==='assembly'?2:node.kind==='ai'?3:node.id==='check'?4:node.id==='display'||node.id==='write'?5:1;
+      let level;
+      if(canvasState.mode==='global'){
+        level={author:0,compile:1,opening:2,chapter:3,player:4,context:5,model:6,check:7,save:8,advance:9}[node.id] ?? 5;
+      }else{
+        level=node.kind==='input'?0:node.kind==='material'?1:node.kind==='assembly'?2:node.kind==='ai'?3:node.id==='check'?4:node.id==='display'||node.id==='write'?5:1;
+      }
       (rows[level] ||= []).push(node);
     }
-    const present=rows.filter(Boolean);
-    const overlap=root.SlicePromptWorkbench?.overlaps(model.calls);
-    scheduleConnections();
-    return '<p class="pm-evidence-note">'+phaseStatus(step)+' · '+(model.calls.length?model.calls.length+' 次模型调用':'模型调用以采集记录为准')+(overlap?' · 观察到最大 '+overlap.peak+' 路调用时间重叠':'')+'。方框来自本步记录，连线表示材料流向；每次调用的实际请求单独保留。</p><div class="pm-graph pm-step-swipe" data-pm-swipe data-pm-edges="'+esc(JSON.stringify(model.edges))+'" aria-label="当前步骤模块图，左右滑动回看操作"><svg class="pm-connections" aria-hidden="true"></svg>'+present.map((nodes,i)=>(i?'<div class="pm-arrow" aria-hidden="true"></div>':'')+'<div class="pm-flow-row '+(nodes.length>1?'pm-branch':'')+'">'+nodes.map(n=>box(n,step,V)).join('')+'</div>').join('')+'</div>'; 
+    const present=rows.filter(Boolean), overlap=root.SlicePromptWorkbench?.overlaps(model.calls);
+    scheduleConnections();scheduleCanvasFit();
+    const modeNote=canvasState.mode==='global'
+      ? '全局链路只表示系统结构；节点中的“已观察”来自当前实验，真实 Prompt 请切回本轮。'
+      : phaseStatus(step)+' · '+(model.calls.length?model.calls.length+' 次模型调用':'模型调用以采集记录为准')+(overlap?' · 观察到最大 '+overlap.peak+' 路调用时间重叠':'')+'。';
+    return '<p class="pm-evidence-note">'+modeNote+'</p><div class="pm-canvas-viewport" data-pm-canvas tabindex="0" aria-label="可缩放后端流程画布"><div class="pm-canvas-stage" data-pm-scale="'+canvasState.scale+'" style="transform:translate('+canvasState.x+'px,'+canvasState.y+'px) scale('+canvasState.scale+')"><div class="pm-graph" data-pm-edges="'+esc(JSON.stringify(model.edges))+'"><svg class="pm-connections" aria-hidden="true"></svg>'+present.map((nodes,i)=>(i?'<div class="pm-arrow" aria-hidden="true"></div>':'')+'<div class="pm-flow-row '+(nodes.length>1?'pm-branch':'')+'">'+nodes.map(n=>box(n,canvasState.mode==='global'?{title:'全局链路'}:step,V)).join('')+'</div>').join('')+'</div></div></div>';
   }
-  let connectionObserver=null, connectionFrame=null;
+  let connectionObserver=null, connectionFrame=null, canvasFrame=null;
+  const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
+  function applyCanvas() {
+    const stage=root.document?.querySelector('#pm-inspector .pm-canvas-stage');if(!stage)return;
+    stage.dataset.pmScale=String(canvasState.scale);
+    stage.style.transform='translate('+canvasState.x+'px,'+canvasState.y+'px) scale('+canvasState.scale+')';
+    const label=root.document.querySelector('#pm-canvas-scale');if(label)label.textContent=Math.round(canvasState.scale*100)+'%';
+    scheduleConnections();
+  }
+  function fitCanvas() {
+    const viewport=root.document?.querySelector('#pm-inspector .pm-canvas-viewport'),graph=viewport?.querySelector('.pm-graph');if(!viewport||!graph)return;
+    const width=graph.offsetWidth||960,height=graph.scrollHeight||360;
+    const scale=clamp(Math.min((viewport.clientWidth-32)/width,(viewport.clientHeight-32)/height),.32,1);
+    canvasState.scale=scale;canvasState.x=(viewport.clientWidth-width*scale)/2;canvasState.y=Math.max(16,(viewport.clientHeight-height*scale)/2);canvasState.autoFit=false;applyCanvas();
+  }
+  function scheduleCanvasFit() {
+    if(!root.document||!root.requestAnimationFrame||!canvasState.autoFit)return;
+    if(canvasFrame)root.cancelAnimationFrame(canvasFrame);
+    canvasFrame=root.requestAnimationFrame(()=>{canvasFrame=null;fitCanvas();});
+  }
+  function zoomCanvas(factor,clientX=null,clientY=null) {
+    const viewport=root.document?.querySelector('#pm-inspector .pm-canvas-viewport');if(!viewport)return;
+    const before=canvasState.scale,next=clamp(before*factor,.28,1.6);if(next===before)return;
+    const rect=viewport.getBoundingClientRect(),px=(clientX??(rect.left+rect.width/2))-rect.left,py=(clientY??(rect.top+rect.height/2))-rect.top;
+    const worldX=(px-canvasState.x)/before,worldY=(py-canvasState.y)/before;
+    canvasState.scale=next;canvasState.x=px-worldX*next;canvasState.y=py-worldY*next;canvasState.autoFit=false;applyCanvas();
+  }
   function drawConnections(graph) {
     const svg=graph?.querySelector('.pm-connections');if(!svg)return;
     const rect=graph.getBoundingClientRect();if(!rect.width||!rect.height)return;
+    const scale=Number(graph.closest('.pm-canvas-stage')?.dataset.pmScale)||1;
+    const width=graph.offsetWidth||rect.width/scale,height=graph.scrollHeight||rect.height/scale;
     const ns='http://www.w3.org/2000/svg';
-    svg.setAttribute('viewBox','0 0 '+rect.width+' '+rect.height);
-    svg.setAttribute('width',String(rect.width));svg.setAttribute('height',String(rect.height));
+    svg.setAttribute('viewBox','0 0 '+width+' '+height);
+    svg.setAttribute('width',String(width));svg.setAttribute('height',String(height));
     const defs=root.document.createElementNS(ns,'defs'),marker=root.document.createElementNS(ns,'marker');
     marker.setAttribute('id','pm-edge-arrow');marker.setAttribute('viewBox','0 0 8 8');marker.setAttribute('refX','7');marker.setAttribute('refY','4');marker.setAttribute('markerWidth','6');marker.setAttribute('markerHeight','6');marker.setAttribute('orient','auto');
     const head=root.document.createElementNS(ns,'path');head.setAttribute('d','M 0 0 L 8 4 L 0 8 z');head.setAttribute('fill','currentColor');marker.append(head);defs.append(marker);
@@ -268,7 +332,7 @@
     for(const edge of parse(graph.dataset.pmEdges)||[]) {
       const source=boxes.get(edge.from),target=boxes.get(edge.to);if(!source||!target)continue;
       const a=source.getBoundingClientRect(),b=target.getBoundingClientRect();
-      const x1=a.left+a.width/2-rect.left,y1=a.bottom-rect.top,x2=b.left+b.width/2-rect.left,y2=b.top-rect.top-3;
+      const x1=(a.left+a.width/2-rect.left)/scale,y1=(a.bottom-rect.top)/scale,x2=(b.left+b.width/2-rect.left)/scale,y2=(b.top-rect.top)/scale-3;
       const mid=y1+Math.max(8,(y2-y1)/2),line=root.document.createElementNS(ns,'path');
       line.setAttribute('d',`M ${x1} ${y1} L ${x1} ${mid} L ${x2} ${mid} L ${x2} ${y2}`);
       line.setAttribute('fill','none');line.setAttribute('stroke','currentColor');line.setAttribute('stroke-width','1.5');line.setAttribute('marker-end','url(#pm-edge-arrow)');
@@ -300,10 +364,13 @@
     for(const c of cumulative){const key=stageNames[c.stage]||'其他已采集处理';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(c);}
     return '<section id="pm-costs" class="pw-footer pm-costs" aria-label="人民币费用"><h2>费用与速度</h2><div class="pm-cost-grid">'+moneyBox('选中这一步',calls,u.count===0)+moneyBox('本局已采集累计',V.allCalls(result))+moneyBox('本剧本当前实验累计',cumulative)+'</div><p>本步等待 '+esc(V.duration(step?.durationMs??step?.execution?.durationMs))+' · AI 调用 '+(num(u.count)?u.count:'未采集')+' 次 · KV 输入命中 '+ratio+'</p><details open><summary>各个环节累计（人民币）</summary><table class="pm-cost-table"><thead><tr><th>环节</th><th>调用</th><th>费用</th></tr></thead><tbody>'+[...groups].map(([k,r])=>'<tr><td>'+esc(k)+'</td><td>'+r.length+'</td><td>'+charge(r).display+'</td></tr>').join('')+'</tbody></table></details><p class="pm-muted">剧本累计包含当前实验已采集的编译、试玩和重试，按调用去重；其他历史实验尚未合并。人民币账本直接使用；旧外币账本保留，人民币按当时用量与单价估算。未知费用保持未知。</p></section>';
   }
+  function canvasToolbar() {
+    return '<div class="pm-canvas-toolbar"><div class="pm-canvas-toolbar-group"><button type="button" data-pm-mode="step" class="'+(canvasState.mode==='step'?'active':'')+'">本轮实际链路</button><button type="button" data-pm-mode="global" class="'+(canvasState.mode==='global'?'active':'')+'">全局链路</button></div><div class="pm-canvas-toolbar-group"><button type="button" data-pm-zoom="out" aria-label="缩小">−</button><span id="pm-canvas-scale" class="pm-canvas-scale">'+Math.round(canvasState.scale*100)+'%</span><button type="button" data-pm-zoom="in" aria-label="放大">＋</button><button type="button" data-pm-zoom="fit">适应屏幕</button><button type="button" data-pm-zoom="reset">100%</button></div></div>';
+  }
   function inspector(result,selected,V) {
     const history=V.steps(result),step=selectedStep(history,selected);
-    currentSelection={history,step,selected};panels.clear();serial=0;
-    return '<div class="pw-heading"><h2>这一步实际发生了什么</h2><small>点方框，看输入与输出</small></div><p class="pm-evidence-note">读入材料 → 拼成请求 → AI 返回 → 检查结果 → 保存位置</p>'+historyMarkup(history,step,selected)+graph(result,step,V);
+    currentSelection={history,step,selected,result,V};panels.clear();serial=0;
+    return '<div class="pw-heading"><h2>这一步实际发生了什么</h2><small>点方框，看输入与输出</small></div><p class="pm-evidence-note">读入材料 → 拼成请求 → AI 返回 → 检查结果 → 保存位置</p>'+historyMarkup(history,step,selected)+canvasToolbar()+graph(result,step,V);
   }
   function render(result,selected,gameplay,V) {
     const inner=inspector(result,selected,V),step=currentSelection.step;
@@ -340,6 +407,8 @@
   if(root.document){
     root.document.addEventListener('click',e=>{
       const button=e.target.closest('button');if(!button||button.disabled)return;
+      if(button.dataset.pmMode!==undefined){canvasState.mode=button.dataset.pmMode==='global'?'global':'step';canvasState.autoFit=true;updateInspection(currentSelection.result,currentSelection.selected,currentSelection.V);return;}
+      if(button.dataset.pmZoom!==undefined){if(button.dataset.pmZoom==='in')zoomCanvas(1.18);else if(button.dataset.pmZoom==='out')zoomCanvas(1/1.18);else if(button.dataset.pmZoom==='fit'){canvasState.autoFit=true;fitCanvas();}else if(button.dataset.pmZoom==='reset'){canvasState.scale=1;canvasState.x=18;canvasState.y=18;canvasState.autoFit=false;applyCanvas();}return;}
       if(button.dataset.pmHistory!==undefined){navigate(button.dataset.pmHistory);return;}
       if(button.dataset.pmHistoryDelta){navigate(historyTarget(currentSelection?.history||[],currentSelection?.step?.id,Number(button.dataset.pmHistoryDelta)));return;}
       const dialog=root.document.getElementById('pm-module-dialog');
@@ -347,9 +416,14 @@
       if(button.dataset.pmTab&&dialog){for(const t of dialog.querySelectorAll('[data-pm-tab]'))t.setAttribute('aria-selected',String(t===button));for(const pane of dialog.querySelectorAll('.pm-tab-pane'))pane.hidden=pane.id!=='pm-pane-'+button.dataset.pmTab;return;}
       if(button.hasAttribute('data-pm-close'))dialog?.close();
     });
+    root.document.addEventListener('pointerdown',e=>{const viewport=e.target.closest('.pm-canvas-viewport');if(!viewport||e.target.closest('button,details,select,input,textarea,a'))return;canvasPointer={id:e.pointerId,x:e.clientX,y:e.clientY,startX:canvasState.x,startY:canvasState.y};viewport.classList.add('dragging');viewport.setPointerCapture?.(e.pointerId);});
+    root.document.addEventListener('pointermove',e=>{if(!canvasPointer||e.pointerId!==canvasPointer.id)return;canvasState.x=canvasPointer.startX+(e.clientX-canvasPointer.x);canvasState.y=canvasPointer.startY+(e.clientY-canvasPointer.y);canvasState.autoFit=false;applyCanvas();});
+    root.document.addEventListener('pointerup',e=>{if(!canvasPointer||e.pointerId!==canvasPointer.id)return;e.target.closest('.pm-canvas-viewport')?.classList.remove('dragging');canvasPointer=null;});
+    root.document.addEventListener('pointercancel',()=>{root.document.querySelector('.pm-canvas-viewport')?.classList.remove('dragging');canvasPointer=null;});
     root.document.addEventListener('touchstart',e=>{const area=e.target.closest('[data-pm-swipe]');touchStart=area&&e.touches.length===1?{x:e.touches[0].clientX,y:e.touches[0].clientY,time:Date.now(),area}:null;},{passive:true});
     root.document.addEventListener('touchend',e=>{const start=touchStart;touchStart=null;if(!start||!e.changedTouches.length||Date.now()-start.time>900)return;const dx=e.changedTouches[0].clientX-start.x,dy=e.changedTouches[0].clientY-start.y;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)navigate(historyTarget(currentSelection?.history||[],currentSelection?.step?.id,dx<0?1:-1));},{passive:true});
     root.document.addEventListener('wheel',e=>{
+      const canvas=e.target.closest('.pm-canvas-viewport');if(canvas&&(e.ctrlKey||e.metaKey)){e.preventDefault();zoomCanvas(e.deltaY<0?1.12:1/1.12,e.clientX,e.clientY);return;}
       if(!e.target.closest('[data-pm-swipe]') || e.ctrlKey || Math.abs(e.deltaX)<Math.abs(e.deltaY)*1.5 || !e.deltaX)return;
       const now=Date.now();if(now-lastMotionAt>200)horizontalMotion=0;lastMotionAt=now;horizontalMotion+=e.deltaX;
       const next=historyTarget(currentSelection?.history||[],currentSelection?.step?.id,horizontalMotion>0?1:-1);
@@ -358,7 +432,7 @@
     },{passive:false});
     root.document.addEventListener('keydown',e=>{if(!e.target.closest('.pm-history-strip')||!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();navigate(historyTarget(currentSelection?.history||[],currentSelection?.step?.id,e.key==='ArrowRight'?1:-1));});
   }
-  const api={render,updateInspection,human,charge,experimentCalls,costs,stageNames,buildGraph,materialGroups,deliveredForStep,historyTarget,tabsFor,stepTitle,writeEvidence,storageDestinations,validationPanel};
+  const api={render,updateInspection,human,charge,experimentCalls,costs,stageNames,buildGraph,globalOverview,materialGroups,deliveredForStep,historyTarget,tabsFor,stepTitle,writeEvidence,storageDestinations,validationPanel};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.SliceProductWorkbench=Object.freeze(api);
 })(typeof window==='undefined'?globalThis:window);

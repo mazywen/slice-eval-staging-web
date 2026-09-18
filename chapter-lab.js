@@ -44,7 +44,8 @@
     if (variant && form.storyRewrite) input.setting = String(input.setting || '') + '\n\n【章节实验改写】\n' + form.storyRewrite;
     const ids = new Set(arr(input.characterVersionIds));
     if (variant) for (const id of form.extraCharacterVersionIds) ids.add(id);
-    input.characterVersionIds = [...ids].slice(0, 8);
+    if(ids.size>8)throw new Error('实验人物最多 8 位，请减少额外人物；不会静默截掉已选择的人物。');
+    input.characterVersionIds = [...ids];
     const map = characterMap(input, workspaceCharacters);
     input.characters = input.characterVersionIds.map(id => map.get(id)).filter(Boolean).map(clone);
     input.topicTags = arr(input.topicTags);
@@ -89,8 +90,8 @@
       return line?.phase === 'awaiting_talent' && arr(line.talentCandidates).length === 3;
     }, onProgress);
     const line = mainline(result);
-    const choiceId = form.talentChoiceId && arr(line.talentCandidates).some(row => row.choiceId === form.talentChoiceId)
-      ? form.talentChoiceId : line.talentCandidates[0].choiceId;
+    if(form.talentChoiceId && !arr(line.talentCandidates).some(row=>row.choiceId===form.talentChoiceId))throw new Error('已选能力卡未返回，请重新读取实际候选。');
+    const choiceId = form.talentChoiceId || line.talentCandidates[0].choiceId;
     result = await client.act(result, { type:'confirm_talent', choiceId, plannerStrategy:'guided' }, onProgress);
     result = await settle(client, result, r => mainline(r)?.phase === 'playing' && Boolean(chapter(r)), onProgress);
     const snapshot = buildSnapshot(result, { ...form, talentChoiceId:choiceId }, variant);
@@ -152,6 +153,8 @@
       player: playerSnapshot(result, form),
       chapter: active,
       conditions: clone(active?.conditions || []),
+      conditionState: clone(mainline(result)?.conditionState || null),
+      settlementPassed: mainline(result)?.settlementPassed ?? null,
       dayCard: clone(active?.dayCard || null),
       suggestions: clone(active?.suggestedInputs || []),
       chapterPrompt: requestMessages(call),
@@ -170,12 +173,14 @@
       rows.push({field,label,left,right,changed:l!==r});
     };
     push('objective','本章目标',a.chapter?.narrativeObjective,b.chapter?.narrativeObjective);
+    push('spine','整局故事方向',a.storySpine,b.storySpine);
+    push('player','玩家与人物状态',a.player,b.player);
     push('question','核心问题',a.chapter?.nextQuestion,b.chapter?.nextQuestion);
     push('conditions','Conditions',a.conditions,b.conditions);
     push('day','Day Card',a.dayCard,b.dayCard);
     push('suggestions','快捷草稿',a.suggestions,b.suggestions);
     const ac=new Set(a.conditions.map(conditionKey)), bc=new Set(b.conditions.map(conditionKey));
-    rows.push({field:'condition_delta',label:'条件变化',left:a.conditions.filter(row=>!bc.has(conditionKey(row))),right:b.conditions.filter(row=>!ac.has(conditionKey(row))),changed:true});
+    rows.push({field:'condition_delta',label:'条件变化',left:a.conditions.filter(row=>!bc.has(conditionKey(row))),right:b.conditions.filter(row=>!ac.has(conditionKey(row))),changed:ac.size!==bc.size||[...ac].some(key=>!bc.has(key))});
     return rows;
   }
 
@@ -211,7 +216,7 @@
       conditions:{title:'本章条件',input:snapshot.chapter,output:snapshot.conditions},
       day:{title:'今日安排',input:{chapter:snapshot.chapter?.title,conditions:snapshot.conditions},output:snapshot.dayCard},
       suggestions:{title:'快捷草稿',input:{dayCard:snapshot.dayCard,conditions:snapshot.conditions},output:snapshot.suggestions},
-      settlement:{title:'判定与章末规则',input:{conditions:snapshot.conditions},output:{rule:'行动过程中更新相关条件；数值由程序比较；事实条件由正式结果证据确认；章末统一检查全部条件。',currentState:snapshot.chapter?.conditionState || null}},
+      settlement:{title:'判定与章末规则',input:{conditions:snapshot.conditions},output:{rule:'行动过程中更新相关条件；数值由程序比较；事实条件由正式结果证据确认；章末统一检查全部条件。',currentState:snapshot.conditionState,settlementPassed:snapshot.settlementPassed}},
     };
     return data[key] || {title:key,input:null,output:null};
   }
@@ -242,8 +247,8 @@
   }
   function render({draft,scenarios,characters,selectedScenarioId,busy,message,error,form={}}) {
     const map=characterMap(draft,characters), ids=arr(draft?.characterVersionIds);
-    const defaultPlayer=form.playerCharacterVersionId || state.variant?.form?.playerCharacterVersionId || state.baseline?.form?.playerCharacterVersionId || ids[0] || '';
-    const defaultFollower=form.firstFollowerCharacterVersionId || state.variant?.form?.firstFollowerCharacterVersionId || state.baseline?.form?.firstFollowerCharacterVersionId || ids.find(id=>id!==defaultPlayer) || '';
+    const defaultPlayer=[form.playerCharacterVersionId,state.variant?.form?.playerCharacterVersionId,state.baseline?.form?.playerCharacterVersionId,...ids].find(id=>ids.includes(id))||'';
+    const defaultFollower=[form.firstFollowerCharacterVersionId,state.variant?.form?.firstFollowerCharacterVersionId,state.baseline?.form?.firstFollowerCharacterVersionId,...ids].find(id=>ids.includes(id)&&id!==defaultPlayer)||'';
     const followerIds=ids.filter(id=>id!==defaultPlayer);
     const active=state.active==='variant'?state.variant:state.baseline;
     return '<div class="page-heading"><div><span class="eyebrow">SLICE / CHAPTER LAB</span><h1>章节实验</h1><p>单独测试“故事方向 → 当前章 → Conditions → Day Card → 快捷草稿”，用真实编译和真实章节生成比较不同剧本与人物。</p></div></div>'
@@ -263,7 +268,8 @@
       +flow(active)+'</main>'
       +'<aside class="panel chapter-lab-detail"><h2>模块详情</h2>'+(active?stageDetail(active,state.selectedNode):'<p class="muted">生成一次章节实验后，点中间任何方框查看实际输入、Prompt 和输出。</p>')
       +'<div class="chapter-lab-metrics">'+costCard(active)+'</div></aside></div>'
-      +'<section class="panel chapter-lab-compare"><div class="section-heading"><h2>基线 / 变化版字段 Diff</h2><span class="badge">只比较产品字段</span></div>'+diffHtml()+'</section>';
+      +'<section class="panel chapter-lab-compare"><div class="section-heading"><h2>基线 / 变化版字段 Diff</h2><span class="badge">只比较产品字段</span></div>'+diffHtml()+'</section>'
+      +(root.SliceChapterSandbox?root.SliceChapterSandbox.render(active||{title:draft?.title,result:{input:draft},form:{...form,playerCharacterVersionId:defaultPlayer,firstFollowerCharacterVersionId:defaultFollower}},busy,{scenarios}):'');
   }
 
   if (root.document) {

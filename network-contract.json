@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-13T14:16:51.000Z",
   "sourceBaseCommit": "ec5b0a5d513096031d0adf47737bbc83577fb318",
-  "routeRegistrySha256": "0489ac69def860595f6ca6672436380676ed7adf4d1232c423bdef9e07a3598b",
+  "routeRegistrySha256": "ddb547ca6ead92499077314ca44c0d9181574b7f92514c5a01d7edb94797740c",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -4119,6 +4119,65 @@
       "responseType": "WorldSitePreviewLaunchIntent",
       "routePath": "/studio-api/v4/creator/site-versions/{siteVersionId}/preview-sessions",
       "successStatus": 201
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalCreateChapterExperiment",
+      "pathParams": [
+        "experimentId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "ChapterLabRequest",
+      "responseTransport": "json",
+      "responseType": "ChapterLabJob",
+      "routePath": "/eval-api/v1/compiler-experiments/{experimentId}/chapter-lab",
+      "successStatus": 202
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalGetChapterExperiment",
+      "pathParams": [
+        "experimentId",
+        "jobId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ChapterLabJob",
+      "routePath": "/eval-api/v1/compiler-experiments/{experimentId}/chapter-lab/{jobId}",
+      "successStatus": 200
     },
     {
       "authClass": "compiler_runtime_eval_credential_proof",
