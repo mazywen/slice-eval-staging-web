@@ -247,8 +247,8 @@
   }
   function render({draft,scenarios,characters,selectedScenarioId,busy,message,error,form={}}) {
     const map=characterMap(draft,characters), ids=arr(draft?.characterVersionIds);
-    const defaultPlayer=[form.playerCharacterVersionId,state.variant?.form?.playerCharacterVersionId,state.baseline?.form?.playerCharacterVersionId,...ids].find(id=>ids.includes(id))||'';
-    const defaultFollower=[form.firstFollowerCharacterVersionId,state.variant?.form?.firstFollowerCharacterVersionId,state.baseline?.form?.firstFollowerCharacterVersionId,...ids].find(id=>ids.includes(id)&&id!==defaultPlayer)||'';
+    const defaultPlayer=form.playerCharacterVersionId || state.variant?.form?.playerCharacterVersionId || state.baseline?.form?.playerCharacterVersionId || ids[0] || '';
+    const defaultFollower=form.firstFollowerCharacterVersionId || state.variant?.form?.firstFollowerCharacterVersionId || state.baseline?.form?.firstFollowerCharacterVersionId || ids.find(id=>id!==defaultPlayer) || '';
     const followerIds=ids.filter(id=>id!==defaultPlayer);
     const active=state.active==='variant'?state.variant:state.baseline;
     return '<div class="page-heading"><div><span class="eyebrow">SLICE / CHAPTER LAB</span><h1>章节实验</h1><p>单独测试“故事方向 → 当前章 → Conditions → Day Card → 快捷草稿”，用真实编译和真实章节生成比较不同剧本与人物。</p></div></div>'
