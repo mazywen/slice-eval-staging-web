@@ -1217,30 +1217,53 @@
     }
   }
 
-  async function createCharacter(input) {
+  function characterContent(input) {
     const displayName = String(input.displayName || '').trim();
     if (!displayName || [...displayName].length > 120) throw fail('人物姓名需填写 1–120 字');
     for (const [label, value] of [['简介', input.description || input.bio], ['性格', input.personality || input.identity], ['说话风格', input.speakingStyle], ['背景知识', input.background || input.backgroundAndKnowledge]]) {
       if (!String(value || '').trim()) throw fail('请填写人物' + label);
     }
-    const content = {
+    return {
       displayName, bio: String(input.description || input.bio || '').trim(),
       personality: String(input.personality || input.identity || '').trim(),
       speakingStyle: String(input.speakingStyle || '').trim(),
       backgroundAndKnowledge: String(input.background || input.backgroundAndKnowledge || '').trim(),
-      avatar: null, safetyBoundaries: [], supportedLocales: ['zh-CN'],
-      playable: input.playable !== false && input.playable !== 'false', media: [],
+      avatar: input.avatar ?? null,
+      safetyBoundaries: Array.isArray(input.safetyBoundaries) ? input.safetyBoundaries : [],
+      supportedLocales: Array.isArray(input.supportedLocales) && input.supportedLocales.length ? input.supportedLocales : ['zh-CN'],
+      playable: input.playable !== false && input.playable !== 'false',
+      media: Array.isArray(input.media) ? input.media : [],
     };
-    const captured = await captureWorkspaceMutation('创建人物：' + displayName, () => T.call('evalCreateCharacter', {
+  }
+  async function createCharacter(input) {
+    const content = characterContent(input);
+    const captured = await captureWorkspaceMutation('创建人物：' + content.displayName, () => T.call('evalCreateCharacter', {
       key: 'console-character-' + uid(),
       body: { initialVersion: { visibility: 'private', reusePolicy: 'owner_worlds', content } },
     }));
     return { ...characterRow(captured.value), creationEvidence: captured.evidence };
   }
+  async function updateCharacter(input) {
+    const characterId = requiredId(input.characterId, '人物');
+    const current = await T.call('evalGetCharacter', { params: { characterId } });
+    const version = current.currentVersion;
+    if (!version?.characterVersionId || !version.content) throw fail('人物当前版本不可编辑', 'SLICE_EVAL_CHARACTER_VERSION_MISSING');
+    const content = characterContent({
+      ...version.content,
+      ...input,
+      description: input.description ?? version.content.bio,
+      background: input.background ?? version.content.backgroundAndKnowledge,
+    });
+    const captured = await captureWorkspaceMutation('修改人物：' + content.displayName, () => T.call('evalCreateCharacterVersion', {
+      params: { characterId }, key: 'console-character-version-' + uid(),
+      body: { characterId, visibility: version.visibility, reusePolicy: version.reusePolicy, content },
+    }));
+    return { ...characterRow(captured.value), previousCharacterVersionId: version.characterVersionId, creationEvidence: captured.evidence };
+  }
 
   window.SliceEvalConsoleClient = Object.freeze({
     connected: B.connected, connect: B.connect, disconnect: B.disconnect, capabilities,
-    listScenarios, getScenario, listCharacters, createCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
+    listScenarios, getScenario, listCharacters, createCharacter, updateCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
     saveDraft, compile, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,
     __testing: Object.freeze({ sourceFingerprint, activityDefinitionRequest, normalizeAction, scenarioRow, normalizedInput, newResult, observePending, resolveMutation }),
   });

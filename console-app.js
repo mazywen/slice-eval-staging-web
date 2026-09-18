@@ -11,7 +11,8 @@
     selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,
     characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,
   };
-  const pageNames={scripts:'剧本与创作',play:'交互运行',records:'操作与诊断',guide:'流程总览'};
+  const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'章节实验',records:'操作与诊断',guide:'流程总览'};
+  const chapterLabUi={form:{playerCharacterVersionId:'',firstFollowerCharacterVersionId:'',talentChoiceId:'',goalOverride:'',storyRewrite:'',extraCharacterVersionIds:[]}};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
   const blankDraft=()=>({title:'',description:'',setting:'',goal:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
@@ -67,6 +68,7 @@
     else if(!C.connected())html=pageHeading(pageNames[state.page],'完整连接 Slice 测试环境，按你的输入逐步运行。')+loginEmpty();
     else if(state.page==='scripts')html=renderScripts();
     else if(state.page==='play')html=renderPlay();
+    else if(state.page==='chapterLab')html=renderChapterLab();
     else html=renderRecords();
     $('#console-main').innerHTML=html;
     if(activeOpening && $('#'+activeOpening.id)){$('#'+activeOpening.id).focus({preventScroll:true});$('#'+activeOpening.id).setSelectionRange(activeOpening.start,activeOpening.end);}
@@ -100,6 +102,18 @@
       presetActivities()+
       '<div class="form-actions"><span class="muted">封面与头像使用默认占位</span><button id="save-draft" class="button" type="submit"'+disable(state.busy)+'>保存测试草稿</button><button id="compile-draft" class="button primary" type="button"'+disable(state.busy)+'>编译剧本</button></div></form>'+
       (compiled?'<div class="form-section"><div class="section-heading"><h3>编译结果已返回</h3><button class="text-button" type="button" data-inspect-step="compile">查看完整编译结果 →</button></div><p class="notice">'+e(C.capabilities().compilerNotice || '编译费用以实际调用为准。')+'</p><div class="inline-controls"><button class="button primary" data-page="play" type="button">选择人物并开始</button>'+(typeof C.publish==='function'?'<button id="publish-draft" class="button" type="button"'+disable(locked())+'>发布到测试环境</button>':'')+'</div>'+(typeof C.publish==='function'?'<p class="muted" style="margin-top:10px">正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。</p>':'')+'</div>':'');
+  }
+  function renderChapterLab() {
+    return window.SliceChapterLab.render({draft:state.draft,scenarios:state.scenarios,characters:state.characters,selectedScenarioId:state.selectedScenarioId,busy:state.busy,message:state.message,error:state.error,form:chapterLabUi.form});
+  }
+  async function runChapterLab(variant) {
+    if(locked()){toast('当前后台任务仍在处理，请等待返回后继续。');return;}
+    chapterLabUi.form=window.SliceChapterLab.readForm();
+    await task(variant?'正在生成章节变化版…':'正在生成章节基线…',async onProgress=>{
+      const snapshot=await window.SliceChapterLab.runExperiment({client:C,draft:state.draft,workspaceCharacters:state.characters,form:chapterLabUi.form,variant,onProgress});
+      state.result=snapshot.result;
+      return snapshot.result;
+    });
   }
   function renderScripts() {
     const rows=state.scenarios.filter(s=>!state.search || (s.title+' '+s.description).toLowerCase().includes(state.search.toLowerCase()));
@@ -250,7 +264,7 @@
   function progress(event) {
     if(event.partialResult){state.result=event.partialResult;C.saveSession(state.result);}
     if(event.message)state.message=event.message;
-    if(event.kind==='checkpoint' && state.page==='play')render();
+    if(event.kind==='checkpoint' && ['play','chapterLab'].includes(state.page))render();
     else syncHeader();
   }
   async function task(message,fn,{renderEnd=true}={}) {
@@ -380,6 +394,7 @@
     if(button.dataset.closeDialog!==undefined){button.closest('dialog')?.close();return;}
     if(button.dataset.openLogin!==undefined){$('#auth-dialog').showModal();return;}
     if(button.dataset.page){captureDraft();state.page=button.dataset.page;state.drawer=false;render();return;}
+    if(button.dataset.chapterLabNode || button.dataset.chapterLabResult)return;
     if(button.dataset.scenarioId){await selectScenario(button.dataset.scenarioId);return;}
     if(button.dataset.playTab){state.playTab=button.dataset.playTab;state.compose=null;state.composeBody='';render();return;}
     if(button.dataset.inspectStep){inspect(button.dataset.inspectStep);return;}
@@ -423,6 +438,8 @@
         else $('#auth-dialog').showModal();break;
       case 'new-draft':captureDraft();state.draft=blankDraft();state.selectedScenarioId='';state.result=null;state.selectedPlayerCharacterVersionId='';state.selectedFirstFollowerCharacterVersionId='';state.error=null;render();break;
       case 'compile-draft':await saveOrCompile(true);break;
+      case 'chapter-lab-baseline':await runChapterLab(false);break;
+      case 'chapter-lab-variant':await runChapterLab(true);break;
       case 'add-preset-activity':captureDraft();state.draft.activityDefinitions ||= [];state.draft.activityDefinitions.push({title:'',locationLabel:'',sceneDescription:'',playerSafeTeaser:'',requiredParticipantActorRefs:['player'],optionalParticipantActorRefs:[]});render();break;
       case 'create-character':captureDraft();$('#character-error').hidden=true;$('#character-dialog').showModal();break;
       case 'start-run': {
@@ -493,6 +510,16 @@
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
     if(event.target.id==='planner-strategy' && state.result){state.result.plannerStrategy=event.target.value;C.saveSession(state.result);return;}
     if(event.target.id==='scenario-select'){await selectScenario(event.target.value);return;}
+    if(event.target.id==='chapter-lab-scenario'){await selectScenario(event.target.value);state.page='chapterLab';render();return;}
+    if(event.target.id==='chapter-lab-player'){
+      chapterLabUi.form=window.SliceChapterLab.readForm();
+      const ids=A(state.draft?.characterVersionIds).filter(id=>id!==chapterLabUi.form.playerCharacterVersionId);
+      if(!ids.includes(chapterLabUi.form.firstFollowerCharacterVersionId))chapterLabUi.form.firstFollowerCharacterVersionId=ids[0] || '';
+      render();return;
+    }
+    if(['chapter-lab-follower','chapter-lab-talent','chapter-lab-goal','chapter-lab-rewrite'].includes(event.target.id) || event.target.name==='chapterLabExtraCharacter'){
+      chapterLabUi.form=window.SliceChapterLab.readForm();return;
+    }
     if(event.target.id==='player-character'){
       state.selectedPlayerCharacterVersionId=event.target.value;
       const selection=V.startSelection(state.result?.input,state.selectedPlayerCharacterVersionId,state.selectedFirstFollowerCharacterVersionId);
@@ -560,6 +587,7 @@
       $('#add-cast-dialog').close();await perform({type:'select_character_slot',slotId,characterVersionId});
     }
   });
+  window.addEventListener('slice-chapter-lab-render',()=>{if(state.page==='chapterLab')render();});
   document.addEventListener('keydown',(event)=>{if(event.key==='Escape'&&state.drawer){state.drawer=false;$('#diagnostics').hidden=true;}});
   window.SliceEvalConsole=Object.freeze({
     getState:()=>Object.freeze({page:state.page,connected:C.connected(),busy:state.busy,phase:state.result?.runtimePhase || null,
