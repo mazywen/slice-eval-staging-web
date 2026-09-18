@@ -395,7 +395,12 @@
     if(button.dataset.openLogin!==undefined){$('#auth-dialog').showModal();return;}
     if(button.dataset.page){captureDraft();state.page=button.dataset.page;state.drawer=false;render();return;}
     if(button.dataset.chapterLabNode || button.dataset.chapterLabResult)return;
-    if(button.dataset.chapterSandboxHistory){window.SliceChapterSandbox.data.selected=button.dataset.chapterSandboxHistory;render();return;}
+    if(button.dataset.chapterSandboxHistory){
+      const data=window.SliceChapterSandbox.data;data.selected=button.dataset.chapterSandboxHistory;
+      const row=data.history.find(r=>r.jobId===data.selected);
+      if(row?.result){data.snapshotText=JSON.stringify(row.result.snapshot,null,2);data.historyText=row.result.input.history||'';data.days=row.result.state.policy.daysPerChapter;data.facts=[];}
+      C.chapterLabStorage(data);render();return;
+    }
     if(button.dataset.chapterSandbox){
       if(state.busy)return;
       window.SliceChapterSandbox.capture();
@@ -537,7 +542,7 @@
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
     if(event.target.id==='planner-strategy' && state.result){state.result.plannerStrategy=event.target.value;C.saveSession(state.result);return;}
     if(event.target.id==='scenario-select'){await selectScenario(event.target.value);return;}
-    if(event.target.id==='chapter-lab-scenario'){await selectScenario(event.target.value);state.page='chapterLab';render();return;}
+    if(event.target.id==='chapter-lab-scenario'){await selectScenario(event.target.value);window.SliceChapterLab.reset();chapterLabUi.form={};window.SliceChapterSandbox.data.snapshotText='';state.page='chapterLab';render();return;}
     if(event.target.id==='chapter-lab-player'){
       chapterLabUi.form=window.SliceChapterLab.readForm();
       const ids=A(state.draft?.characterVersionIds).filter(id=>id!==chapterLabUi.form.playerCharacterVersionId);

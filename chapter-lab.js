@@ -247,10 +247,12 @@
   }
   function render({draft,scenarios,characters,selectedScenarioId,busy,message,error,form={}}) {
     const map=characterMap(draft,characters), ids=arr(draft?.characterVersionIds);
-    const defaultPlayer=form.playerCharacterVersionId || state.variant?.form?.playerCharacterVersionId || state.baseline?.form?.playerCharacterVersionId || ids[0] || '';
-    const defaultFollower=form.firstFollowerCharacterVersionId || state.variant?.form?.firstFollowerCharacterVersionId || state.baseline?.form?.firstFollowerCharacterVersionId || ids.find(id=>id!==defaultPlayer) || '';
+    const defaultPlayer=[form.playerCharacterVersionId,state.variant?.form?.playerCharacterVersionId,state.baseline?.form?.playerCharacterVersionId,...ids].find(id=>ids.includes(id))||'';
+    const defaultFollower=[form.firstFollowerCharacterVersionId,state.variant?.form?.firstFollowerCharacterVersionId,state.baseline?.form?.firstFollowerCharacterVersionId,...ids].find(id=>ids.includes(id)&&id!==defaultPlayer)||'';
     const followerIds=ids.filter(id=>id!==defaultPlayer);
     const active=state.active==='variant'?state.variant:state.baseline;
+    const sandboxHtml=root.SliceChapterSandbox?root.SliceChapterSandbox.render(active||{title:draft?.title,result:{input:draft},form:{...form,playerCharacterVersionId:defaultPlayer,firstFollowerCharacterVersionId:defaultFollower}},busy,{scenarios}):'';
+    const displayed=active||root.SliceChapterSandbox?.flowSnapshot();
     return '<div class="page-heading"><div><span class="eyebrow">SLICE / CHAPTER LAB</span><h1>章节实验</h1><p>单独测试“故事方向 → 当前章 → Conditions → Day Card → 快捷草稿”，用真实编译和真实章节生成比较不同剧本与人物。</p></div></div>'
       +'<div class="chapter-lab-layout"><aside class="panel chapter-lab-input"><h2>实验输入</h2>'
       +'<label>剧本<select id="chapter-lab-scenario"><option value="">请选择剧本</option>'+arr(scenarios).map(row=>'<option value="'+esc(row.id)+'"'+(row.id===selectedScenarioId?' selected':'')+'>'+esc(row.title||'未命名剧本')+'</option>').join('')+'</select></label>'
@@ -265,11 +267,11 @@
       )+(message?'<p class="notice">'+esc(message)+'</p>':'')+(error?'<p class="notice error">'+esc(error)+'</p>':'')
       +'<p class="muted">首版真实实验生成首章。后续章节从真实 Run 当前章读取；不伪造“跳到第 N 章”。</p></aside>'
       +'<main class="panel chapter-lab-main"><div class="chapter-lab-switch"><button type="button" data-chapter-lab-result="baseline" class="'+(state.active==='baseline'?'active':'')+'">基线</button><button type="button" data-chapter-lab-result="variant" class="'+(state.active==='variant'?'active':'')+'">变化版</button></div>'
-      +flow(active)+'</main>'
-      +'<aside class="panel chapter-lab-detail"><h2>模块详情</h2>'+(active?stageDetail(active,state.selectedNode):'<p class="muted">生成一次章节实验后，点中间任何方框查看实际输入、Prompt 和输出。</p>')
-      +'<div class="chapter-lab-metrics">'+costCard(active)+'</div></aside></div>'
+      +(displayed?.isolated?'<p class="notice">当前展示：隔离实验结果</p>':'')+flow(displayed)+'</main>'
+      +'<aside class="panel chapter-lab-detail"><h2>模块详情</h2>'+(displayed?stageDetail(displayed,state.selectedNode):'<p class="muted">生成一次章节实验后，点中间任何方框查看实际输入、Prompt 和输出。</p>')
+      +'<div class="chapter-lab-metrics">'+costCard(displayed)+'</div></aside></div>'
       +'<section class="panel chapter-lab-compare"><div class="section-heading"><h2>基线 / 变化版字段 Diff</h2><span class="badge">只比较产品字段</span></div>'+diffHtml()+'</section>'
-      +(root.SliceChapterSandbox?root.SliceChapterSandbox.render(active||{title:draft?.title,result:{input:draft},form:{...form,playerCharacterVersionId:defaultPlayer,firstFollowerCharacterVersionId:defaultFollower}},busy,{scenarios}):'');
+      +sandboxHtml;
   }
 
   if (root.document) {
