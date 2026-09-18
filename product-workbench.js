@@ -171,7 +171,9 @@
     const found=new Map();
     const walk=(v,depth=0)=>{
       if(!v||typeof v!=='object'||depth>14)return;
-      const id=v.contentId||v.postId||v.replyId||v.messageId;
+      // Replies carry their parent postId as well as their own replyId.
+      // Match the content itself, so a later reply cannot replace its parent.
+      const id=v.contentId||v.replyId||v.messageId||v.postId;
       const body=v.body??v.text??v.content?.body;
       if(typeof body==='string' && ((id&&ids.has(id)) || (step?.commandId && [v.commandId,v.sourceCommandId].includes(step.commandId)))) {
         found.set(id||body,{author:v.author?.displayName||v.sender?.displayName||null,kind:v.kind||v.type,body});
