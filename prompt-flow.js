@@ -19,6 +19,39 @@
   const byId = id => S.catalog?.nodes.find(n => n.id === id);
   const root = () => document.querySelector('#prompt-flow-root');
   const workspace = () => window.SliceEvalBackend.workspaceId();
+  function observedCalls(nodeId, result = S.context.result) {
+    const view = window.SliceEvalConsoleView;
+    if (!result || !view) return [];
+    return view.allCalls(result).filter(call => {
+      const input = call.engineeringInput || {};
+      const stage = call.stage || '';
+      const command = input.dynamicTail?.command || input.command || {};
+      const run = input.dynamicTail?.run || input.run || {};
+      const repair = !!call.repair || /^runtime_repair_/.test(stage);
+      if (nodeId === 'repair') return repair;
+      if (repair) return false;
+      if (nodeId === 'birth') return stage === 'run_birth' || call.trigger?.useCase === 'world_runtime.run_birth_compile';
+      if (nodeId === 'agency') return stage === 'character_onboarding';
+      if (nodeId === 'private_pov') return stage === 'private_pov';
+      if (nodeId === 'invite_decision') return stage === 'activity_invitation';
+      if (nodeId === 'activity_open') return stage === 'activity_opening';
+      if (nodeId === 'day') return stage === 'dynamic_chapter' && input.task === 'current_day_only';
+      if (nodeId === 'chapter') return stage === 'dynamic_chapter' && input.task && input.task !== 'current_day_only';
+      if (stage !== 'runtime_turn') return false;
+      if (nodeId === 'post') return ['post','confirm_opening_post'].includes(command.type);
+      if (nodeId === 'comment') return command.type === 'comment';
+      if (nodeId === 'reply') return command.type === 'reply';
+      if (nodeId === 'short_choice') return command.type === 'event_action';
+      const frozen = run.goalState === 'completed' || run.mainlineFrozen === true;
+      if (nodeId === 'dm') return command.type === 'dm_message' && !frozen;
+      if (nodeId === 'frozen_dm') return command.type === 'dm_message' && frozen;
+      const activity = command.type === 'activity_turn';
+      const exit = command.payload?.activityPhase === 'exit';
+      if (nodeId === 'activity_exit') return activity && exit;
+      if (nodeId === 'activity_turn') return activity && !exit;
+      return false;
+    });
+  }
   const storageKey = id => 'slice-prompt-draft:' + workspace() + ':' + id;
   function loadDraft(n) {
     if (S.drafts[n.id]) return S.drafts[n.id];
@@ -113,10 +146,17 @@
     if(S.tab==='prompt') content=(n.prompt||n.draftInstruction?'<div class="pf-editor-head"><h3>'+(n.prompt?'System Prompt 草稿':'补全提示词草案（未接入运行）')+'</h3><button class="text-button" data-pf-action="reset" type="button">恢复原模板</button></div><p class="muted">'+esc(n.source || '产品流程补全草案')+'</p><textarea id="pf-system" class="pf-system" spellcheck="false" aria-label="此模块提示词">'+esc(draft.systemInstruction)+'</textarea>':'<h3>这里不调用语言模型</h3><p>这个环节由程序读取状态、检查权限或执行确定规则。不能通过在这里填一段提示词替代程序规则。</p>')
       +(n.prompt?'<details class="pf-source"><summary>查看未修改的后端模板与版本</summary><p class="mono">'+esc(n.prompt.systemSha256)+'</p><pre>'+esc(n.prompt.messages[0].content)+'</pre></details>':'');
     if(S.tab==='output') content='<h3>输出给谁、怎么使用</h3>'+list(n.outputs)+'<p>'+esc(n.nextUse)+'</p>'+outgoing.map(e=>transfer(e)).join('')+'<p class="notice">这里列出输出结构与去向，不把示例 JSON 当作已经产生的模型结果。</p>';
+    if(S.tab==='actual') {
+      const calls = observedCalls(n.id);
+      content = '<h3>本局已采集的实际调用</h3><p>这里只展示能按阶段和命令类型明确归属到此模块的调用，不用模板或示例填充。原始请求、输入、输出及服务端处理结果均保留当时版本。</p>'
+        + (calls.length ? '<p class="notice">已匹配 '+calls.length+' 次真实调用。未回传或读取失败的证据会明确显示缺失。</p>'+window.SliceEvalConsoleView.modelRequests(calls)
+          : '<p class="notice">当前会话还没有采集到可明确归属此模块的真实 AI 调用。程序步骤本身不产生模型请求；尚未执行和未采集不是零成本成功。</p>')
+        + '<button class="button" type="button" data-page="records">查看完整操作、校验与保存记录</button>';
+    }
     if(S.tab==='request') content=S.preview?.nodeId===n.id?'<p class="notice">'+esc(S.preview.notice)+'</p><h3>后端重新组装的完整请求</h3><p>模型调用次数：0 · 状态写入：无 · '+(S.preview.draft?'包含你修改的提示词草稿':'当前后端模板')+'</p><pre class="pf-request">'+esc(JSON.stringify(S.preview.requestBody,null,2))+'</pre>':'<h3>完整请求与真实记录</h3><p>编辑输入或提示词后，点击“后端组装预览”，这里会返回该分支的完整 messages。</p><p>预览不调用模型，也不是某一次实际执行的证据。真实输入、输出、校验和保存结果请在“操作与诊断”按步骤查看。</p><button class="button" type="button" data-page="records">查看当前会话的真实记录</button>';
     el.innerHTML='<div class="pf-detail-head"><div><span class="eyebrow">'+esc(status(n))+'</span><h2>'+esc(n.title)+'</h2></div><button class="icon-button" data-pf-action="close" type="button" aria-label="关闭模块详情">×</button></div>'
       +(n.note?'<p class="pf-note">'+esc(n.note)+'</p>':'')+(stale?'<p class="pf-note">这个草稿基于旧模板，线上源码已变化。不会自动覆盖你的草稿；请对照原模板后再编辑。</p>':'')
-      +'<div class="pf-tabs">'+[['input','输入与前序'],['prompt','提示词'],['output','输出与后续'],['request','完整请求']].map(([id,name])=>'<button type="button" data-pf-tab="'+id+'" class="'+(S.tab===id?'active':'')+'">'+name+'</button>').join('')+'</div>'
+      +'<div class="pf-tabs">'+[['input','输入与前序'],['prompt','提示词'],['output','输出与后续'],['request','组装预览'],['actual','真实执行']].map(([id,name])=>'<button type="button" data-pf-tab="'+id+'" class="'+(S.tab===id?'active':'')+'">'+name+'</button>').join('')+'</div>'
       +'<div class="pf-detail-body">'+content+'</div><footer class="pf-detail-footer">'+((n.prompt||n.draftInstruction)?'<button class="button" data-pf-action="save" type="button">保存本地草稿</button><button class="button" data-pf-action="export-node" type="button">导出</button>':'')+(n.prompt?'<button class="button primary" data-pf-action="preview" type="button">后端组装预览</button>':'')+'</footer>';
   }
   function updateTransform() {
@@ -185,5 +225,5 @@
     if(a){event.preventDefault();action(a.dataset.pfAction).catch(error=>message(error.message,true));}
   });
   document.addEventListener('input',event=>{if(event.target.id==='pf-search'){S.search=event.target.value;document.querySelectorAll('[data-pf-node].pf-node').forEach(el=>el.classList.toggle('dim',!active(byId(el.dataset.pfNode))));}if(event.target.id==='pf-input'||event.target.id==='pf-system'){capture();S.preview=null;}});
-  window.SlicePromptFlow={render,load:mount,getState:()=>({version:S.catalog?.version,nodes:S.catalog?.nodes.length,selected:S.selected,scale:S.scale,branch:S.branch})};
+  window.SlicePromptFlow={render,load:mount,observedCalls,getState:()=>({version:S.catalog?.version,nodes:S.catalog?.nodes.length,selected:S.selected,scale:S.scale,branch:S.branch})};
 })();
