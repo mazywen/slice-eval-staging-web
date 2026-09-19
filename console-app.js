@@ -332,17 +332,20 @@
     if(selected)render();
   }
   async function saveOrCompile(compile) {
-    if(locked()){toast('当前后台任务仍在处理，请等待返回后继续。');return;}
+    if(state.busy){toast('当前页面正在处理另一项操作，请稍后重试。');return;}
+    if(!compile && locked()){toast('当前游玩任务仍在处理；已保留运行会话，暂不覆盖这份草稿。');return;}
     const form=$('#draft-form');
     if(!form?.reportValidity())return;
     captureDraft();
     const input={...state.draft,characters:A(state.draft.characters),characterVersionIds:A(state.draft.characterVersionIds)};
     const previous=state.result;
-    const same=previous?.scenario?.worldDraftRevisionId && !V.preview(previous).runId &&
+    const detachedFromRuntime=compile && !!previous && (locked() || !!V.preview(previous).runId);
+    if(detachedFromRuntime)C.saveSession(previous);
+    const same=!detachedFromRuntime && previous?.scenario?.worldDraftRevisionId && !V.preview(previous).runId &&
       ['title','description','setting','goal'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
       JSON.stringify(previous.input?.characterVersionIds || [])===JSON.stringify(input.characterVersionIds) &&
       JSON.stringify(previous.input?.activityDefinitions || [])===JSON.stringify(input.activityDefinitions || []) && !A(input.removedActivityDefinitionIds).length;
-    const result=await task(compile?'正在保存输入并编译剧本…':'正在保存剧本…',async(onProgress)=>{
+    const result=await task(compile?(detachedFromRuntime?'已保留当前游玩会话，正在按编辑器中的剧本重新编译…':'正在保存输入并编译剧本…'):'正在保存剧本…',async(onProgress)=>{
       const saved=compile&&same?previous:await C.saveDraft(input,onProgress);
       state.result=saved;
       return compile?C.compile(saved,onProgress):saved;
