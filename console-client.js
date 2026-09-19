@@ -1134,8 +1134,20 @@
       seenCursors.add(nextCursor); cursor = nextCursor;
     }
   }
+  function activeSourceCatalog() {
+    const catalog = window.SLICE_EVAL_SOURCE_CATALOG;
+    return catalog?.workspaceId === B.workspaceId() ? catalog : null;
+  }
+  function newlyCreated(row) {
+    const date = row.createdAt || row.raw?.createdAt || row.currentVersion?.createdAt;
+    return Number.isFinite(Date.parse(date)) && Date.parse(date) >= Date.parse('2026-09-19T03:57:00Z');
+  }
   async function listScenarios() {
-    return listAllPages('evalListWorldDrafts', null, scenarioRow, (row) => row.id);
+    const rows = await listAllPages('evalListWorldDrafts', null, scenarioRow, (row) => row.id);
+    const catalog = activeSourceCatalog();
+    if (!catalog) return rows;
+    const ids = new Set(catalog.worlds.map(row => row.id));
+    return rows.filter(row => ids.has(row.id) || newlyCreated(row));
   }
   async function getScenario(row) {
     const worldDraftId = row.worldDraftId || row.id;
@@ -1168,8 +1180,13 @@
     return selected;
   }
   async function listCharacters(options = {}) {
-    return listAllPages(options.worldDraftId ? 'evalListCharacterSlotCandidates' : 'evalListCharacters',
+    const rows = await listAllPages(options.worldDraftId ? 'evalListCharacterSlotCandidates' : 'evalListCharacters',
       options.worldDraftId ? { worldDraftId: options.worldDraftId } : null, characterRow, (row) => row.characterVersionId);
+    const catalog = activeSourceCatalog();
+    if (!catalog) return rows;
+    const world = catalog.worlds.find(row => row.id === options.worldDraftId);
+    const ids = new Set((world ? [world] : catalog.worlds).flatMap(row => row.characterIds));
+    return rows.filter(row => ids.has(row.characterId) || newlyCreated(row));
   }
   async function getCharacterVersion(input) {
     return characterRow(await T.call('evalGetCharacterVersion', { params: {
@@ -1261,6 +1278,9 @@
       description: input.description ?? version.content.bio,
       background: input.background ?? version.content.backgroundAndKnowledge,
     });
+    if (Object.keys(content).every(key => JSON.stringify(content[key]) === JSON.stringify(version.content[key]))) {
+      return { ...characterRow({ characterId, currentVersion: version }), previousCharacterVersionId: version.characterVersionId, noChange: true };
+    }
     const captured = await captureWorkspaceMutation('修改人物：' + content.displayName, () => T.call('evalCreateCharacterVersion', {
       params: { characterId }, key: 'console-character-version-' + uid(),
       body: { characterId, visibility: version.visibility, reusePolicy: version.reusePolicy, content },
@@ -1283,6 +1303,8 @@
   window.SliceEvalConsoleClient = Object.freeze({
     createChapterExperiment, getChapterExperiment, chapterLabStorage,
     connected: B.connected, connect: B.connect, disconnect: B.disconnect, capabilities,
+    getPromptCatalog: () => T.call('evalGetPromptCatalog'),
+    previewPromptRequest: body => T.call('evalPreviewPromptRequest', { body }),
     listScenarios, getScenario, listCharacters, getCharacterVersion, createCharacter, updateCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
     saveDraft, compile, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,
     __testing: Object.freeze({ sourceFingerprint, activityDefinitionRequest, normalizeAction, scenarioRow, normalizedInput, newResult, observePending, resolveMutation }),

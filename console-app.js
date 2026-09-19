@@ -11,7 +11,7 @@
     selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,editingCharacter:null,
     characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,
   };
-  const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'剧情评审',records:'操作与诊断',guide:'流程总览'};
+  const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'剧情评审',records:'操作与诊断',promptFlow:'提示词全流程',guide:'流程总览'};
   let advancedChapterLab=false;
   const chapterLabUi={form:{playerCharacterVersionId:'',firstFollowerCharacterVersionId:'',talentChoiceId:'',goalOverride:'',storyRewrite:'',extraCharacterVersionIds:[]}};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
@@ -70,6 +70,7 @@
     else if(state.page==='scripts')html=renderScripts();
     else if(state.page==='play')html=renderPlay();
     else if(state.page==='chapterLab')html=renderChapterLab();
+    else if(state.page==='promptFlow')html=window.SlicePromptFlow.render({draft:state.draft,result:state.result,selectedPlayerCharacterVersionId:state.selectedPlayerCharacterVersionId,selectedFirstFollowerCharacterVersionId:state.selectedFirstFollowerCharacterVersionId});
     else html=renderRecords();
     $('#console-main').innerHTML=html;
     if(activeOpening && $('#'+activeOpening.id)){$('#'+activeOpening.id).focus({preventScroll:true});$('#'+activeOpening.id).setSelectionRange(activeOpening.start,activeOpening.end);}
@@ -100,7 +101,7 @@
       '<label class="full">世界观与背景<textarea name="setting" rows="5" maxlength="4000" required'+disable(state.busy)+'>'+e(d.setting)+'</textarea></label>'+
       '<label class="full">世界目标<textarea name="goal" rows="2" maxlength="160" required'+disable(state.busy)+'>'+e(d.goal)+'</textarea></label>'+
       '</div><div class="form-section"><div class="section-heading"><h3>剧本人物 <small id="character-count">'+A(d.characterVersionIds).length+' / 8</small></h3><button id="create-character" type="button" class="text-button"'+disable(state.busy)+'>＋ 创建人物</button></div>'+characterOptions()+'</div>'+
-      presetActivities()+
+      (A(state.characters).length>8?'<p class="notice">本剧本的全部 '+A(state.characters).length+' 位人物都已保存在人物库，可逐位编辑。当前编译器最多绑定 8 位；可取消一位后替换加入，未绑定人物原文不会被删除。</p>':'')+presetActivities()+
       '<div class="form-actions"><span class="muted">封面与头像使用默认占位</span><button id="save-draft" class="button" type="submit"'+disable(state.busy)+'>保存测试草稿</button><button id="compile-draft" class="button primary" type="button"'+disable(state.busy)+'>编译剧本</button></div></form>'+
       (compiled?'<div class="form-section"><div class="section-heading"><h3>编译结果已返回</h3><button class="text-button" type="button" data-inspect-step="compile">查看完整编译结果 →</button></div><p class="notice">'+e(C.capabilities().compilerNotice || '编译费用以实际调用为准。')+'</p><div class="inline-controls"><button class="button primary" data-page="play" type="button">选择人物并开始</button>'+(typeof C.publish==='function'?'<button id="publish-draft" class="button" type="button"'+disable(locked())+'>发布到测试环境</button>':'')+'</div>'+(typeof C.publish==='function'?'<p class="muted" style="margin-top:10px">正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。</p>':'')+'</div>':'');
   }
@@ -618,13 +619,13 @@
             for(const activity of A(state.draft.activityDefinitions))for(const key of ['requiredParticipantActorRefs','optionalParticipantActorRefs']) {
               activity[key]=A(activity[key]).map(ref=>ref==='character:'+oldId?'character:'+row.characterVersionId:ref);
             }
-            if(used)state.draftCharacterDirty=true;
+            if(used&&!row.noChange)state.draftCharacterDirty=true;
           }else if(A(state.draft.characterVersionIds).length<8){
             state.draft.characterVersionIds.push(row.characterVersionId);state.draft.characters.push(row);
           }
         }
         state.editingCharacter=null;form.reset();$('#character-dialog').close();
-        toast(editing?'人物新版本已保存；当前未开始的剧本重新编译后生效。':'人物已保存。');render();
+        toast(row.noChange?'人物内容未变化，已保留当前版本。':editing?'人物新版本已保存；当前未开始的剧本重新编译后生效。':'人物已保存。');render();
       }catch(error){$('#character-error').textContent=error.message;$('#character-error').hidden=false;}
       finally{submit.disabled=false;}return;
     }

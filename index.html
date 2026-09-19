@@ -6,11 +6,12 @@
   <meta name="theme-color" content="#fafafa" />
   <title>Slice · 剧情编译与游玩实验室</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-  <link rel="stylesheet" href="./console.css?v=20260918-character-editor-r1" />
-  <link rel="stylesheet" href="./mainline.css?v=20260918-character-editor-r1" />
-  <link rel="stylesheet" href="./prompt-workbench.css?v=20260918-character-editor-r1" />
-  <link rel="stylesheet" href="./product-workbench.css?v=20260918-character-editor-r1" />
-  <link rel="stylesheet" href="./chapter-lab.css?v=20260918-character-editor-r1" />
+  <link rel="stylesheet" href="./console.css?v=20260919-prompt-flow-r1" />
+  <link rel="stylesheet" href="./mainline.css?v=20260919-prompt-flow-r1" />
+  <link rel="stylesheet" href="./prompt-workbench.css?v=20260919-prompt-flow-r1" />
+  <link rel="stylesheet" href="./product-workbench.css?v=20260919-prompt-flow-r1" />
+  <link rel="stylesheet" href="./chapter-lab.css?v=20260919-prompt-flow-r1" />
+  <link rel="stylesheet" href="./prompt-flow.css?v=20260919-prompt-flow-r1" />
 </head>
 <body>
   <a class="skip-link" href="#console-main">跳到主要内容</a>
@@ -23,6 +24,7 @@
         <button class="nav-item" type="button" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 8 6 4-6 4z"/></svg>交互运行</button>
         <button class="nav-item" type="button" data-page="chapterLab"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h5M8 16h7"/></svg>剧情评审</button>
         <button class="nav-item" type="button" data-page="records"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h13M8 12h13M8 19h13M3 5h1M3 12h1M3 19h1"/></svg>操作与诊断</button>
+        <button class="nav-item" type="button" data-page="promptFlow"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="7" height="5" rx="1"/><rect x="15" y="3" width="7" height="5" rx="1"/><rect x="9" y="16" width="7" height="5" rx="1"/><path d="M9 5h6M5 8v4h7v4M19 8v4h-7"/></svg>提示词全流程</button>
         <button class="nav-item" type="button" data-page="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg>流程总览</button>
       </nav>
       <div class="sidebar-context"><span class="nav-label">当前会话</span><div id="sidebar-session"><p class="muted">尚未开始游玩</p></div><button id="session-history" class="text-button" type="button">查看会话记录</button></div>
@@ -50,15 +52,20 @@
       <div class="dialog-actions"><button class="button" type="button" data-close-dialog>取消</button><button id="auth-submit" class="button primary" type="submit">连接工作区</button></div>
     </form>
   </dialog>
-  <dialog id="character-dialog" class="dialog">
+  <dialog id="character-dialog" class="dialog character-dialog" aria-labelledby="character-dialog-title">
     <form id="character-form">
       <div class="dialog-heading"><div><span class="eyebrow">CHARACTER</span><h2 id="character-dialog-title">创建人物</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button></div>
-      <label>人物名称<input name="displayName" maxlength="120" required /></label>
-      <label>人物简介<textarea name="description" rows="3" maxlength="4000" required></textarea></label>
-      <label>性格<input name="personality" maxlength="160" required /></label>
-      <label>说话风格<input name="speakingStyle" maxlength="1000" required /></label>
-      <label>背景与知识<textarea name="background" rows="4" maxlength="4000" required></textarea></label>
-      <label>玩家能否扮演<select name="playable" required><option value="true">可以扮演</option><option value="false">仅作为互动人物</option></select></label>
+      <div class="character-editor-scroll">
+        <p class="muted">保存为人物新版本，替换当前草稿的引用。重新编译后用于新开局，已开始的故事保持原快照。</p>
+        <div class="character-editor-grid">
+          <label>人物名称<input name="displayName" maxlength="120" required /></label>
+          <label>玩家能否扮演<select name="playable" required><option value="true">可以扮演</option><option value="false">仅作为互动人物</option></select></label>
+          <label>人物简介<textarea name="description" rows="7" maxlength="4000" required></textarea></label>
+          <label>心理侧写与性格特质<textarea name="personality" rows="7" maxlength="4000" required></textarea></label>
+          <label>说话风格与沟通模式<textarea name="speakingStyle" rows="7" maxlength="4000" required></textarea></label>
+          <label>深度人物背景与知识<textarea name="background" rows="7" maxlength="4000" required></textarea></label>
+        </div>
+      </div>
       <p id="character-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button class="button" type="button" data-close-dialog>取消</button><button class="button primary" type="submit"><span id="character-submit-label">保存人物</span></button></div>
     </form>
@@ -68,16 +75,18 @@
   </dialog>
   <dialog id="sessions-dialog" class="dialog wide"><div class="dialog-heading"><h2>会话记录</h2><button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button></div><p class="muted">恢复本标签页保存的会话后，重新读取后端状态。</p><div id="sessions-list"></div></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./auth-config.js?v=20260918-character-editor-r1"></script>
-  <script src="./eval-backend.js?v=20260918-character-editor-r1"></script>
-  <script src="./console-client.js?v=20260918-character-editor-r1"></script>
-  <script src="./cost-estimate.js?v=20260918-character-editor-r1"></script>
-  <script src="./console-view.js?v=20260918-character-editor-r1"></script>
-  <script src="./mainline-view.js?v=20260918-character-editor-r1"></script>
-  <script src="./prompt-workbench.js?v=20260918-character-editor-r1"></script>
-  <script src="./product-workbench.js?v=20260918-character-editor-r1"></script>
-  <script src="./chapter-sandbox.js?v=20260918-character-editor-r1"></script>
-  <script src="./chapter-lab.js?v=20260918-character-editor-r1"></script>
-  <script src="./console-app.js?v=20260918-character-editor-r1"></script>
+  <script src="./auth-config.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./eval-backend.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./source-catalog.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./console-client.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./cost-estimate.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./console-view.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./mainline-view.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./prompt-workbench.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./product-workbench.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./chapter-sandbox.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./chapter-lab.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./prompt-flow.js?v=20260919-prompt-flow-r1"></script>
+  <script src="./console-app.js?v=20260919-prompt-flow-r1"></script>
 </body>
 </html>

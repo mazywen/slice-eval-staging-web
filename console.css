@@ -93,7 +93,7 @@
 .characters-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;max-height:315px;overflow:auto}
 .character-option{border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:row;align-items:center;gap:9px;padding:10px;font-weight:400;min-width:0}
 .character-option:has(input:checked){border-color:#9e9e9e;background:#f9f9f9}
-.character-option-main{display:flex;align-items:center;gap:8px;min-width:0;flex:1;cursor:pointer}
+.character-option-main{display:flex;flex-direction:row;align-items:center;gap:8px;min-width:0;flex:1;cursor:pointer}
 .character-option-main>span{min-width:0;flex:1}
 .character-option strong{display:block;font-size:12px;font-weight:550}
 .character-option small{font-size:10px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -192,6 +192,17 @@
 .diagnostics .tabs{gap:22px;margin-top:12px;margin-bottom:0}
 .dialog{border:1px solid #e4e4e4;border-radius:12px;background:#ffffff;padding:26px;width:min(480px,calc(100vw - 28px));max-height:90vh;color:inherit;box-shadow:0 30px 120px #26262630}
 .dialog.wide{width:min(700px,calc(100vw - 28px))}
+/* Keep only the form body scrollable; long source biographies must not push Save off-screen. */
+#character-dialog{width:min(960px,calc(100vw - 28px));max-height:min(92dvh,980px);padding:0;overflow:hidden}
+#character-form{display:flex;flex-direction:column;max-height:min(92dvh,980px);min-height:0}
+#character-form .dialog-heading{padding:22px 24px 16px;margin:0;border-bottom:1px solid var(--border);flex:none}
+.character-editor-scroll{overflow:auto;overscroll-behavior:contain;min-height:0;padding:18px 24px;scrollbar-gutter:stable}
+.character-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px;margin-top:18px}
+#character-form .character-editor-grid label{margin:0;min-width:0;gap:8px}
+#character-form textarea{min-height:160px;resize:vertical;font-size:13px;line-height:1.85;overflow-wrap:anywhere}
+#character-form .dialog-actions{flex:none;margin:0;padding:16px 24px;border-top:1px solid var(--border);background:#fff}
+#character-error:not([hidden]){flex:none;margin:0;padding:12px 24px;max-height:100px;overflow:auto}
+@media(max-width:700px){.character-editor-grid{grid-template-columns:minmax(0,1fr)}#character-form .dialog-heading,.character-editor-scroll,#character-form .dialog-actions{padding:16px}#character-form textarea{font-size:16px}#character-dialog{max-height:94dvh}#character-form{max-height:94dvh}}
 .dialog::backdrop{background:#2525254d;backdrop-filter:blur(3px)}
 .dialog-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;margin-bottom:18px}
 .dialog label{font-size:12px;margin-top:17px}

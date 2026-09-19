@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-13T14:16:51.000Z",
   "sourceBaseCommit": "ec5b0a5d513096031d0adf47737bbc83577fb318",
-  "routeRegistrySha256": "ddb547ca6ead92499077314ca44c0d9181574b7f92514c5a01d7edb94797740c",
+  "routeRegistrySha256": "b27ba0aba02d65c42dbf11f9b1a98ce50539412cb57d2cd7e168acb22e2deec8",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -4128,6 +4128,60 @@
         "SLICE_SESSION_AUDIENCE_INVALID",
         "SLICE_INPUT_INVALID",
         "SLICE_RATE_LIMITED",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalGetPromptCatalog",
+      "pathParams": [],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "PromptFlowCatalog",
+      "routePath": "/eval-api/v1/prompt-catalog",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_DRAFT_REVISION_CONFLICT",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "none",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalPreviewPromptRequest",
+      "pathParams": [],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "PromptPreviewRequest",
+      "responseTransport": "json",
+      "responseType": "PromptPreview",
+      "routePath": "/eval-api/v1/prompt-previews",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
         "SLICE_IDEMPOTENCY_CONFLICT",
         "SLICE_REVISION_CONFLICT",
         "SLICE_DRAFT_REVISION_CONFLICT",
@@ -5496,6 +5550,34 @@
       "responseTransport": "json",
       "responseType": "RunPage",
       "routePath": "/v4/runs",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getRunMemoryPins",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "RunMemoryPins",
+      "routePath": "/v4/runs/{runId}/memory/pins",
       "successStatus": 200
     },
     {
@@ -7436,6 +7518,34 @@
       "responseTransport": "json",
       "responseType": "RunProjection",
       "routePath": "/player-api/v4/runs/{runId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebGetRunMemoryPins",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "RunMemoryPins",
+      "routePath": "/player-api/v4/runs/{runId}/memory/pins",
       "successStatus": 200
     },
     {
