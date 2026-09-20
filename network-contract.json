@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-19T11:31:50.000Z",
   "sourceBaseCommit": "c740d5723d29e9e083a0ddf0bc85d081952d96b4",
-  "routeRegistrySha256": "94f92877166b1c7159d529b9bfa55f212be9fe3736fe337899f1bd0d52a68fb4",
+  "routeRegistrySha256": "82345b77427b3ce762194c017197135fc486ce9807fd19af3e6a5848697949df",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -5295,7 +5295,7 @@
       "requestHashPolicy": "canonical_json_sha256",
       "requestType": "ExitActivityRequestV1",
       "responseTransport": "json",
-      "responseType": "ActivityResultV1",
+      "responseType": "ActivityExitResponseV1",
       "routePath": "/eval-api/v1/runs/{runId}/activity-instances/{activityId}/exit",
       "successStatus": 202
     },

@@ -990,6 +990,12 @@
         if (!execution || !evidence) continue;
         if (evidence.input && typeof evidence.input === 'object') execution.payload = clone(evidence.input);
         if (evidence.outcome) execution.outcome = clone(evidence.outcome);
+        if (evidence.status === 'applied' && evidence.outcome) {
+          execution.status = 'applied';
+          execution.error = null;
+          execution.command = { ...execution.command, commandId, status: 'applied', errorCode: null };
+          turn.status = 'applied';
+        }
         execution.evidenceNeedsRefresh = false;
         if (turn.kind === 'confirm_opening_post') result.opening.current = clone(execution);
       }
@@ -998,6 +1004,11 @@
       if (last && !result.pendingCommand) {
         last.projections = clone(result.finalProjections.current);
         last.projectionIssues = clone(result.finalProjectionIssues.current);
+        if (last.status === 'applied' && !last.error) {
+          result.error = null;
+          result.runtimePhase = 'waiting_for_user';
+          result.status = last.projectionIssues.length || result.traceError ? 'waiting_with_issues' : 'waiting_for_user';
+        }
       }
     });
   }
