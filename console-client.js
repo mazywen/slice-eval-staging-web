@@ -450,6 +450,19 @@
         ? 'waiting_for_user' : 'opening_waiting_for_user';
     }
   }
+  async function readOpeningRun(runId) {
+    const delays = [250, 700, 1400];
+    for (let attempt = 0; ; attempt += 1) {
+      try { return await T.call('evalGetRun', { params: { runId }, recordTelemetry: false }); }
+      catch (error) {
+        if (error?.status === 401) throw error;
+        const transient = error?.code === 'SLICE_INTERNAL_UNAVAILABLE'
+          || error?.status === 429 || Number(error?.status) >= 500;
+        if (!transient || attempt >= delays.length) throw error;
+        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+      }
+    }
+  }
   async function refreshOpening(previous) {
     const result = clone(previous);
     const runId = result?.previewRuns?.current?.runId;
@@ -458,7 +471,7 @@
     if (result.workspaceId && result.workspaceId !== B.workspaceId()) throw fail('该会话属于其他评测工作区', 'SLICE_EVAL_WORKSPACE_MISMATCH');
     // The UI adopts and persists this observation only if the same Run is still
     // selected. This GET never acquires or joins a concurrent player's write telemetry.
-    const run = await T.call('evalGetRun', { params: { runId }, recordTelemetry: false });
+    const run = await readOpeningRun(runId);
     if (run.runId !== runId || !['pending', 'ready', 'failed'].includes(run.opening?.generationStatus)) {
       throw fail('开局状态与当前游玩会话不一致', 'SLICE_EVAL_OPENING_STATUS_INVALID');
     }
