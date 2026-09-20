@@ -106,17 +106,59 @@
     const state = current(result);
     if (!state) return '';
     const chapter = state.activeChapter;
-    if (!chapter || state.phase === 'failed') return '';
-    return '<section class="mainline-conditions"><h3>' + esc(chapter.title) + '</h3><p>'
+    const grade = { perfect: '完美通过', partial: '勉强通过', bad_ending: 'Bad Ending' }[state.settlementGrade];
+    const resultCard = grade ? '<p class="notice" data-settlement-grade="' + esc(state.settlementGrade) + '">上次章节结算：' + grade + '</p>' : '';
+    if (!chapter || state.phase === 'failed') return resultCard;
+    return resultCard + '<section class="mainline-conditions"><h3>' + esc(chapter.title) + '</h3><p>'
       + esc(chapter.narrativeObjective) + '</p>'
       + arr(chapter.conditions).map(condition => {
         const progress = state.conditionState?.[condition.id];
         return '<article class="entity-card"><strong>' + esc(condition.label) + '</strong><p>'
-          + (progress?.satisfied ? '已达成' : '尚未达成')
+          + (condition.kind === 'fact' && progress?.status !== 'settled' ? '待章末验收'
+            : progress?.satisfied ? '已达成' : '尚未达成')
           + (condition.kind === 'numeric' ? ' · 当前 ' + esc(progress?.currentValue ?? '未采集')
             + ' / 要求 ' + (condition.operator === 'gte' ? '至少 ' : '至多 ') + esc(condition.threshold) : '')
           + '</p></article>';
-      }).join('') + '<p class="muted">条件随实际行动更新，章末才正式结算。</p></section>';
+      }).join('') + '<p class="muted">本章条件已固定。数值按实际状态检查；语义只在你发起章末验收时判断。数值通过一定过章，语义决定通过质量。</p></section>';
+  }
+  function growthPanel(result, locked = false) {
+    const state = current(result);
+    if (!state) return '';
+    const wallet = state.experience;
+    if (!wallet) return '<p class="notice">经验余额未采集，请读取新版后端结果。</p>';
+    const skills = arr(projection(result, 'stats')?.skills);
+    const price = state.policy.xpPerAbilityPoint;
+    return '<section class="panel mainline-growth"><h3>经验与能力</h3><p>累计获得 '
+      + esc(wallet.earned) + ' · 已消费 ' + esc(wallet.spent) + ' · 可用 <strong>' + esc(wallet.available)
+      + '</strong></p><p class="muted">能力升级由后端执行；消费经验不倒扣等级或重新锁定人物。</p>'
+      + skills.map(skill => '<article class="entity-card"><strong>' + esc(skill.name) + ' ' + esc(skill.value)
+        + ' / 100</strong> <button type="button" class="button small" data-allocate-skill="' + esc(skill.skillId) + '"'
+        + disabled(locked || state.phase !== 'playing' || !Number.isFinite(price) || wallet.available < price || skill.value >= 100)
+        + '>消耗 ' + esc(price ?? '未采集') + ' 经验 · 提升 1 点</button></article>').join('') + '</section>';
+  }
+  function numericSettlement(receipt) {
+    if (!receipt || !['committed', 'local_pending'].includes(receipt.status)) {
+      return '<section class="panel"><h3>本轮数值与经验</h3><p class="muted">未采集正式结算，不能把缺失数据当成零变化。</p></section>';
+    }
+    const n = value => Number.isFinite(value) ? esc(value) : '未采集';
+    const signed = value => Number.isFinite(value) ? (value > 0 ? '+' : '') + esc(value) : '未采集';
+    const experience = receipt.experience || {};
+    const axes = { affinity: '亲密', trust: '信任', respect: '认可' };
+    const numericRows = [...arr(receipt.abilities).map(row => ({ ...row, label: row.name || row.code })),
+      ...arr(receipt.worldStats).map(row => ({ ...row, label: row.name || row.code })),
+      ...arr(receipt.relationships).flatMap(edge => arr(edge.changes).filter(row => axes[row.axis])
+        .map(row => ({ ...row, label: String(edge.fromActorId) + ' → ' + String(edge.toActorId) + ' · ' + axes[row.axis] })))];
+    return '<section class="panel" data-numeric-status="' + esc(receipt.status) + '"><h3>本轮数值与经验</h3>'
+      + (receipt.status === 'local_pending' ? '<p class="notice">活动内暂存：尚未结算到主线，也未提前发放经验。</p>' : '<p class="muted">以下来自后端已提交结果，不是模型建议。</p>')
+      + '<p>本轮获得 <strong>' + signed(experience.gained) + '</strong> · 本轮消费 <strong>' + n(experience.spent)
+      + '</strong> · 可用经验 <strong>' + n(experience.available) + '</strong></p>'
+      + '<p class="muted">累计获得 ' + n(experience.totalEarned) + ' · 累计消费 ' + n(experience.totalSpent) + '</p>'
+      + (numericRows.length ? '<div class="story-review-table"><table><thead><tr><th>变化项</th><th>之前</th><th>之后</th><th>变化</th></tr></thead><tbody>'
+        + numericRows.map(row => '<tr><td>' + esc(row.label) + '</td><td>' + n(row.before) + '</td><td>' + n(row.after)
+          + '</td><td>' + signed(row.delta) + '</td></tr>').join('') + '</tbody></table></div>'
+        : '<p class="muted">本次没有已提交的能力、世界数值或关系变化。</p>')
+      + (arr(receipt.characterSlots).length ? '<p>本轮开放人物槽位：' + arr(receipt.characterSlots).map(row => esc(row.ordinal)).join('、') + '</p>' : '')
+      + '</section>';
   }
   function journey(result) {
     const birth = opening(result), state = current(result);
@@ -132,5 +174,5 @@
   }
   root.SliceMainlineView = Object.freeze({ POLICY, current, opening, isLatest, preparing,
     canPost, canContinue, canAdvance, readyForFirstPost, strategyField, talentPanel,
-    suggestions, dayCard, chapterDetails, journey });
+    suggestions, dayCard, chapterDetails, growthPanel, numericSettlement, journey });
 })(typeof window === 'undefined' ? globalThis : window);

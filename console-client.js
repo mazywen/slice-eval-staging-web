@@ -532,7 +532,7 @@
     }
     if (type === 'advance_day') return { type };
     if (type === 'allocate_points') {
-      if (typeof action.amount !== 'number' || !Number.isFinite(action.amount) || action.amount <= 0 || action.amount > 100) throw fail('分配点数必须在 0–100 之间');
+      if (!Number.isSafeInteger(action.amount) || action.amount <= 0 || action.amount > 100) throw fail('升级数量必须为 1–100 的整数，经验由后端扣除');
       return { type, skillCode: requiredId(action.skillCode, '能力'), amount: action.amount };
     }
     if (type === 'confirm_opening_post') return { type, ...(action.body ? { body: requiredBody(action.body) } : {}) };
@@ -559,6 +559,7 @@
       action.payload.backgroundAssetRef = null;
       return { type, payload: action.payload, ...(type === 'activity_update' ? { activityAttemptId: requiredId(action.activityAttemptId, '活动邀请') } : {}) };
     }
+    if (type === 'activity_activate') return { type, candidateId: requiredId(action.candidateId, '已开放活动') };
     if (['activity_enter', 'activity_invite_response'].includes(type)) {
       if (type === 'activity_invite_response' && !['ACCEPTED', 'REJECTED', 'IGNORED'].includes(action.response)) throw fail('请选择有效的活动回应');
       return { type, activityAttemptId: requiredId(action.activityAttemptId, '活动邀请'),
@@ -606,7 +607,10 @@
       if (action.choiceId && !event.choices?.some((choice) => choice.choiceId === action.choiceId)) throw fail('所选选项不属于这个事件');
       if (action.body && event.freeInputAllowed !== true) throw fail('这个事件不支持自由输入');
     }
-    if (action.type === 'activity_create') {
+    if (action.type === 'activity_activate') {
+      operationId = 'evalActivateActivityCandidate'; params.candidateId = action.candidateId;
+      body = { expectedRunRevision };
+    } else if (action.type === 'activity_create') {
       operationId = 'evalCreateActivityAttempt'; body = { expectedRunRevision, payload: action.payload };
     } else if (['activity_update', 'activity_enter', 'activity_invite_response'].includes(action.type)) {
       const attempt = items(await T.call('evalListActivityAttempts', { params: { runId } })).find((row) => row.activityAttemptId === action.activityAttemptId);
