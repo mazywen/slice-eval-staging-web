@@ -24,7 +24,7 @@
     activity_opening:'活动开场', openingResolution:'活动开场处理过程', activityId:'活动实例', sceneRevision:'场景版本', observedSceneRevision:'已读取场景版本', participantStates:'参与人物状态', currentScene:'实际场景',
     failed:'执行失败', rejected:'已拒绝', available:'可查看', skipped:'已跳过', cancelled:'已取消',
     completed:'已完成', active:'进行中', exited:'已退出', interrupted:'已中断', draft:'草稿',
-    post:'发帖', comment:'评论帖子', reply:'回复评论', dm_message:'发送私聊', event_action:'回应事件',
+    free_act:'回应短互动', post:'发帖', comment:'评论帖子', reply:'回复评论', dm_message:'发送私聊', event_action:'回应事件',
     confirm_opening_post:'确认开场', activity_create:'发起活动', activity_update:'修改活动',
     activity_enter:'进入活动', activity_turn:'活动内行动', activity_exit:'退出活动',
     activity_invite_response:'回应活动邀请', add_cast:'添加人物', select_character_slot:'选择加入人物', opening_waiting_for_user:'等待确认开场',

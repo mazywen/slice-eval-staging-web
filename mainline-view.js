@@ -102,6 +102,15 @@
       + disabled(locked || !canAdvance(result)) + '>进入下一日</button>'
       + '<small>公开行动用完后手动推进；评论与私聊不消耗次数。</small></div></section>';
   }
+  function shortInteraction(result, locked = false, speakerName = '人物') {
+    const state = current(result), card = state?.shortInteraction;
+    if (state?.phase !== 'playing' || !card?.id || !card.description || arr(card.options).length !== 3) return '';
+    return '<section class="panel" aria-label="短互动邀请"><h3>' + esc(speakerName) + '邀请你回应</h3><p>'
+      + esc(card.description) + '</p><div class="mainline-suggestions">'
+      + card.options.map((option, index) => '<button type="button" class="button" data-short-interaction="'
+        + esc(card.id) + '" data-interaction-option="' + index + '"' + disabled(locked) + '>'
+        + esc(option) + '</button>').join('') + '</div><small>选择后继续这段互动，不消耗公开发帖次数。</small></section>';
+  }
   function chapterDetails(result) {
     const state = current(result);
     if (!state) return '';
@@ -174,5 +183,5 @@
   }
   root.SliceMainlineView = Object.freeze({ POLICY, current, opening, isLatest, preparing,
     canPost, canContinue, canAdvance, readyForFirstPost, strategyField, talentPanel,
-    suggestions, dayCard, chapterDetails, growthPanel, numericSettlement, journey });
+    suggestions, dayCard, shortInteraction, chapterDetails, growthPanel, numericSettlement, journey });
 })(typeof window === 'undefined' ? globalThis : window);

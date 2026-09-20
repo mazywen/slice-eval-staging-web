@@ -165,7 +165,7 @@
     const failure=V.runtimeFailureMessage(result);
     const failurePanel=failure?'<section class="notice error" role="alert"><strong>这次没有生成可用结果</strong><p>'+e(failure.message)+'</p>'+(failure.code?'<code>'+e(failure.code)+'</code>':'')+'</section>':'';
     const gameplay=M.journey(result)+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
-      failurePanel+M.talentPanel(result,locked())+M.dayCard(result,locked())+(opening?renderOpening():'')+
+      failurePanel+M.talentPanel(result,locked())+M.dayCard(result,locked())+M.shortInteraction(result,locked(),V.actorName(result,M.current(result)?.shortInteraction?.speakerActorId))+(opening?renderOpening():'')+
       '<section class="panel play-content"><div id="play-tabs" class="tabs" role="tablist">'+Object.entries({feed:'世界动态',dm:'私聊',events:'事件',activities:'活动',cast:'人物',chapter:'章节'}).map(([key,label])=>'<button type="button" role="tab" aria-selected="'+(state.playTab===key)+'" class="'+(state.playTab===key?'active':'')+'" data-play-tab="'+key+'">'+label+'</button>').join('')+'</div>'+renderSurface()+'</section>';
     const inspected=V.steps(result).find(step=>step.id===state.workbenchStepId);
     return heading+window.SliceProductWorkbench.render(result,inspected,gameplay,V);
@@ -451,6 +451,12 @@
       const step=V.steps(state.result).find(row=>row.commandId && row.commandId===button.dataset.inspectContent);
       if(step)inspect(step.id);else toast('这条内容未回传关联命令，无法确定其生成步骤。');
       return;
+    }
+    if(button.dataset.shortInteraction){
+      const card=M.current(state.result)?.shortInteraction;
+      const option=Number(button.dataset.interactionOption);
+      if(!card || card.id!==button.dataset.shortInteraction || !Number.isInteger(option) || typeof card.options?.[option]!=='string')return;
+      await perform({type:'free_act',interactionId:card.id,body:card.options[option]});return;
     }
     if(button.dataset.confirmTalent){await perform({type:'confirm_talent',choiceId:button.dataset.confirmTalent,plannerStrategy:$('#planner-strategy')?.value || state.result?.plannerStrategy || 'guided'});return;}
     if(button.dataset.mainlineSuggestion!==undefined){

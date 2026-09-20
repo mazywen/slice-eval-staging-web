@@ -544,6 +544,7 @@
       return { type, choiceId: action.choiceId, plannerStrategy: action.plannerStrategy };
     }
     if (type === 'advance_day') return { type };
+    if (type === 'free_act') return { type, body: requiredBody(action.body), interactionId: requiredId(action.interactionId, '短互动') };
     if (type === 'allocate_points') {
       if (!Number.isSafeInteger(action.amount) || action.amount <= 0 || action.amount > 100) throw fail('升级数量必须为 1–100 的整数，经验由后端扣除');
       return { type, skillCode: requiredId(action.skillCode, '能力'), amount: action.amount };
