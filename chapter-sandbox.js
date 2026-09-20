@@ -42,7 +42,7 @@
     return {storySpine:r.snapshot.world,history:{hypotheticalHistory:r.input.history,acceptedExperimentalEvidence:r.state.evidence},
       player:{player:r.snapshot.player,characters:r.snapshot.activeCharacters,relationships:r.snapshot.relationships},
       chapter:r.state.activeChapter,conditions:r.state.activeChapter?.conditions||[],conditionState:r.state.conditionState,
-      settlementPassed:r.settlement?.passed??null,dayCard:r.state.activeChapter?.dayCard,suggestions:r.state.activeChapter?.suggestedInputs||[],
+      settlementPassed:r.settlement?.passed??null,dayCard:r.state.activeChapter?.dayCard,
       chapterPrompt:chapterResult.requestEvidence?.requestBody?.messages,chapterAiOutput:chapterResult.rawAiOutput?.parsedAiOutput||chapterResult.candidate,
       chapterCalls:r.modelCallCount?[{}]:[],cost:cost(r),isolated:true};
   }
@@ -80,7 +80,7 @@
       +(result?'<p>耗时 '+esc((result.durationMs/1000).toFixed(2))+' 秒 · '+esc(price?.display||'费用未采集')+'</p>'
       +'<p>章节：'+esc(result.state?.activeChapter?.title||'已结束')+' · 第 '+esc(result.state?.day)+' 天</p>'
       +(result.settlement?'<p class="chapter-settlement">模拟章末：<strong>'+ (result.settlement.passed?'PASS':'FAIL')+'</strong></p>':'')
-      +detail({objective:result.state?.activeChapter?.narrativeObjective,dayCard:result.state?.activeChapter?.dayCard,suggestedInputs:result.state?.activeChapter?.suggestedInputs,conditions:result.conditionChanges})
+      +detail({objective:result.state?.activeChapter?.narrativeObjective,dayCard:result.state?.activeChapter?.dayCard,conditions:result.conditionChanges})
       +[['本步输入',result.input],['实际 Provider 请求',result.requestEvidence],['模型原始输出',result.rawAiOutput],['校验后候选',result.candidate],['后端实验结果',result.state],['Token 用量',result.usage]].map(([label,v])=>'<details><summary>'+label+'</summary>'+detail(v)+'</details>').join('')
       +'<p class="muted">请求证据：'+esc(result.evidenceStatus)+'。费用为用量估算；未采集字段不视作零。</p>':'') )+'</div></div>'
       +'<h3>实验历史与对比</h3><div class="chapter-sandbox-history">'+data.history.map(row=>'<button class="button" data-chapter-sandbox-history="'+esc(row.jobId)+'">'+esc(row.title||'实验')+' · '+esc(row.mode)+' · '+esc(row.status)+'</button>').join('')+'</div>'
@@ -92,7 +92,7 @@
     if(!base?.result||!selected?.result||base.jobId===selected.jobId)return '<p class="muted">选一条历史设为基线，再选另一条查看逐字段差异。</p>';
     const pick=r=>({world:r.snapshot.world,player:r.snapshot.player,characters:r.snapshot.activeCharacters,
       history:r.input.history,objective:r.state.activeChapter?.narrativeObjective,conditions:r.state.activeChapter?.conditions,
-      day:r.state.activeChapter?.dayCard,suggestions:r.state.activeChapter?.suggestedInputs});
+      day:r.state.activeChapter?.dayCard});
     const a=pick(base.result),b=pick(selected.result);
     return '<div class="chapter-lab-compare"><table class="chapter-lab-diff"><thead><tr><th>字段</th><th>实验基线</th><th>当前结果</th></tr></thead><tbody>'+Object.keys(a).map(k=>'<tr class="'+(JSON.stringify(a[k])===JSON.stringify(b[k])?'same':'changed')+'"><td>'+esc(k)+'</td><td>'+detail(a[k])+'</td><td>'+detail(b[k])+'</td></tr>').join('')+'</tbody></table></div>';
   }

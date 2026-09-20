@@ -4,7 +4,7 @@
   "contractVersion": "4.0.0",
   "generatedAt": "2026-09-19T11:31:50.000Z",
   "sourceBaseCommit": "c740d5723d29e9e083a0ddf0bc85d081952d96b4",
-  "routeRegistrySha256": "82345b77427b3ce762194c017197135fc486ce9807fd19af3e6a5848697949df",
+  "routeRegistrySha256": "fce0c0f12e6be4144002f3791ea7355fd2d42be0aa09115c52e3bb967f94adfb",
   "operations": [
     {
       "authClass": "mobile_bearer",
@@ -6329,6 +6329,65 @@
         "SLICE_SESSION_AUDIENCE_INVALID",
         "SLICE_INPUT_INVALID",
         "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "none",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "prepareRunPostSuggestions",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "PrepareRunPostSuggestionsRequest",
+      "responseTransport": "json",
+      "responseType": "RunPostSuggestionsJob",
+      "routePath": "/v4/runs/{runId}/post-suggestions",
+      "successStatus": 202
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "getRunPostSuggestions",
+      "pathParams": [
+        "runId",
+        "jobId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "RunPostSuggestionsJob",
+      "routePath": "/v4/runs/{runId}/post-suggestions/{jobId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "mobile_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
         "SLICE_RUN_NOT_FOUND",
         "SLICE_INTERNAL_UNAVAILABLE"
       ],
@@ -7382,6 +7441,35 @@
     },
     {
       "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebGetRunAttentionDecisionAudit",
+      "pathParams": [
+        "runId",
+        "decisionId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "RunAttentionDecisionAudit",
+      "routePath": "/player-api/v4/runs/{runId}/attention/decisions/{decisionId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
       "csrf": "required",
       "errorSet": [
         "SLICE_AUTH_REQUIRED",
@@ -7885,6 +7973,373 @@
       "httpMethod": "get",
       "idempotency": "none",
       "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebListActivities",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityInstancePageV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-instances",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebGetActivity",
+      "pathParams": [
+        "runId",
+        "activityId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityInstanceV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-instances/{activityId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebListActivityAttempts",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityAttemptPageV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-attempts",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebListActivityCandidates",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityCandidatePageV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-candidates",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebActivateActivityCandidate",
+      "pathParams": [
+        "runId",
+        "candidateId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "EnterActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-candidates/{candidateId}/activate",
+      "successStatus": 201
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_INVITEE_INELIGIBLE",
+        "SLICE_ACTIVITY_ACTOR_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebCreateActivity",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "CreateActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-attempts",
+      "successStatus": 201
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "patch",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebUpdateActivityAttempt",
+      "pathParams": [
+        "runId",
+        "activityAttemptId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "UpdateActivityAttemptRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-attempts/{activityAttemptId}",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_INVITE_AUTHORITY_INVALID",
+        "SLICE_ACTIVITY_INVITATION_ALREADY_DECIDED",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebRespondActivityInvite",
+      "pathParams": [
+        "runId",
+        "activityAttemptId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "RespondActivityInviteRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityCreateAttemptV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-attempts/{activityAttemptId}/invite-response",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_INVITATIONS_UNRESOLVED",
+        "SLICE_ACTIVITY_REQUIRED_PARTICIPANT_UNAVAILABLE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebEnterActivity",
+      "pathParams": [
+        "runId",
+        "activityAttemptId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "EnterActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityInstanceV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-attempts/{activityAttemptId}/enter",
+      "successStatus": 201
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
+        "SLICE_ACTIVITY_NOT_ACTIVE",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebSubmitActivityAction",
+      "pathParams": [
+        "runId",
+        "activityId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "SubmitActivityActionRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityActionAcceptedV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-instances/{activityId}/actions",
+      "successStatus": 202
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_ACTIVITY_SCENE_REVISION_CONFLICT",
+        "SLICE_ACTIVITY_COMPLETION_NOT_COMMITTED",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "required",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebExitActivity",
+      "pathParams": [
+        "runId",
+        "activityId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "ExitActivityRequestV1",
+      "responseTransport": "json",
+      "responseType": "ActivityExitResponseV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-instances/{activityId}/exit",
+      "successStatus": 202
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebListActivityHistory",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "ActivityHistoryPageV1",
+      "routePath": "/player-api/v4/runs/{runId}/activity-history",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
       "operationId": "playerWebGetRunProgression",
       "pathParams": [
         "runId"
@@ -7951,6 +8406,65 @@
       "responseTransport": "json",
       "responseType": "RunActorProfilePage",
       "routePath": "/player-api/v4/runs/{runId}/cast",
+      "successStatus": 200
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "required",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "none",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "playerWebPrepareRunPostSuggestions",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "PrepareRunPostSuggestionsRequest",
+      "responseTransport": "json",
+      "responseType": "RunPostSuggestionsJob",
+      "routePath": "/player-api/v4/runs/{runId}/post-suggestions",
+      "successStatus": 202
+    },
+    {
+      "authClass": "player_web_cookie",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "playerWebGetRunPostSuggestions",
+      "pathParams": [
+        "runId",
+        "jobId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "RunPostSuggestionsJob",
+      "routePath": "/player-api/v4/runs/{runId}/post-suggestions/{jobId}",
       "successStatus": 200
     },
     {
@@ -9178,6 +9692,65 @@
       "responseTransport": "json",
       "responseType": "RunChapterProjection",
       "routePath": "/eval-api/v1/runs/{runId}/chapter",
+      "successStatus": 200
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_IDEMPOTENCY_CONFLICT",
+        "SLICE_REVISION_CONFLICT",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "none",
+      "expectedRevisionPolicy": "schema_declared_or_not_applicable",
+      "httpMethod": "post",
+      "idempotency": "none",
+      "idempotencyRetention": "durable_receipt",
+      "operationId": "evalPrepareRunPostSuggestions",
+      "pathParams": [
+        "runId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "canonical_json_sha256",
+      "requestType": "PrepareRunPostSuggestionsRequest",
+      "responseTransport": "json",
+      "responseType": "RunPostSuggestionsJob",
+      "routePath": "/eval-api/v1/runs/{runId}/post-suggestions",
+      "successStatus": 202
+    },
+    {
+      "authClass": "compiler_runtime_eval_bearer",
+      "csrf": "none",
+      "errorSet": [
+        "SLICE_AUTH_REQUIRED",
+        "SLICE_SESSION_AUDIENCE_INVALID",
+        "SLICE_INPUT_INVALID",
+        "SLICE_RATE_LIMITED",
+        "SLICE_RUN_NOT_FOUND",
+        "SLICE_INTERNAL_UNAVAILABLE"
+      ],
+      "etagPolicy": "strong_resource_revision",
+      "expectedRevisionPolicy": "none",
+      "httpMethod": "get",
+      "idempotency": "none",
+      "idempotencyRetention": "not_applicable",
+      "operationId": "evalGetRunPostSuggestions",
+      "pathParams": [
+        "runId",
+        "jobId"
+      ],
+      "queryType": null,
+      "requestHashPolicy": "none",
+      "requestType": null,
+      "responseTransport": "json",
+      "responseType": "RunPostSuggestionsJob",
+      "routePath": "/eval-api/v1/runs/{runId}/post-suggestions/{jobId}",
       "successStatus": 200
     },
     {

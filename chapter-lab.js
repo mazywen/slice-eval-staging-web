@@ -14,8 +14,7 @@
     ['chapter','05','本章定义','标题、目标、当前问题与参与人物'],
     ['conditions','06','本章条件','事实条件 / 数值条件 / 一次达成或章末维持'],
     ['day','07','今日安排','今天的处境、方向与世界变化'],
-    ['suggestions','08','快捷草稿','首帖以后使用的三条第一视角可编辑草稿'],
-    ['settlement','09','判定与章末规则','条件如何更新，以及章末 PASS / FAIL 的规则'],
+    ['settlement','08','判定与章末规则','条件如何更新，以及章末 PASS / FAIL 的规则'],
   ]);
   const state = { selectedNode:'spine', baseline:null, variant:null, active:'baseline' };
   function reset() { state.selectedNode='spine'; state.baseline=null; state.variant=null; state.active='baseline'; }
@@ -156,7 +155,6 @@
       conditionState: clone(mainline(result)?.conditionState || null),
       settlementPassed: mainline(result)?.settlementPassed ?? null,
       dayCard: clone(active?.dayCard || null),
-      suggestions: clone(active?.suggestedInputs || []),
       chapterPrompt: requestMessages(call),
       chapterAiOutput: modelCandidate(call),
       chapterCalls: calls,
@@ -178,7 +176,6 @@
     push('question','核心问题',a.chapter?.nextQuestion,b.chapter?.nextQuestion);
     push('conditions','Conditions',a.conditions,b.conditions);
     push('day','Day Card',a.dayCard,b.dayCard);
-    push('suggestions','快捷草稿',a.suggestions,b.suggestions);
     const ac=new Set(a.conditions.map(conditionKey)), bc=new Set(b.conditions.map(conditionKey));
     rows.push({field:'condition_delta',label:'条件变化',left:a.conditions.filter(row=>!bc.has(conditionKey(row))),right:b.conditions.filter(row=>!ac.has(conditionKey(row))),changed:ac.size!==bc.size||[...ac].some(key=>!bc.has(key))});
     return rows;
@@ -215,7 +212,6 @@
       chapter:{title:'本章定义',input:snapshot.chapterAiOutput,output:snapshot.chapter},
       conditions:{title:'本章条件',input:snapshot.chapter,output:snapshot.conditions},
       day:{title:'今日安排',input:{chapter:snapshot.chapter?.title,conditions:snapshot.conditions},output:snapshot.dayCard},
-      suggestions:{title:'快捷草稿',input:{dayCard:snapshot.dayCard,conditions:snapshot.conditions},output:snapshot.suggestions},
       settlement:{title:'判定与章末规则',input:{conditions:snapshot.conditions},output:{rule:'行动过程中更新相关条件；数值由程序比较；事实条件由正式结果证据确认；章末统一检查全部条件。',currentState:snapshot.conditionState,settlementPassed:snapshot.settlementPassed}},
     };
     return data[key] || {title:key,input:null,output:null};
@@ -297,7 +293,7 @@
       +panel('chapter','03 · 当前章与过章判定',V.projectionNotice(projection,'章节')+(chapter?'<h3>'+esc(chapter.title)+'</h3><p>'+esc(chapter.narrativeObjective)+'</p><div class="story-review-table"><table><thead><tr><th>条件</th><th>类型</th><th>正式状态</th><th>当前值 / 依据</th></tr></thead><tbody>'+conditionRows+'</tbody></table></div>':'<p class="muted">当前章尚未返回。请先完成原有开局与天赋确认。</p>')
         +'<p class="notice">条件满足与章末过章分开。章末结果：'+(line?.settlementPassed===true?'通过':line?.settlementPassed===false?'未通过':'未返回正式结算')+'。技术异常不等于游戏失败。</p>')
       +panel('days','04 · 每一天怎么展开','<p class="muted">按已采集游戏日排列；同一天展示最后一次记录。未来日程按游玩展开，未采集的历史不拿今天的安排补齐。</p>'
-        +(days.length?days.map(({line:day,stepId})=>'<article class="story-review-day"><span class="eyebrow">第 '+esc(day.day)+' 天 · 第 '+esc(day.activeChapter.ordinal)+' 章</span><h3>'+esc(day.activeChapter.dayCard.title)+'</h3><p>'+esc(day.activeChapter.dayCard.description)+'</p>'+field('今日方向',day.activeChapter.dayCard.focus)+field('当时的快捷草稿',day.activeChapter.suggestedInputs)+(stepId?'<button class="text-button" type="button" data-inspect-step="'+esc(stepId)+'">查看当时记录</button>':'<small class="muted">当前正式投影</small>')+'</article>').join(''):'<p class="muted">尚未采集日程。</p>'))
+        +(days.length?days.map(({line:day,stepId})=>'<article class="story-review-day"><span class="eyebrow">第 '+esc(day.day)+' 天 · 第 '+esc(day.activeChapter.ordinal)+' 章</span><h3>'+esc(day.activeChapter.dayCard.title)+'</h3><p>'+esc(day.activeChapter.dayCard.description)+'</p>'+field('今日方向',day.activeChapter.dayCard.focus)+(stepId?'<button class="text-button" type="button" data-inspect-step="'+esc(stepId)+'">查看当时记录</button>':'<small class="muted">当前正式投影</small>')+'</article>').join(''):'<p class="muted">尚未采集日程。</p>'))
       +panel('story','05 · 玩家输入与实际剧情',steps.length?steps.map(step=>{
         const delivered=P?.deliveredForStep(result,step)||[];
         const input=step.input||step.execution?.payload||step.trace?.input;

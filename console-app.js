@@ -9,7 +9,7 @@
     draft:null,result:null,busy:false,message:'',error:null,search:'',draftCharacterDirty:false,
     selectedStepId:null,workbenchStepId:null,diagnosticTab:'overview',drawer:false,compose:null,composeBody:'',
     selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,editingCharacter:null,
-    characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,
+    characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,postSuggestions:null,
   };
   const pageNames={scripts:'剧本与创作',play:'交互运行',chapterLab:'剧情评审',records:'操作与诊断',promptFlow:'提示词全流程',guide:'流程总览'};
   let advancedChapterLab=false;
@@ -19,10 +19,17 @@
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
   const openingPending=()=>state.result?.runtimePhase==='opening_waiting_for_user' && V.openingSnapshot(state.result).generationStatus==='pending';
   const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown' || openingPending() || M.preparing(state.result);
-  const locked=()=>state.busy || !!state.result?.pendingCommand || state.result?.runtimePhase==='waiting_for_backend' || pendingRelease();
+  const writeLocked=()=>state.busy || !!state.result?.pendingCommand || pendingRelease();
+  const locked=()=>writeLocked() || state.result?.runtimePhase==='waiting_for_backend';
   const playerActorId=()=>A(V.projections(state.result).run?.value?.actorStates || V.preview(state.result).actorStates).find(row=>row.kind==='player')?.actorId;
   const visibleNpcs=()=>V.cast(state.result).filter(row=>row.actorId && row.actorId!==playerActorId() && row.kind!=='player');
   const canAct=()=>!!V.preview(state.result).runId && !locked() && state.result?.runtimePhase==='waiting_for_user' && (!M.isLatest(state.result) || M.canContinue(state.result));
+  const canAnswerShortInteraction=(interactionId=null)=>{
+    const mainline=M.current(state.result),card=mainline?.shortInteraction;
+    return !!V.preview(state.result).runId && !writeLocked() && mainline?.phase==='playing'
+      && typeof card?.id==='string' && card.id.length>0 && A(card.options).length===3
+      && (interactionId==null || card.id===interactionId);
+  };
   const disable=(condition)=>condition?' disabled':'';
   const workspaceSteps=()=>A(C.listWorkspaceOperations?.()).map(operation=>({id:'workspace-'+operation.consoleOperationId,title:operation.label || '创建人物',kind:'workspace',status:operation.status,operations:operation.operations,error:operation.error,input:operation.operations?.[0]?.input,output:operation.operations?.at(-1)?.output}));
   const consoleSteps=()=>[...workspaceSteps(),...V.steps(state.result)];
@@ -60,7 +67,38 @@
   function loginEmpty() {
     return '<section class="panel login-empty">'+V.empty('连接你的测试工作区','在同一条真实业务链路里创建剧本、选择人物、亲自操作，并观察每一步的处理结果。').replace('</div>','<button class="button primary" type="button" data-open-login>登录工作区</button></div>')+'</section>';
   }
+  function composerScope() {
+    const run=V.projections(state.result).run?.value;
+    return state.page==='play' && state.playTab==='feed' && !locked()
+      && (!state.compose || state.compose.type==='post') && canAct() && M.canPost(state.result)
+      && run?.runId && Number.isSafeInteger(run.revision) ? run : null;
+  }
+  function composerKey(run) { return run ? run.runId+':'+run.revision : null; }
+  async function prepareComposerSuggestions() {
+    const run=composerScope();if(!run)return;
+    const key=composerKey(run);
+    let session=state.postSuggestions;
+    if(session?.key===key && (session.polling || ['ready','failed','stale'].includes(session.job.status)))return;
+    if(session?.key!==key)session=state.postSuggestions={key,polling:false,job:{runId:run.runId,sourceRevision:run.revision,status:'queued',suggestedInputs:null}};
+    session.polling=true;
+    const active=()=>state.postSuggestions===session && composerKey(composerScope())===key;
+    try {
+      session.job=session.job.jobId ? await C.readPostSuggestions(run.runId,session.job.jobId) : await C.preparePostSuggestions(state.result);
+      if(!active())return;
+      render();
+      for(let attempt=0;attempt<40 && ['queued','running'].includes(session.job.status);attempt++){
+        await new Promise(resolve=>window.setTimeout(resolve,1500));
+        if(!active())return;
+        const next=await C.readPostSuggestions(run.runId,session.job.jobId);
+        if(!active())return;
+        session.job=next;render();
+      }
+    } catch(error) {
+      if(active()){session.job={...session.job,status:'failed',suggestedInputs:null,errorCode:error.code || 'SLICE_INTERNAL_UNAVAILABLE'};render();}
+    } finally {session.polling=false;}
+  }
   function render() {
+    if(state.postSuggestions && state.postSuggestions.key!==composerKey(composerScope()))state.postSuggestions=null;
     const activeOpening=['opening-body','action-body'].includes(document.activeElement?.id) ? {id:document.activeElement.id,start:document.activeElement.selectionStart,end:document.activeElement.selectionEnd} : null;
     V.clearLazyEvidence();
     syncHeader();
@@ -165,7 +203,7 @@
     const failure=V.runtimeFailureMessage(result);
     const failurePanel=failure?'<section class="notice error" role="alert"><strong>这次没有生成可用结果</strong><p>'+e(failure.message)+'</p>'+(failure.code?'<code>'+e(failure.code)+'</code>':'')+'</section>':'';
     const gameplay=M.journey(result)+'<div class="context-bar">'+V.avatar(result.input?.title,true)+'<div><h2>'+e(result.input?.title)+'</h2><span class="mono">'+e(run.runId)+'</span></div>'+V.badge(result.runtimePhase)+'<button class="button" id="add-cast-button" type="button"'+disable(!canAct())+'>添加人物</button><button class="button" id="inspect-latest" type="button">查看本次过程</button></div>'+
-      failurePanel+M.talentPanel(result,locked())+M.dayCard(result,locked())+M.shortInteraction(result,locked(),V.actorName(result,M.current(result)?.shortInteraction?.speakerActorId))+(opening?renderOpening():'')+
+      failurePanel+M.talentPanel(result,locked())+M.dayCard(result,locked())+M.shortInteraction(result,!canAnswerShortInteraction(),V.actorName(result,M.current(result)?.shortInteraction?.speakerActorId))+(opening?renderOpening():'')+
       '<section class="panel play-content"><div id="play-tabs" class="tabs" role="tablist">'+Object.entries({feed:'世界动态',dm:'私聊',events:'事件',activities:'活动',cast:'人物',chapter:'章节'}).map(([key,label])=>'<button type="button" role="tab" aria-selected="'+(state.playTab===key)+'" class="'+(state.playTab===key?'active':'')+'" data-play-tab="'+key+'">'+label+'</button>').join('')+'</div>'+renderSurface()+'</section>';
     const inspected=V.steps(result).find(step=>step.id===state.workbenchStepId);
     return heading+window.SliceProductWorkbench.render(result,inspected,gameplay,V);
@@ -174,7 +212,7 @@
     const selected=state.compose || {type:defaultType,...target};
     const type=selected.type,title=V.label(type);
     const allowed=canAct() && (type!=='post' || !M.isLatest(state.result) || M.canPost(state.result));
-    return (type==='post'?M.suggestions(state.result,!allowed):'')+'<form id="action-form" class="compose" data-action-type="'+e(type)+'"><div class="compose-header"><strong>'+e(title)+(selected.label?' · '+e(selected.label):'')+'</strong>'+(state.compose?'<button class="text-button" type="button" id="cancel-compose">取消</button>':'')+'</div><textarea id="action-body" rows="3" maxlength="4000" placeholder="'+(type==='post'?'以当前人物的身份发一条动态…':'输入这次真实发送的内容…')+'" aria-label="'+e(title)+'正文" required'+disable(!allowed)+'>'+e(state.composeBody)+'</textarea><div class="compose-actions"><small>'+(!allowed?'完成当前准备，或公开行动用完后手动进入下一日。':'发送后，后台按实际产品流程执行。')+'</small><button id="action-submit" class="button primary" type="submit"'+disable(!allowed)+'>'+e(title)+'</button></div></form>';
+    return (type==='post'?M.suggestions(state.result,!allowed,'feed',state.postSuggestions?.job):'')+'<form id="action-form" class="compose" data-action-type="'+e(type)+'"><div class="compose-header"><strong>'+e(title)+(selected.label?' · '+e(selected.label):'')+'</strong>'+(state.compose?'<button class="text-button" type="button" id="cancel-compose">取消</button>':'')+'</div><textarea id="action-body" rows="3" maxlength="4000" placeholder="'+(type==='post'?'以当前人物的身份发一条动态…':'输入这次真实发送的内容…')+'" aria-label="'+e(title)+'正文" required'+disable(!allowed)+'>'+e(state.composeBody)+'</textarea><div class="compose-actions"><small>'+(!allowed?'完成当前准备，或公开行动用完后手动进入下一日。':'发送后，后台按实际产品流程执行。')+'</small><button id="action-submit" class="button primary" type="submit"'+disable(!allowed)+'>'+e(title)+'</button></div></form>';
   }
   function renderFeed(p) {
     const posts=I(p.feed),replyThreads=I(p.replies);
@@ -357,7 +395,10 @@
     if(result){state.draft={...result.input};if(compile)state.draftCharacterDirty=false;toast(compile?'编译结果已返回，可选择人物开始游玩。':'测试草稿已保存。');render();}
   }
   async function perform(action) {
-    if(locked() || (!canAct() && !['confirm_opening_post','confirm_talent'].includes(action.type)))return;
+    const shortInteractionAction=action.type==='free_act' && typeof action.interactionId==='string' && action.interactionId.length>0;
+    if(shortInteractionAction){
+      if(!canAnswerShortInteraction(action.interactionId)){toast('这段互动已经更新，请刷新后使用当前邀请。');return;}
+    }else if(locked() || (!canAct() && !['confirm_opening_post','confirm_talent'].includes(action.type)))return;
     if(action.type==='confirm_opening_post' && !M.readyForFirstPost(state.result))return;
     if(action.type==='post' && M.isLatest(state.result) && !M.canPost(state.result))return;
     if(action.type==='advance_day' && !M.canAdvance(state.result))return;
@@ -455,16 +496,17 @@
     if(button.dataset.shortInteraction){
       const card=M.current(state.result)?.shortInteraction;
       const option=Number(button.dataset.interactionOption);
-      if(!card || card.id!==button.dataset.shortInteraction || !Number.isInteger(option) || typeof card.options?.[option]!=='string')return;
+      if(!card || card.id!==button.dataset.shortInteraction || !Number.isInteger(option) || typeof card.options?.[option]!=='string'){
+        toast('这段互动已经更新，请使用当前邀请。');return;
+      }
       await perform({type:'free_act',interactionId:card.id,body:card.options[option]});return;
     }
     if(button.dataset.confirmTalent){await perform({type:'confirm_talent',choiceId:button.dataset.confirmTalent,plannerStrategy:$('#planner-strategy')?.value || state.result?.plannerStrategy || 'guided'});return;}
     if(button.dataset.mainlineSuggestion!==undefined){
-      const text=M.current(state.result)?.activeChapter?.suggestedInputs?.[Number(button.dataset.mainlineSuggestion)];
-      if(typeof text!=='string' || !M.canPost(state.result))return;
-      if(button.dataset.suggestionLocation==='opening'){
-        state.result.openingEditor={runId:V.preview(state.result).runId,body:text,edited:true};C.saveSession(state.result);render();$('#opening-body')?.focus();
-      }else{state.compose={type:'post'};state.composeBody=text;render();$('#action-body')?.focus();}
+      const session=state.postSuggestions;
+      const text=session?.job?.suggestedInputs?.[Number(button.dataset.mainlineSuggestion)];
+      if(typeof text!=='string' || session.job.status!=='ready' || session.key!==composerKey(composerScope()))return;
+      state.compose={type:'post'};state.composeBody=text;render();$('#action-body')?.focus();
       return;
     }
     if(button.dataset.eventInput){activateCompose({type:'event_action',eventId:button.dataset.eventInput,label:'事件回应'});return;}
@@ -527,7 +569,7 @@
       case 'publish-draft':if(typeof C.publish==='function')await task('正在执行正式编译与测试发布…',onProgress=>C.publish(state.result,onProgress));break;
       case 'inspect-latest':inspect();break;
       case 'close-diagnostics':state.drawer=false;$('#diagnostics').hidden=true;break;
-      case 'cancel-compose':state.compose=null;state.composeBody='';render();break;
+      case 'cancel-compose':state.compose=null;state.composeBody='';state.postSuggestions=null;render();break;
       case 'create-activity':state.activityEditing={payload:{}};render();break;
       case 'cancel-activity':state.activityEditing=null;render();break;
       case 'add-cast-button':await openCastDialog();break;
@@ -540,6 +582,9 @@
         a.href=url;a.download='slice-eval-'+(state.result.consoleSessionId || Date.now())+'.json';a.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);break;
       }
     }
+  });
+  document.addEventListener('focusin',event=>{
+    if(event.target.id==='action-body' && event.target.closest('form')?.dataset.actionType==='post')void prepareComposerSuggestions();
   });
   document.addEventListener('toggle',(event)=>{V.hydrateEvidence(event.target);},true);
   document.addEventListener('input',(event)=>{

@@ -929,9 +929,13 @@
     if (!result?.previewRuns?.current?.runId) throw fail('请先选角并开始游玩');
     if (result.pendingCommand) throw fail('上一条操作仍在后端处理，请等待完成', 'SLICE_EVAL_WRITE_PENDING');
     const action = normalizeAction(rawAction);
-    if (result.runtimePhase === 'opening_waiting_for_user'
-      && !['confirm_opening_post', 'confirm_talent'].includes(action.type)) throw fail('请先确认开局配置并发布开场帖子');
     const mainline = result.finalProjections?.current?.chapter?.value?.mainline;
+    const currentShortInteraction = action.type === 'free_act' && action.interactionId
+      && mainline?.phase === 'playing' && mainline.shortInteraction?.id === action.interactionId;
+    if (result.runtimePhase === 'opening_waiting_for_user'
+      && !['confirm_opening_post', 'confirm_talent'].includes(action.type) && !currentShortInteraction) {
+      throw fail('请先确认开局配置并发布开场帖子');
+    }
     if (mainline && action.type !== 'confirm_talent'
       && !['playing', 'epilogue'].includes(mainline.phase)) throw fail('本章尚未准备完成，或已经失败；不能提交新的剧情行动');
     if (mainline && action.type === 'confirm_talent' && mainline.phase !== 'awaiting_talent') throw fail('本局能力卡已经确认');
@@ -1323,6 +1327,15 @@
   async function getChapterExperiment(experimentId, jobId) {
     return T.call('evalGetChapterExperiment', { params:{experimentId,jobId}, recordTelemetry:false });
   }
+  async function preparePostSuggestions(result) {
+    const runId = result.previewRuns?.current?.runId;
+    const expectedRevision = result.finalProjections?.current?.run?.value?.revision;
+    if (!runId || !Number.isSafeInteger(expectedRevision)) throw fail('请先读取当前剧情，再编写新帖子');
+    return T.call('evalPrepareRunPostSuggestions', { params: { runId }, body: { expectedRevision } });
+  }
+  async function readPostSuggestions(runId, jobId) {
+    return T.call('evalGetRunPostSuggestions', { params: { runId, jobId }, recordTelemetry: false });
+  }
   function chapterLabStorage(value) {
     const prefix=storagePrefix(); if(!prefix)return null;
     const key=prefix+'chapter-lab';
@@ -1331,6 +1344,7 @@
   }
   window.SliceEvalConsoleClient = Object.freeze({
     createChapterExperiment, getChapterExperiment, chapterLabStorage,
+    preparePostSuggestions, readPostSuggestions,
     connected: B.connected, connect: B.connect, disconnect: B.disconnect, capabilities,
     getPromptCatalog: () => T.call('evalGetPromptCatalog'),
     previewPromptRequest: body => T.call('evalPreviewPromptRequest', { body }),

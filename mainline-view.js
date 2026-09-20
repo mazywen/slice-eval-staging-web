@@ -70,16 +70,20 @@
         + '<button class="button primary" type="button" data-confirm-talent="' + esc(card.choiceId) + '"'
         + disabled(locked) + '>采用这张</button></article>').join('') + '</div></section>';
   }
-  function suggestions(result, locked = false, location = 'feed') {
+  function suggestions(result, locked = false, location = 'feed', job = null) {
     const state = current(result);
-    const rows = arr(state?.activeChapter?.suggestedInputs);
-    // A first post has its own editable draft. Quick fills start after it is committed.
+    const run = result?.finalProjections?.current?.run?.value;
     if (location === 'opening' || result?.opening?.current?.status !== 'applied'
-      || !rows.length || state.phase !== 'playing') return '';
-    return '<div class="mainline-suggestions"><small>不知道发什么？选一句填入草稿</small>'
+      || !job || !['playing', 'epilogue'].includes(state?.phase) || locked || !canPost(result)) return '';
+    if (job.runId !== run?.runId || job.sourceRevision !== run?.revision) return '';
+    if (job.status === 'failed' || job.status === 'stale') return '<p class="muted" role="status">'
+      + (job.status === 'stale' ? '剧情已更新，请刷新后重新打开草稿。' : '建议暂未生成，你可以直接写帖子。') + '</p>';
+    if (job.status !== 'ready') return '<p class="muted" role="status">正在准备你的下一条发帖草稿，你可以先自己写。</p>';
+    const rows = arr(job.suggestedInputs);
+    return rows.length === 3 ? '<div class="mainline-suggestions"><small>下一条动态可以怎么说？选一句填入后再修改</small>'
       + rows.map((text, index) => '<button class="button" type="button" data-mainline-suggestion="'
-        + index + '" data-suggestion-location="' + location + '"' + disabled(locked || !canPost(result))
-        + '>' + esc(text) + '</button>').join('') + '</div>';
+        + index + '" data-suggestion-location="' + location + '"'
+        + '>' + esc(text) + '</button>').join('') + '</div>' : '';
   }
   function dayCard(result, locked = false) {
     if (!isLatest(result) && !preparing(result)) return '';
