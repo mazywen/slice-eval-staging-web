@@ -10,7 +10,7 @@
     body:'正文', text:'内容', summary:'经历简记', narrativeSummary:'本次变化简记', description:'描述', title:'标题', name:'名字', displayName:'人物',
     background:'背景', identity:'身份', goal:'目标', currentSituation:'此刻处境', opening:'出生内容', firstPostDraft:'开场草稿',
     personality:'性格', speakingStyle:'说话方式', bio:'简介', worldDescription:'世界中的身份', worldSetting:'世界背景', worldGoal:'世界目标',
-    worldCore:'世界基础', worldBase:'世界基础', world:'世界', environment:'环境', setting:'背景', gameConfig:'世界与玩法基础',
+    storyRequirements:'创作者剧情要求', authorIntent:'创作者意图', worldCore:'世界基础', worldBase:'世界基础', world:'世界', environment:'环境', setting:'背景', gameConfig:'世界与玩法基础',
     skills:'能力', value:'当前值', relationships:'人物关系', axes:'关系数值', support:'支持', depth:'深度', conflict:'冲突', affinity:'亲近', trust:'信任', respect:'认可', tension:'紧张',
     actors:'人物', characters:'人物', activeCharacters:'当前人物', player:'我扮演的人物', selectedPlayer:'我扮演的人物', firstFollower:'初始互动人物', initialLinkedCharacter:'初始互动人物',
     publicState:'公开信息', worldLocalDefinition:'人物设定', castBindingSnapshots:'人物基础', initialRelationship:'初始关系', atmosphere:'当前氛围', unresolved:'未完事项',

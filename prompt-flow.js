@@ -189,6 +189,7 @@
     if(!world){message('请先在“剧本与创作”选择一套剧本。',true);return;}
     let value;try{value=JSON.parse(draft.inputText);}catch{message('输入不是合法 JSON，先修正后再填入剧本。',true);return;}
     const core={title:world.title,description:world.description,setting:world.setting,goal:world.goal};
+    if(n.id==='chapter'||n.id==='day')value.authorIntent={authoredGoal:world.goal,storyRequirements:world.storyRequirements||''};
     const characters=world.characters||[];
     const player=characters.find(c=>c.characterVersionId===S.context.selectedPlayerCharacterVersionId)||characters[0];
     const first=characters.find(c=>c.characterVersionId===S.context.selectedFirstFollowerCharacterVersionId)||characters.find(c=>c!==player);

@@ -424,6 +424,7 @@
       description: String(input.description || '').trim(),
       setting: String(input.setting || '').trim(),
       goal: String(input.goal || '').trim(),
+      storyRequirements: String(input.storyRequirements || '').trim(),
       characterVersionIds,
       // 数组是权威来源；首项仅保留给旧报告读取兼容。
       characterVersionId: characterVersionIds[0] || '',
@@ -446,6 +447,7 @@
       characters: normalizeInputCharacters(input.characters, characterVersionIds),
       sourceDocument: normalizeSourceDocument(input.sourceDocument),
     };
+    if (!normalized.storyRequirements || [...normalized.storyRequirements].length > 4000) throw new Error('请填写创作者剧情要求（1–4000 字）');
     for (const field of ['title', 'description', 'setting', 'goal']) {
       if (!normalized[field]) throw new Error(field + ' 不能为空');
     }
@@ -487,6 +489,7 @@
       description: input.description,
       setting: input.setting,
       goal: input.goal,
+      storyRequirements: input.storyRequirements,
       characterVersionIds,
     };
   }
@@ -495,6 +498,7 @@
     const characterVersionIds = readCharacterVersionIds(input);
     return {
       schemaVersion: 'slice.world-draft-content.v6',
+      storyRequirements: input.storyRequirements,
       worldCore: {
         schemaVersion: 'slice.world-core-source.v1',
         worldName: input.title,

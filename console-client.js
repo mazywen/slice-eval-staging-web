@@ -221,7 +221,7 @@
     if (input.sourceContent) {
       const edited = request.content;
       request.content = { ...clone(input.sourceContent), worldCore: edited.worldCore, coverAssetId: null,
-        topicTags: edited.topicTags,
+        topicTags: edited.topicTags, storyRequirements: edited.storyRequirements,
         ...(input.sourceDocument ? { sourceDocument: clone(input.sourceDocument) } : {}) };
     }
     delete request.content.highlightDescription; // Not part of the formal V6 write DTO.
@@ -322,6 +322,7 @@
   function sourceFingerprint(input) {
     return stableJson({
       title: input.title || '', description: input.description || '', setting: input.setting || '', goal: input.goal || '',
+      storyRequirements: input.storyRequirements || '',
       topicTags: input.topicTags || [],
       characterVersionIds: input.characterVersionIds || [],
       characters: (input.characters || []).map((row) => ({
@@ -1125,6 +1126,7 @@
       description: core.worldDescription || core.description || row.worldDescription || '',
       setting: core.worldSetting || core.setting || row.worldSetting || '',
       goal: core.worldGoal || core.goal || row.worldGoal || '',
+      storyRequirements: content.storyRequirements ?? row.seed?.storyRequirements ?? row.storyRequirements ?? '',
       highlightDescription: content.highlightDescription || row.highlightDescription || '',
       topicTags: content.topicTags || row.topicTags || [],
       sourceDocument: clone(content.sourceDocument || null), sourceHasDocument: Boolean(content.sourceDocument),

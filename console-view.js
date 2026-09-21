@@ -29,7 +29,7 @@
     activity_enter:'进入活动', activity_turn:'活动内行动', activity_exit:'退出活动',
     activity_invite_response:'回应活动邀请', add_cast:'添加人物', select_character_slot:'选择加入人物', opening_waiting_for_user:'等待确认开场',
     description:'简介', setting:'世界观', goal:'世界目标', title:'标题', content:'内容',
-    worldCore:'世界设定', experienceSpine:'体验主线', agencyGraph:'人物与关系', narrativeSeeds:'剧情种子',
+    storyRequirements:'创作者剧情要求', authorIntent:'创作者意图', worldCore:'世界设定', experienceSpine:'体验主线', agencyGraph:'人物与关系', narrativeSeeds:'剧情种子',
     runtimePolicy:'运行规则', gameConfig:'游戏配置', opening:'开场', planJson:'完整编译结果',
     directorDecision:'调度决策', narrativeSummary:'结果摘要', memoryEvidence:'记忆召回证据',
     attemptInterpretation:'用户意图判定', desiredOutcome:'期望结果', selfAction:'用户行为',

@@ -40,7 +40,7 @@
     const input = stripPersistent(draft);
     input.title = '[Chapter Lab] ' + String(draft?.title || '未命名剧本') + ' · ' + (variant ? '变化版' : '基线');
     if (variant && form.goalOverride) input.goal = form.goalOverride;
-    if (variant && form.storyRewrite) input.setting = String(input.setting || '') + '\n\n【章节实验改写】\n' + form.storyRewrite;
+    if (variant && form.storyRewrite) input.storyRequirements = form.storyRewrite;
     const ids = new Set(arr(input.characterVersionIds));
     if (variant) for (const id of form.extraCharacterVersionIds) ids.add(id);
     if(ids.size>8)throw new Error('实验人物最多 8 位，请减少额外人物；不会静默截掉已选择的人物。');
@@ -117,6 +117,7 @@
   function storyDirection(result) {
     const input = result?.input || {};
     return {
+      storyRequirements: input.storyRequirements || null,
       worldGoal: input.goal || null,
       coreSetting: input.setting || null,
       currentStage: chapter(result)?.ordinal ? '第 ' + chapter(result).ordinal + ' 章' : '首章准备',
@@ -211,7 +212,7 @@
       writer:{title:'当前章节编剧',input:{storySpine:snapshot.storySpine,history:snapshot.history,player:snapshot.player},prompt:snapshot.chapterPrompt,output:snapshot.chapterAiOutput},
       chapter:{title:'本章定义',input:snapshot.chapterAiOutput,output:snapshot.chapter},
       conditions:{title:'本章条件',input:snapshot.chapter,output:snapshot.conditions},
-      day:{title:'今日安排',input:{chapter:snapshot.chapter?.title,conditions:snapshot.conditions},output:snapshot.dayCard},
+      day:{title:'今日安排',input:{authorIntent:{storyRequirements:snapshot.storySpine?.storyRequirements},chapter:snapshot.chapter?.title,conditions:snapshot.conditions},output:snapshot.dayCard},
       settlement:{title:'判定与章末规则',input:{conditions:snapshot.conditions},output:{rule:'行动过程中更新相关条件；数值由程序比较；事实条件由正式结果证据确认；章末统一检查全部条件。',currentState:snapshot.conditionState,settlementPassed:snapshot.settlementPassed}},
     };
     return data[key] || {title:key,input:null,output:null};
@@ -285,7 +286,7 @@
     return '<div class="page-heading"><div><span class="eyebrow">STORY REVIEW</span><h1>剧情评审</h1><p>先看故事，再看判定。这里读取当前会话已有的编译、开局与正式游玩结果。</p></div></div>'
       +'<section class="panel story-review-context"><div><strong>'+esc(result?.input?.title||'尚未选择评测剧本')+'</strong><p class="muted">我扮演 '+esc(name(result?.input?.playerCharacterVersionId))+' · 首位关联 '+esc(name(result?.input?.firstFollowerCharacterVersionId))+'</p></div><div class="inline-controls"><button class="button" type="button" data-page="scripts">修改剧本与人物</button><button class="button primary" type="button" data-page="play">'+(V.preview(result).runId?'继续本局游玩':'选择人物与开局')+'</button><button class="text-button" type="button" id="story-review-advanced">高级隔离实验</button></div><p class="muted">修改输入后沿原流程保存、编译并开新局；下方始终标明当前结果所属剧本，不把未提交的编辑当作生成结果。</p></section>'
       +'<nav class="story-review-nav" aria-label="剧情审核内容">'+[['spine','编译与 Spine'],['opening','开局'],['chapter','章节判定'],['days','每日日程'],['story','实际剧情'],['loops','伏笔回收'],['numbers','数值']].map(([key,label])=>'<a href="#story-review-'+key+'">'+label+'</a>').join('')+'</nav>'
-      +panel('spine','01 · 编译与故事方向',field('本次编译输入的目标',result?.input?.goal)
+      +panel('spine','01 · 编译与故事方向',field('创作者剧情要求（本次编译输入）',result?.input?.storyRequirements)+field('本次编译输入的目标',result?.input?.goal)
         +(spine?'<p class="notice">该记录实际返回了 experienceSpine；历史编译规划不代表后续内容已经发生，也不证明当前主线仍使用旧规划。</p>'+field('编译返回的 Spine',spine):'<p class="notice">本次记录未提供独立 Spine。以下为实际编译世界基础；作品目标不冒充已生成大纲。</p>')
         +field('编译后的世界基础',compiled.worldBase||compiled.worldCore)
         +'<button class="text-button" type="button" data-inspect-step="compile">查看完整编译证据</button>')
@@ -324,7 +325,7 @@
         +'<label>首位关联人物<select id="chapter-lab-follower">'+followerIds.map(id=>'<option value="'+esc(id)+'"'+(id===defaultFollower?' selected':'')+'>'+esc(map.get(id)?.displayName||'未返回人物名称')+'</option>').join('')+'</select></label>'
         +'<label>能力候选<select id="chapter-lab-talent"><option value=""'+(!form.talentChoiceId?' selected':'')+'>自动采用第 1 张候选</option><option value="first_1"'+(form.talentChoiceId==='first_1'?' selected':'')+'>第 1 张</option><option value="first_2"'+(form.talentChoiceId==='first_2'?' selected':'')+'>第 2 张</option><option value="first_3"'+(form.talentChoiceId==='first_3'?' selected':'')+'>第 3 张</option></select></label>'
         +'<label>变化版：改写整局目标<textarea id="chapter-lab-goal" rows="3" placeholder="留空沿用原目标">'+esc(form.goalOverride||'')+'</textarea></label>'
-        +'<label>变化版：追加剧情改写<textarea id="chapter-lab-rewrite" rows="4" placeholder="例如：把通知矛盾改成剧社内部有人故意隐瞒安排。不会覆盖已发布世界，只写进实验副本。">'+esc(form.storyRewrite||'')+'</textarea></label>'
+        +'<label>变化版：替换创作者剧情要求<textarea id="chapter-lab-rewrite" rows="4" placeholder="留空沿用原剧情要求；填写则仅替换实验副本的剧情要求，不改写世界背景或已发生前情。">'+esc(form.storyRewrite||'')+'</textarea></label>'
         +'<h3>变化版：额外加入现有人物</h3><div class="chapter-lab-checks">'+extras(draft,characters,form.extraCharacterVersionIds||[])+'</div>'
         +'<div class="chapter-lab-actions"><button id="chapter-lab-baseline" class="button" type="button"'+(busy?' disabled':'')+'>生成基线</button><button id="chapter-lab-variant" class="button primary" type="button"'+(busy?' disabled':'')+'>生成变化版</button></div>'
       )+(message?'<p class="notice">'+esc(message)+'</p>':'')+(error?'<p class="notice error">'+esc(error)+'</p>':'')

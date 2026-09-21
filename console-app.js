@@ -15,7 +15,7 @@
   let advancedChapterLab=false;
   const chapterLabUi={form:{playerCharacterVersionId:'',firstFollowerCharacterVersionId:'',talentChoiceId:'',goalOverride:'',storyRewrite:'',extraCharacterVersionIds:[]}};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
-  const blankDraft=()=>({title:'',description:'',setting:'',goal:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
+  const blankDraft=()=>({title:'',description:'',setting:'',goal:'',storyRequirements:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
   const openingPending=()=>state.result?.runtimePhase==='opening_waiting_for_user' && V.openingSnapshot(state.result).generationStatus==='pending';
   const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown' || openingPending() || M.preparing(state.result);
@@ -137,6 +137,7 @@
       '<label class="full">剧本名称<input name="title" maxlength="160" value="'+e(d.title)+'" required'+disable(state.busy)+' /></label>'+
       '<label class="full">世界简介<textarea name="description" rows="3" maxlength="4000" required'+disable(state.busy)+'>'+e(d.description)+'</textarea></label>'+
       '<label class="full">世界观与背景<textarea name="setting" rows="5" maxlength="4000" required'+disable(state.busy)+'>'+e(d.setting)+'</textarea></label>'+
+      '<label class="full">创作者剧情要求（必填）<textarea name="storyRequirements" rows="6" maxlength="4000" required placeholder="写下故事主线、关键冲突、希望展开的剧情及先后要求；章节和日程都会持续读取。"'+disable(state.busy)+'>'+e(d.storyRequirements)+'</textarea><small>引导整局故事；实际发展承接玩家行动，不提前视为已发生。</small></label>'+
       '<label class="full">世界目标<textarea name="goal" rows="2" maxlength="160" required'+disable(state.busy)+'>'+e(d.goal)+'</textarea></label>'+
       '</div><div class="form-section"><div class="section-heading"><h3>剧本人物 <small id="character-count">'+A(d.characterVersionIds).length+' / 8</small></h3><button id="create-character" type="button" class="text-button"'+disable(state.busy)+'>＋ 创建人物</button></div>'+characterOptions()+'</div>'+
       (A(state.characters).length>8?'<p class="notice">本剧本的全部 '+A(state.characters).length+' 位人物都已保存在人物库，可逐位编辑。当前编译器最多绑定 8 位；可取消一位后替换加入，未绑定人物原文不会被删除。</p>':'')+presetActivities()+
@@ -299,7 +300,7 @@
     const form=$('#draft-form');
     if(!form || !state.draft)return;
     const data=new FormData(form);
-    for(const key of ['title','description','setting','goal'])state.draft[key]=String(data.get(key) || '');
+    for(const key of ['title','description','setting','goal','storyRequirements'])state.draft[key]=String(data.get(key) || '');
     const previousIds=A(state.draft.characterVersionIds), selectedIds=data.getAll('characterVersionIds');
     const selectedSet=new Set(selectedIds), previousSet=new Set(previousIds);
     state.draft.characterVersionIds=[...previousIds.filter(id=>selectedSet.has(id)),...selectedIds.filter(id=>!previousSet.has(id))];
@@ -384,7 +385,7 @@
     const detachedFromRuntime=compile && !!previous && (locked() || !!V.preview(previous).runId);
     if(detachedFromRuntime)C.saveSession(previous);
     const same=!detachedFromRuntime && previous?.scenario?.worldDraftRevisionId && !V.preview(previous).runId &&
-      ['title','description','setting','goal'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
+      ['title','description','setting','goal','storyRequirements'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
       JSON.stringify(previous.input?.characterVersionIds || [])===JSON.stringify(input.characterVersionIds) &&
       JSON.stringify(previous.input?.activityDefinitions || [])===JSON.stringify(input.activityDefinitions || []) && !A(input.removedActivityDefinitionIds).length;
     const result=await task(compile?(detachedFromRuntime?'已保留当前游玩会话，正在按编辑器中的剧本重新编译…':'正在保存输入并编译剧本…'):'正在保存剧本…',async(onProgress)=>{

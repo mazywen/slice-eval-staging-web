@@ -28,6 +28,7 @@
     const skills=arr(line?.selectedTalent?.skills).map(row=>({...row,actorId:form.playerCharacterVersionId}));
     let worldBase=null;try{worldBase=JSON.parse(arr(r.compiledPlans?.tracks).find(t=>t.trackCode==='current')?.planJson||'null');}catch{}
     return {world:{background:worldBase?.background||input.description,environment:worldBase?.environment||input.setting,goal:input.goal},
+      authorIntent:{storyRequirements:worldBase?.storyRequirements||input.storyRequirements||'',authoredGoal:input.goal},
       player:{actorId:form.playerCharacterVersionId,displayName:player?.displayName||base.player?.player||'',
         identity:player?.description||player?.content?.bio||'',skills},
       activeCharacters:characters.filter(row=>row.characterVersionId!==form.playerCharacterVersionId).map(row=>({
@@ -39,7 +40,7 @@
   function flowSnapshot(){
     const r=current()?.result;if(!r)return null;
     const chapterResult=data.history.find(row=>row.jobId===r.state.activeChapter?.chapterRef)?.result||r;
-    return {storySpine:r.snapshot.world,history:{hypotheticalHistory:r.input.history,acceptedExperimentalEvidence:r.state.evidence},
+    return {storySpine:{...r.snapshot.world,storyRequirements:r.snapshot.authorIntent?.storyRequirements},history:{hypotheticalHistory:r.input.history,acceptedExperimentalEvidence:r.state.evidence},
       player:{player:r.snapshot.player,characters:r.snapshot.activeCharacters,relationships:r.snapshot.relationships},
       chapter:r.state.activeChapter,conditions:r.state.activeChapter?.conditions||[],conditionState:r.state.conditionState,
       settlementPassed:r.settlement?.passed??null,dayCard:r.state.activeChapter?.dayCard,
@@ -66,7 +67,7 @@
       +'<p>选择剧本与人物即可独立编章；也可承接上方基线。可改身份、人物、能力和前情；本区的所有结果都是实验结果。日程继续使用本次实验已冻结的目标与条件。</p>'
       +'<div class="chapter-sandbox-grid"><div><label>生成第几章（假设位置，当前首测 1–5）<input id="chapter-sandbox-ordinal" type="number" min="1" max="5" value="'+esc(data.ordinal||1)+'"></label><label>每章天数（实验参数）<input id="chapter-sandbox-days" type="number" min="1" max="30" value="'+esc(data.days)+'"></label>'
       +'<label>假设前情 / 剧情改写<textarea id="chapter-sandbox-history" rows="4" maxlength="4000" placeholder="例如：负责人已经出示正式通知，今天要准备试演。">'+esc(data.historyText)+'</textarea></label>'
-      +'<details><summary>编辑实验世界、人物、能力与关系（JSON）</summary><textarea id="chapter-sandbox-input" rows="14" spellcheck="false">'+esc(input)+'</textarea><p class="muted">从上方作品与已选能力复制。关系默认未指定；可在此明确设置假设值。人物 ID 只作本实验引用。</p></details>'
+      +'<details><summary>编辑实验世界、人物、能力与关系（JSON）</summary><textarea id="chapter-sandbox-input" rows="14" spellcheck="false">'+esc(input)+'</textarea><p class="muted">从上方作品与已选能力复制，authorIntent.storyRequirements 是必填创作者剧情要求，章节与日程都会读取。关系默认未指定；可在此明确设置假设值。人物 ID 只作本实验引用。</p></details>'
       +'<div class="inline-controls"><button class="button primary" data-chapter-sandbox="chapter"'+(!ready||blocked?' disabled':'')+'>生成隔离章节</button><button class="button" data-chapter-sandbox="reset-input"'+(blocked?' disabled':'')+'>重取当前基线输入</button></div>'
       +'<h3>假设证据来源</h3>'+conditions.filter(c=>c.kind==='fact').map(c=>'<label>'+esc(c.label)+'<select data-chapter-fact="'+esc(c.predicateCode)+'"><option value="">不增加证据</option><option value="verified">假设：核心来源已核实</option><option value="claim">测试：仅有人如此声称</option><option value="ambient">测试：只有路人说法</option></select></label>').join('')
       +'<div class="inline-controls">'+[['evidence','测试条件判定'],['day','生成下一日'],['settlement','模拟章末结算']].map(([id,label])=>'<button class="button" data-chapter-sandbox="'+id+'"'+(!result?.state||result.state.phase!=='playing'||blocked?' disabled':'')+'>'+label+'</button>').join('')+'</div>'
