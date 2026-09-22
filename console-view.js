@@ -330,7 +330,7 @@
   }
   function modelRequests(calls) {
     if(!calls.length)return '<p class="missing">实际模型请求未采集。</p>';
-    const stageNames={world_base_compile:'World Base Compile',run_birth:'Run Birth Compile',dynamic_chapter:'Chapter Generation',character_onboarding:'Character Onboarding',runtime_turn:'Runtime Turn',activity_invitation:'Activity Invitation',activity_opening:'Activity Opening',private_pov:'人物当前视角',runtime_repair_l1_field:'字段修复',runtime_repair_l2_module:'模块修复',runtime_repair_l3_full:'完整重试'};
+    const stageNames={world_base_compile:'World Base Compile',run_birth:'Run Birth Compile',dynamic_chapter:'Chapter Generation',character_onboarding:'Character Onboarding',runtime_turn:'Runtime Turn',activity_invitation:'Activity Invitation',activity_opening:'Activity Opening',private_pov:'人物当前视角',story_card:'剧情卡正文',scene_summary:'段落概要生成',scene_summary_verify:'概要独立核验',post_composer:'玩家发帖草稿',runtime_repair_l1_field:'字段修复',runtime_repair_l2_module:'模块修复',runtime_repair_l3_full:'完整重试'};
     return calls.map(call=>{
       const evidence=call.requestEvidence,body=evidence?.requestBody;
       const repair=call.repair || null,processing=call.serverProcessing || {};
@@ -345,7 +345,7 @@
         section('Repair · 本次修复',repair || (processing.processingEvidenceStatus==='captured'?{occurred:false}:null))+
         section('Latency · 实际耗时',{providerMs:call.providerLatencyMs ?? call.latencyMs})+
         section('校验后交给产品的候选',call.userVisibleResult,'最终是否应用，以这次操作的已落库结果为准。')+
-        section('Downstream Consumer · 下游消费',call.downstreamConsumer)+raw('完整请求与用量记录',call)+'</article>';
+        section('Downstream Consumer · 下游消费',call.downstreamConsumer)+(processing.persistence?section('Persistence · 同一后台任务的保存证据',processing.persistence):'')+raw('完整请求与用量记录',call)+'</article>';
     }).join('');
   }
   function invitationReasonsHtml(result,attempt) {

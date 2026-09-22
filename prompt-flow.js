@@ -4,15 +4,15 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const clone = value => JSON.parse(JSON.stringify(value));
   const S = { catalog: null, loading: false, error: '', selected: null, tab: 'input', branch: 'all', search: '', scale: .6, x: 22, y: 22, context: {}, drafts: {}, preview: null, workspace: null };
-  const WIDTH = 2040, HEIGHT = 1570, CARD_W = 238, CARD_H = 116;
+  const WIDTH = 2040, HEIGHT = 1735, CARD_W = 238, CARD_H = 116;
   const branches = {
     all: { label: '全部流程', ids: [] },
-    opening: { label: '开局与再抽', ids: ['author','world_base','choose','birth','talent','talent_reroll','talent_confirm','chapter','first_draft','admission'] },
+    opening: { label: '开局与天赋', ids: ['author','world_base','choose','birth','talent','talent_reroll','talent_confirm','chapter','first_draft','admission'] },
     social: { label: '发帖 → 评论 / DM', ids: ['admission','context','post','comment','reply','dm','private_pov','validate','repair','commit','delivery','short_offer','short_choice','clock','memory'] },
     activity: { label: '邀请 → 活动 → 退出', ids: ['delivery','invite_trigger','invite_decision','human_response','activity_open','activity_turn','activity_exit','validate','activity_commit','memory','expired_activity','human_control'] },
     immersion: { label: '剧情卡与生图', ids: ['delivery','story_card','story_image','snapshot','rewind','expired_activity','character_memory'] },
     chapter: { label: '换日与章节', ids: ['commit','clock','next_day','day','first_draft','settlement','next_chapter','chapter','world_end','frozen_dm','rewind'] },
-    memory: { label: '记忆与回溯', ids: ['commit','memory','recall','private_pov','context','memory_batch','snapshot','rewind','unlock','agency'] },
+    memory: { label: '记忆与回溯', ids: ['commit','memory','recall','private_pov','context','memory_batch','memory_verify','snapshot','rewind','unlock','agency'] },
   };
   const status = n => n.status === 'not_wired' ? '尚未接通' : n.status === 'partial' ? '部分接入' : n.kind === 'ai' ? 'AI 条件调用' : '程序处理';
   const point = n => ({ x: 28 + n.col * 282, y: 46 + n.lane * 189 });
@@ -35,13 +35,19 @@
       if (nodeId === 'private_pov') return stage === 'private_pov';
       if (nodeId === 'invite_decision') return stage === 'activity_invitation';
       if (nodeId === 'activity_open') return stage === 'activity_opening';
+      if (nodeId === 'story_card') return stage === 'story_card' || call.trigger?.useCase === 'world_runtime.story_card';
+      if (nodeId === 'memory_batch') return stage === 'scene_summary' || call.trigger?.useCase === 'world_runtime.scene_summary';
+      if (nodeId === 'memory_verify') return stage === 'scene_summary_verify' || call.trigger?.useCase === 'world_runtime.scene_summary_verify';
+      if (nodeId === 'post_composer') return stage === 'post_composer' || call.trigger?.useCase === 'world_runtime.post_composer';
       if (nodeId === 'day') return stage === 'dynamic_chapter' && input.task === 'current_day_only';
       if (nodeId === 'chapter') return stage === 'dynamic_chapter' && input.task && input.task !== 'current_day_only';
       if (stage !== 'runtime_turn') return false;
       if (nodeId === 'post') return ['post','confirm_opening_post'].includes(command.type);
       if (nodeId === 'comment') return command.type === 'comment';
       if (nodeId === 'reply') return command.type === 'reply';
-      if (nodeId === 'short_choice') return command.type === 'event_action';
+      if (nodeId === 'short_choice') return command.type === 'free_act'
+        && typeof (command.payload?.interactionId || command.interactionId) === 'string'
+        && Boolean(command.payload?.interactionId || command.interactionId);
       const frozen = run.goalState === 'completed' || run.mainlineFrozen === true;
       if (nodeId === 'dm') return command.type === 'dm_message' && !frozen;
       if (nodeId === 'frozen_dm') return command.type === 'dm_message' && frozen;

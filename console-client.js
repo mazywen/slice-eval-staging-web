@@ -15,7 +15,7 @@
     environment: 'staging', images: false, diagnosticsOnly: true, manualActions: true,
     compilerTracks: ['current'], runtimeTracks: ['current'],
     onlineTuning: false, publishing: true,
-    compilerNotice: '新实验只整理一份 World Base，不预写未来剧情；V2 的有界设计参考后移到当前阶段。历史双轨记录仍按实际证据显示，不自动重跑。',
+    compilerNotice: 'AI 综合世界和全部人物生成约 10 条世界事实。作者可增删修改，最多 20 条；确认后再开局或发布，确认编译不重新生成秘密。',
   });
 
   function storagePrefix() {
@@ -224,6 +224,8 @@
         topicTags: edited.topicTags, storyRequirements: edited.storyRequirements,
         ...(input.sourceDocument ? { sourceDocument: clone(input.sourceDocument) } : {}) };
     }
+    request.content.initialRelationships = input.initialRelationships || '';
+    if(input.worldFacts)request.content.worldFacts=clone(input.worldFacts);else delete request.content.worldFacts;
     delete request.content.highlightDescription; // Not part of the formal V6 write DTO.
     request.content.characterBindings = (input.characterVersionIds || []).map((characterVersionId, index) => {
       const selected = (input.characters || []).find((entry) => entry.characterVersionId === characterVersionId);
@@ -323,6 +325,7 @@
     return stableJson({
       title: input.title || '', description: input.description || '', setting: input.setting || '', goal: input.goal || '',
       storyRequirements: input.storyRequirements || '',
+      initialRelationships: input.initialRelationships || '', worldFacts: input.worldFacts || null,
       topicTags: input.topicTags || [],
       characterVersionIds: input.characterVersionIds || [],
       characters: (input.characters || []).map((row) => ({
@@ -436,6 +439,37 @@
       result.evidenceNeedsRefresh = false;
     });
   }
+  function compiledWorldFacts(result) {
+    const track=result?.compiledPlans?.tracks?.find(row=>row.trackCode==='current');
+    const base=track?.planJson ? JSON.parse(track.planJson) : null;
+    return base?.worldFacts ? {bundle:clone(base.worldFacts),confirmed:base.worldFactsConfirmed===true} : null;
+  }
+  async function confirmWorldFacts(previous,bundle,onProgress=()=>{}) {
+    const result=clone(previous),current=compiledWorldFacts(result);
+    if(!current || result.previewRuns?.current)throw fail('请从尚未开局的编译结果确认事实');
+    if(bundle.sourceDigest!==current.bundle.sourceDigest)throw fail('这份事实属于另一版输入，请重新编译');
+    const saved=await operation(result,onProgress,async emit=>{
+      const pending=result.pendingFactsConfirmation;
+      if(pending && stableJson(pending.bundle)!==stableJson(bundle))throw fail('上次确认仍待核对，请先用原内容重试');
+      if(!pending){
+        const draft=await T.call('evalGetWorldDraft',{params:{worldDraftId:result.scenario.worldDraftId}});
+        if(draft.currentRevisionId && draft.currentRevisionId!==result.scenario.worldDraftRevisionId)throw fail('世界已经有更新版本，请重新读取后编译');
+        result.pendingFactsConfirmation={key:'console-facts-confirm-'+uid(),bundle:clone(bundle),draft,
+          body:revisionRequest(draft,{...result.input,worldFacts:clone(bundle)})};
+      }
+      saveSession(result);
+      emit({kind:'checkpoint',step:'scenario',message:'已固定本次事实确认请求，重试复用同一内容与请求身份'});
+      const request=result.pendingFactsConfirmation;
+      const revision=await T.call('evalCreateWorldDraftRevision',{params:{worldDraftId:result.scenario.worldDraftId},key:request.key,body:request.body});
+      result.input.worldFacts=clone(bundle);result.input.worldDraftRevisionId=revision.worldDraftRevisionId;
+      result.input.sourceContent=clone(revision.content || request.body.content);
+      result.input.sourceFingerprint=sourceFingerprint(result.input);
+      result.scenario={...result.scenario,draft:request.draft,revision,worldDraftRevisionId:revision.worldDraftRevisionId};
+      result.experiment=null;result.compiledPlans=null;result.pendingCompile=null;result.release=null;
+      result.pendingFactsConfirmation=null;result.status='draft_saved';result.runtimePhase='draft';
+    });
+    return compile(saved,onProgress);
+  }
   async function readCurrent(result) {
     const runId = result.previewRuns?.current?.runId;
     if (!runId) return;
@@ -491,6 +525,8 @@
   async function start(previous, selection = {}, onProgress = () => {}) {
     const result = clone(previous);
     if (!result?.compiledPlans || result.previewRuns?.current || result.pendingCommand) throw fail('请从已编译且尚未开局的剧本开始');
+    const facts=compiledWorldFacts(result);
+    if(facts && !facts.confirmed)throw fail('请先确认世界事实，再开始游玩');
     return operation(result, onProgress, async () => {
       if (selection.playerCharacterVersionId && result.input.characters?.find((row) => row.characterVersionId === selection.playerCharacterVersionId)?.playable === false) throw fail('所选人物未开放为可扮演角色');
       const input = normalizedInput({ ...result.input, ...selection, sourceDocument: result.input.sourceDocument?.body ? result.input.sourceDocument : null });
@@ -1042,6 +1078,8 @@
     const worldDraftRevisionId = result?.scenario?.worldDraftRevisionId;
     const worldId = result?.scenario?.draft?.worldId;
     if (!worldDraftRevisionId || !worldId) throw fail('请先保存属于当前工作区的剧本版本');
+    const facts=compiledWorldFacts(result);
+    if(facts && !facts.confirmed)throw fail('请先确认世界事实，再发布作品');
     if (result.pendingCommand) throw fail('请等待当前玩家操作完成', 'SLICE_EVAL_WRITE_PENDING');
     if (result.release?.worldVersion) return result;
     return operation(result, onProgress, async (emit) => {
@@ -1127,6 +1165,8 @@
       setting: core.worldSetting || core.setting || row.worldSetting || '',
       goal: core.worldGoal || core.goal || row.worldGoal || '',
       storyRequirements: content.storyRequirements ?? row.seed?.storyRequirements ?? row.storyRequirements ?? '',
+      initialRelationships: content.initialRelationships || '',
+      ...(content.worldFacts ? {worldFacts: clone(content.worldFacts)} : {}),
       highlightDescription: content.highlightDescription || row.highlightDescription || '',
       topicTags: content.topicTags || row.topicTags || [],
       sourceDocument: clone(content.sourceDocument || null), sourceHasDocument: Boolean(content.sourceDocument),
@@ -1351,7 +1391,7 @@
     getPromptCatalog: () => T.call('evalGetPromptCatalog'),
     previewPromptRequest: body => T.call('evalPreviewPromptRequest', { body }),
     listScenarios, getScenario, listCharacters, getCharacterVersion, createCharacter, updateCharacter, listWorkspaceOperations, listRunCharacterSlots, listRunCharacterCandidates,
-    saveDraft, compile, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,
+    saveDraft, compile, confirmWorldFacts, compiledWorldFacts, start, act, publish, refresh, refreshOpening, restore, saveSession, listSessions, restoreSession,
     __testing: Object.freeze({ sourceFingerprint, activityDefinitionRequest, normalizeAction, scenarioRow, normalizedInput, newResult, observePending, resolveMutation }),
   });
 })();

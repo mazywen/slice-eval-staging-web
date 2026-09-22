@@ -58,10 +58,10 @@
     const birth = opening(result);
     if (birth.generationStatus !== 'ready') return '';
     const cards = arr(state.talentCandidates);
-    if (!cards.length) return '<section class="panel"><p class="notice">尚未读取到服务端能力候选。请刷新；页面不会自行抽取或伪造候选。</p></section>';
-    return '<section class="panel"><div class="section-heading"><h3>选择这一次的能力配置</h3>'
-      + '<span class="badge">首测配置 · 非付费抽卡验收</span></div>'
-      + '<p class="muted">候选由服务端固定；选择后才结合当前能力生成首章和今日安排。</p>'
+    if (cards.length !== 1) return '<section class="panel"><p class="notice">尚未读取到服务端本次单张完整天赋卡。请刷新后继续。</p></section>';
+    return '<section class="panel"><div class="section-heading"><h3>确认这一次的天赋</h3>'
+      + '<span class="badge">首次免费 · 单张完整卡</span></div>'
+      + '<p class="muted">本局首次完整卡由服务端固定；确认后应用三项能力并生成首章和今日日程。后续付费抽取与能力替换等待价格配置。</p>'
       + strategyField(result.plannerStrategy || 'guided', locked)
       + '<div class="mainline-talent-grid">' + cards.map(card =>
         '<article class="entity-card"><div class="section-heading"><h3>' + esc(card.title) + '</h3>'

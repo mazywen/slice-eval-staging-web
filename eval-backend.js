@@ -425,6 +425,8 @@
       setting: String(input.setting || '').trim(),
       goal: String(input.goal || '').trim(),
       storyRequirements: String(input.storyRequirements || '').trim(),
+      initialRelationships: String(input.initialRelationships || '').trim(),
+      ...(input.worldFacts ? {worldFacts: JSON.parse(JSON.stringify(input.worldFacts))} : {}),
       characterVersionIds,
       // 数组是权威来源；首项仅保留给旧报告读取兼容。
       characterVersionId: characterVersionIds[0] || '',
@@ -498,6 +500,8 @@
     const characterVersionIds = readCharacterVersionIds(input);
     return {
       schemaVersion: 'slice.world-draft-content.v6',
+      initialRelationships: input.initialRelationships || '',
+      ...(input.worldFacts ? {worldFacts: input.worldFacts} : {}),
       storyRequirements: input.storyRequirements,
       worldCore: {
         schemaVersion: 'slice.world-core-source.v1',

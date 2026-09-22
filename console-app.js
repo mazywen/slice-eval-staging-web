@@ -6,7 +6,7 @@
   const e=V.esc, A=V.arr, I=V.items;
   const state={
     page:'scripts',playTab:'feed',scenarios:[],characters:[],selectedScenarioId:'',
-    draft:null,result:null,busy:false,message:'',error:null,search:'',draftCharacterDirty:false,
+    draft:null,result:null,factsEditing:null,busy:false,message:'',error:null,search:'',draftCharacterDirty:false,
     selectedStepId:null,workbenchStepId:null,diagnosticTab:'overview',drawer:false,compose:null,composeBody:'',
     selectedChannelId:'',selectedPlayerCharacterVersionId:'',selectedFirstFollowerCharacterVersionId:'',activityEditing:null,editingCharacter:null,
     characterSlots:[],slotCandidates:[],selectedSlotId:'',pollTimer:null,openingPolling:false,postSuggestions:null,
@@ -15,7 +15,7 @@
   let advancedChapterLab=false;
   const chapterLabUi={form:{playerCharacterVersionId:'',firstFollowerCharacterVersionId:'',talentChoiceId:'',goalOverride:'',storyRewrite:'',extraCharacterVersionIds:[]}};
   const diagnosticTabs={overview:'概览',input:'输入',context:'上下文',decisions:'调度与判定',model:'模型',applied:'实际应用',cost:'耗时与费用',raw:'原始证据'};
-  const blankDraft=()=>({title:'',description:'',setting:'',goal:'',storyRequirements:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
+  const blankDraft=()=>({title:'',description:'',setting:'',goal:'',storyRequirements:'',initialRelationships:'',characterVersionIds:[],characters:[],topicTags:[],activityDefinitions:[],removedActivityDefinitionIds:[]});
   const pendingRelease=()=>!!state.result?.release && !['published','blocked','failed'].includes(state.result.release.status);
   const openingPending=()=>state.result?.runtimePhase==='opening_waiting_for_user' && V.openingSnapshot(state.result).generationStatus==='pending';
   const needsPolling=()=>!!state.result?.pendingCommand && state.result.pendingCommand.status!=='admission_unknown' || pendingRelease() && state.result.release.status!=='admission_unknown' || openingPending() || M.preparing(state.result);
@@ -138,11 +138,13 @@
       '<label class="full">世界简介<textarea name="description" rows="3" maxlength="4000" required'+disable(state.busy)+'>'+e(d.description)+'</textarea></label>'+
       '<label class="full">世界观与背景<textarea name="setting" rows="5" maxlength="4000" required'+disable(state.busy)+'>'+e(d.setting)+'</textarea></label>'+
       '<label class="full">创作者剧情要求（必填）<textarea name="storyRequirements" rows="6" maxlength="4000" required placeholder="写下故事主线、关键冲突、希望展开的剧情及先后要求；章节和日程都会持续读取。"'+disable(state.busy)+'>'+e(d.storyRequirements)+'</textarea><small>引导整局故事；实际发展承接玩家行动，不提前视为已发生。</small></label>'+
+      '<label class="full">重要初始关系（选填）<textarea name="initialRelationships" rows="3" maxlength="4000"'+disable(state.busy)+'>'+e(d.initialRelationships || '')+'</textarea><small>写已存在的关系即可，秘密由编译生成。</small></label>'+
       '<label class="full">世界目标<textarea name="goal" rows="2" maxlength="160" required'+disable(state.busy)+'>'+e(d.goal)+'</textarea></label>'+
       '</div><div class="form-section"><div class="section-heading"><h3>剧本人物 <small id="character-count">'+A(d.characterVersionIds).length+' / 8</small></h3><button id="create-character" type="button" class="text-button"'+disable(state.busy)+'>＋ 创建人物</button></div>'+characterOptions()+'</div>'+
       (A(state.characters).length>8?'<p class="notice">本剧本的全部 '+A(state.characters).length+' 位人物都已保存在人物库，可逐位编辑。当前编译器最多绑定 8 位；可取消一位后替换加入，未绑定人物原文不会被删除。</p>':'')+presetActivities()+
-      '<div class="form-actions"><span class="muted">封面与头像使用默认占位</span><button id="save-draft" class="button" type="submit"'+disable(state.busy)+'>保存测试草稿</button><button id="compile-draft" class="button primary" type="button"'+disable(state.busy)+'>编译剧本</button></div></form>'+
-      (compiled?'<div class="form-section"><div class="section-heading"><h3>编译结果已返回</h3><button class="text-button" type="button" data-inspect-step="compile">查看完整编译结果 →</button></div><p class="notice">'+e(C.capabilities().compilerNotice || '编译费用以实际调用为准。')+'</p><div class="inline-controls"><button class="button primary" data-page="play" type="button">选择人物并开始</button>'+(typeof C.publish==='function'?'<button id="publish-draft" class="button" type="button"'+disable(locked())+'>发布到测试环境</button>':'')+'</div>'+(typeof C.publish==='function'?'<p class="muted" style="margin-top:10px">正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。</p>':'')+'</div>':'');
+      '<div class="form-actions"><span class="muted">封面与头像使用默认占位</span><button id="save-draft" class="button" type="submit"'+disable(state.busy)+'>保存测试草稿</button><button id="compile-draft" class="button primary" type="button"'+disable(state.busy)+'>确认背景与人物，生成世界事实</button></div></form>'+
+      (compiled && (state.factsEditing || !C.compiledWorldFacts(state.result)?.confirmed) && C.compiledWorldFacts(state.result) ? window.SliceWorldFactsEditor.render(state.factsEditing || C.compiledWorldFacts(state.result).bundle,A(state.draft.characters),state.busy) : '')+
+      (compiled && !state.factsEditing && C.compiledWorldFacts(state.result)?.confirmed ?'<div class="form-section"><div class="section-heading"><h3>世界事实已确认</h3><button id="edit-world-facts" class="text-button" type="button">编辑世界事实</button><button class="text-button" type="button" data-inspect-step="compile">查看完整编译结果 →</button></div><p class="notice">'+e(C.capabilities().compilerNotice || '编译费用以实际调用为准。')+'</p><div class="inline-controls"><button class="button primary" data-page="play" type="button">选择人物并开始</button>'+(typeof C.publish==='function'?'<button id="publish-draft" class="button" type="button"'+disable(locked())+'>发布到测试环境</button>':'')+'</div>'+(typeof C.publish==='function'?'<p class="muted" style="margin-top:10px">正式发布会额外执行 Creator 编译。当前评测接口未提供这次发布编译的用量与费用，暂不计入上方实验合计。</p>':'')+'</div>':'');
   }
   function renderChapterLab() {
     if(!advancedChapterLab)return window.SliceChapterLab.renderReview(state.result,V);
@@ -175,6 +177,7 @@
     }
     const selection=V.startSelection(r.input,state.selectedPlayerCharacterVersionId,state.selectedFirstFollowerCharacterVersionId);
     const characters=selection.players,followers=selection.followers,pendingStart=!!r.pendingStart;
+    if(C.compiledWorldFacts(r) && !C.compiledWorldFacts(r).confirmed)return '<section class="panel"><h2>请先确认世界事实</h2><button class="button primary" data-page="scripts" type="button">返回事实编辑</button></section>';
     return '<section class="panel"><div class="section-heading"><h2>'+e(r.input?.title)+'</h2>'+V.badge(r.status)+'</div><p class="muted">编译已完成。请选择你要扮演的人物，以及初始关联人物，开始当前剧本的一次游玩。</p><div class="form-section"><div class="inline-controls"><label>我扮演谁<select id="player-character"'+disable(locked() || pendingStart)+'><option value="">'+'请选择玩家身份'+'</option><option value="__default_player__"'+(state.selectedPlayerCharacterVersionId==='__default_player__'?' selected':'')+'>使用默认玩家身份</option>'+characters.map(row=>'<option value="'+e(row.characterVersionId)+'"'+(state.selectedPlayerCharacterVersionId===row.characterVersionId?' selected':'')+'>'+e(row.displayName || row.characterVersionId)+'</option>').join('')+'</select></label><label>初始关联人物<select id="first-follower-character"'+disable(locked() || pendingStart || !followers.length || (selection.requiresPlayer&&!selection.playerChoiceMade))+'><option value="">'+(followers.length?'请选择初始关联人物':'当前剧本没有其他可互动人物')+'</option>'+followers.map(row=>'<option value="'+e(row.characterVersionId)+'"'+(state.selectedFirstFollowerCharacterVersionId===row.characterVersionId?' selected':'')+'>'+e(row.displayName || row.characterVersionId)+'</option>').join('')+'</select></label><button id="start-run" class="button primary" type="button"'+disable(locked() || (!pendingStart&&!selection.ready))+'>'+(pendingStart?'继续确认上次开局':'开始游玩')+'</button></div>'+(pendingStart?'<p class="notice" style="margin-top:12px">上次开局的接收状态尚未确认，继续时保留原人物选择和同一请求。</p>':selection.missingInteractionCharacter?'<p class="notice" style="margin-top:12px">所选人物成为玩家后，剧本中没有其他可互动人物。可以选择默认玩家身份，与该人物互动；也可以再绑定一名人物并重新编译。</p>':'')+'</div><div class="form-section"><button class="text-button" type="button" data-inspect-step="compile">查看编译输入与完整结果 →</button><p class="notice" style="margin-top:12px">'+e(C.capabilities().compilerNotice || '')+'</p></div></section>';
   }
   function stepButtons(limit) {
@@ -300,7 +303,7 @@
     const form=$('#draft-form');
     if(!form || !state.draft)return;
     const data=new FormData(form);
-    for(const key of ['title','description','setting','goal','storyRequirements'])state.draft[key]=String(data.get(key) || '');
+    for(const key of ['title','description','setting','goal','storyRequirements','initialRelationships'])state.draft[key]=String(data.get(key) || '');
     const previousIds=A(state.draft.characterVersionIds), selectedIds=data.getAll('characterVersionIds');
     const selectedSet=new Set(selectedIds), previousSet=new Set(previousIds);
     state.draft.characterVersionIds=[...previousIds.filter(id=>selectedSet.has(id)),...selectedIds.filter(id=>!previousSet.has(id))];
@@ -355,7 +358,7 @@
     else showError(result[1].reason);
     if(!state.result) {
       const restored=C.restore();
-      if(restored){state.result=restored;state.draft={...restored.input};state.selectedPlayerCharacterVersionId=restored.input?.playerCharacterVersionId || (restored.pendingStart?'__default_player__':'');state.selectedFirstFollowerCharacterVersionId=restored.input?.firstFollowerCharacterVersionId || '';}
+      if(restored){state.result=restored;state.factsEditing=null;state.draft={...restored.input};state.selectedPlayerCharacterVersionId=restored.input?.playerCharacterVersionId || (restored.pendingStart?'__default_player__':'');state.selectedFirstFollowerCharacterVersionId=restored.input?.firstFollowerCharacterVersionId || '';}
     }
     render();schedulePoll();
     if(state.result?.evidenceNeedsRefresh && !state.busy)await task('重新读取已保存的会话证据…',onProgress=>C.refresh(state.result,onProgress));
@@ -367,7 +370,7 @@
     if(!row)return;
     const selected=await task('正在读取剧本与可用人物…',async()=>{
       const full=typeof C.getScenario==='function'?await C.getScenario(row):row;
-      state.selectedScenarioId=id;state.draft={...full};state.result=null;
+      state.selectedScenarioId=id;state.draft={...full};state.result=null;state.factsEditing=null;
       state.selectedPlayerCharacterVersionId='';state.selectedFirstFollowerCharacterVersionId='';state.compose=null;state.composeBody='';
       state.characters=await C.listCharacters({worldDraftId:full.worldDraftId || full.id});
       return full;
@@ -382,10 +385,12 @@
     captureDraft();
     const input={...state.draft,characters:A(state.draft.characters),characterVersionIds:A(state.draft.characterVersionIds)};
     const previous=state.result;
+    const sourceChanged=previous && (['title','description','setting','goal','storyRequirements','initialRelationships'].some(key=>String(previous.input?.[key]||'')!==String(input[key]||'')) || JSON.stringify(previous.input?.characterVersionIds||[])!==JSON.stringify(input.characterVersionIds||[]) || state.draftCharacterDirty);
+    if(sourceChanged){delete input.worldFacts;state.factsEditing=null;}
     const detachedFromRuntime=compile && !!previous && (locked() || !!V.preview(previous).runId);
     if(detachedFromRuntime)C.saveSession(previous);
     const same=!detachedFromRuntime && previous?.scenario?.worldDraftRevisionId && !V.preview(previous).runId &&
-      ['title','description','setting','goal','storyRequirements'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
+      ['title','description','setting','goal','storyRequirements','initialRelationships'].every(k=>String(previous.input?.[k] || '')===String(input[k] || '')) &&
       JSON.stringify(previous.input?.characterVersionIds || [])===JSON.stringify(input.characterVersionIds) &&
       JSON.stringify(previous.input?.activityDefinitions || [])===JSON.stringify(input.activityDefinitions || []) && !A(input.removedActivityDefinitionIds).length;
     const result=await task(compile?(detachedFromRuntime?'已保留当前游玩会话，正在按编辑器中的剧本重新编译…':'正在保存输入并编译剧本…'):'正在保存剧本…',async(onProgress)=>{
@@ -393,7 +398,7 @@
       state.result=saved;
       return compile?C.compile(saved,onProgress):saved;
     });
-    if(result){state.draft={...result.input};if(compile)state.draftCharacterDirty=false;toast(compile?'编译结果已返回，可选择人物开始游玩。':'测试草稿已保存。');render();}
+    if(result){state.draft={...result.input};if(compile)state.draftCharacterDirty=false;state.factsEditing=null;toast(compile?'编译结果已返回，请检查并确认世界事实。':'测试草稿已保存。');render();}
   }
   async function perform(action) {
     const shortInteractionAction=action.type==='free_act' && typeof action.interactionId==='string' && action.interactionId.length>0;
@@ -442,6 +447,7 @@
   }
   document.addEventListener('click',async(event)=>{
     const button=event.target.closest('button');if(!button || button.disabled)return;
+    if(button.dataset.removeFact){try{const current=state.factsEditing || C.compiledWorldFacts(state.result)?.bundle;state.factsEditing=window.SliceWorldFactsEditor.capture(current,$('#world-facts-editor'));window.SliceWorldFactsEditor.remove(state.factsEditing,button.dataset.removeFact);render();}catch(error){showError(error);}return;}
     if(button.dataset.removePreset!==undefined){captureDraft();const index=Number(button.dataset.removePreset),row=state.draft.activityDefinitions[index];if(row?.activityDefinitionId){state.draft.removedActivityDefinitionIds ||= [];state.draft.removedActivityDefinitionIds.push(row.activityDefinitionId);}state.draft.activityDefinitions.splice(index,1);render();return;}
     if(button.dataset.closeDialog!==undefined){button.closest('dialog')?.close();return;}
     if(button.dataset.openLogin!==undefined){$('#auth-dialog').showModal();return;}
@@ -526,15 +532,29 @@
       if(locked())return;
       const restored=C.restoreSession(button.dataset.restoreSession);
       if(!restored){toast('会话记录已不可用。');return;}
-      state.result=restored;state.draft={...restored.input};state.page='play';state.selectedPlayerCharacterVersionId=restored.input?.playerCharacterVersionId || (restored.pendingStart?'__default_player__':'');state.selectedFirstFollowerCharacterVersionId=restored.input?.firstFollowerCharacterVersionId || '';
+      state.result=restored;state.factsEditing=null;state.draft={...restored.input};state.page='play';state.selectedPlayerCharacterVersionId=restored.input?.playerCharacterVersionId || (restored.pendingStart?'__default_player__':'');state.selectedFirstFollowerCharacterVersionId=restored.input?.firstFollowerCharacterVersionId || '';
       $('#sessions-dialog').close();await task('重新读取会话状态…',onProgress=>C.refresh(restored,onProgress));return;
     }
     switch(button.id) {
       case 'login-button':
         if(C.connected()){C.disconnect();window.SliceChapterLab.reset();window.SliceChapterSandbox.reset();window.clearTimeout(state.pollTimer);state.result=null;state.draft=null;state.scenarios=[];state.characters=[];state.error=null;state.message='';render();}
         else $('#auth-dialog').showModal();break;
-      case 'new-draft':captureDraft();state.draft=blankDraft();state.selectedScenarioId='';state.result=null;state.selectedPlayerCharacterVersionId='';state.selectedFirstFollowerCharacterVersionId='';state.error=null;render();break;
+      case 'new-draft':captureDraft();state.draft=blankDraft();state.selectedScenarioId='';state.result=null;state.factsEditing=null;state.selectedPlayerCharacterVersionId='';state.selectedFirstFollowerCharacterVersionId='';state.error=null;render();break;
       case 'compile-draft':await saveOrCompile(true);break;
+      case 'edit-world-facts':state.factsEditing=C.compiledWorldFacts(state.result)?.bundle;render();break;
+      case 'add-world-fact': {
+        const current=state.factsEditing || C.compiledWorldFacts(state.result)?.bundle;
+        if(current){state.factsEditing=window.SliceWorldFactsEditor.capture(current,$('#world-facts-editor'));window.SliceWorldFactsEditor.add(state.factsEditing);render();}break;
+      }
+      case 'confirm-world-facts': {
+        captureDraft();
+        if(['title','description','setting','goal','storyRequirements','initialRelationships'].some(key=>String(state.draft[key]||'')!==String(state.result.input?.[key]||'')) || state.draftCharacterDirty){toast('世界输入已经修改，请先重新编译，再确认事实。');break;}
+        const current=state.factsEditing || C.compiledWorldFacts(state.result)?.bundle;
+        if(!current)break;
+        state.factsEditing=window.SliceWorldFactsEditor.capture(current,$('#world-facts-editor'));
+        const result=await task('正在保存你确认的事实…',progress=>C.confirmWorldFacts(state.result,state.factsEditing,progress));
+        if(result){state.draft={...result.input};state.factsEditing=null;render();}break;
+      }
       case 'chapter-lab-baseline':await runChapterLab(false);break;
       case 'chapter-lab-variant':await runChapterLab(true);break;
       case 'add-preset-activity':captureDraft();state.draft.activityDefinitions ||= [];state.draft.activityDefinitions.push({title:'',locationLabel:'',sceneDescription:'',playerSafeTeaser:'',requiredParticipantActorRefs:['player'],optionalParticipantActorRefs:[]});render();break;
@@ -589,6 +609,7 @@
   });
   document.addEventListener('toggle',(event)=>{V.hydrateEvidence(event.target);},true);
   document.addEventListener('input',(event)=>{
+    if(event.target.closest('#world-facts-editor')){state.factsEditing=window.SliceWorldFactsEditor.capture(state.factsEditing || C.compiledWorldFacts(state.result).bundle,$('#world-facts-editor'));return;}
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
     if(event.target.id==='scenario-search') {
       state.search=event.target.value;captureDraft();
@@ -610,6 +631,7 @@
       if(!window.SliceProductWorkbench.updateInspection(state.result,selected,V))render();
       return;
     }
+    if(event.target.closest('#world-facts-editor')){state.factsEditing=window.SliceWorldFactsEditor.capture(state.factsEditing || C.compiledWorldFacts(state.result).bundle,$('#world-facts-editor'));return;}
     if(event.target.dataset.presetField){const row=state.draft?.activityDefinitions?.[Number(event.target.dataset.presetIndex)];if(row)row[event.target.dataset.presetField]=event.target.multiple?Array.from(event.target.selectedOptions).map(option=>option.value):event.target.value;}
     if(event.target.id==='planner-strategy' && state.result){state.result.plannerStrategy=event.target.value;C.saveSession(state.result);return;}
     if(event.target.id==='scenario-select'){await selectScenario(event.target.value);return;}

@@ -86,11 +86,10 @@
     }, onProgress);
     result = await settle(client, result, r => {
       const line = mainline(r);
-      return line?.phase === 'awaiting_talent' && arr(line.talentCandidates).length === 3;
+      return line?.phase === 'awaiting_talent' && arr(line.talentCandidates).length === 1;
     }, onProgress);
     const line = mainline(result);
-    if(form.talentChoiceId && !arr(line.talentCandidates).some(row=>row.choiceId===form.talentChoiceId))throw new Error('已选能力卡未返回，请重新读取实际候选。');
-    const choiceId = form.talentChoiceId || line.talentCandidates[0].choiceId;
+    const choiceId = line.talentCandidates[0].choiceId;
     result = await client.act(result, { type:'confirm_talent', choiceId, plannerStrategy:'guided' }, onProgress);
     result = await settle(client, result, r => mainline(r)?.phase === 'playing' && Boolean(chapter(r)), onProgress);
     const snapshot = buildSnapshot(result, { ...form, talentChoiceId:choiceId }, variant);
@@ -323,7 +322,7 @@
       +(!draft?'<p class="notice">先选择剧本。Chapter Lab 会创建实验副本，不修改已发布世界。</p>':
         '<label>玩家扮演人物<select id="chapter-lab-player">'+peopleOptions(draft,defaultPlayer,characters)+'</select></label>'
         +'<label>首位关联人物<select id="chapter-lab-follower">'+followerIds.map(id=>'<option value="'+esc(id)+'"'+(id===defaultFollower?' selected':'')+'>'+esc(map.get(id)?.displayName||'未返回人物名称')+'</option>').join('')+'</select></label>'
-        +'<label>能力候选<select id="chapter-lab-talent"><option value=""'+(!form.talentChoiceId?' selected':'')+'>自动采用第 1 张候选</option><option value="first_1"'+(form.talentChoiceId==='first_1'?' selected':'')+'>第 1 张</option><option value="first_2"'+(form.talentChoiceId==='first_2'?' selected':'')+'>第 2 张</option><option value="first_3"'+(form.talentChoiceId==='first_3'?' selected':'')+'>第 3 张</option></select></label>'
+        +'<p class="muted">本局采用服务器返回的首次免费单张完整天赋卡；实际卡片和数值保留在实验结果中。</p>'
         +'<label>变化版：改写整局目标<textarea id="chapter-lab-goal" rows="3" placeholder="留空沿用原目标">'+esc(form.goalOverride||'')+'</textarea></label>'
         +'<label>变化版：替换创作者剧情要求<textarea id="chapter-lab-rewrite" rows="4" placeholder="留空沿用原剧情要求；填写则仅替换实验副本的剧情要求，不改写世界背景或已发生前情。">'+esc(form.storyRewrite||'')+'</textarea></label>'
         +'<h3>变化版：额外加入现有人物</h3><div class="chapter-lab-checks">'+extras(draft,characters,form.extraCharacterVersionIds||[])+'</div>'
