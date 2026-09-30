@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs';
-import {validate} from '../client-api/creator-client.mjs';
-import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=fed7e2dcca2e';
+import {validate} from '../client-api/creator-client.mjs?v=fed7e2dcca2e';
+import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=fed7e2dcca2e';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -33,7 +33,7 @@ async function mutation(slot,op,params,body){
   // Always reuse the exact original request after an uncertain response.
   record.result=await api(record.op,record.params,record.body,{},record.key);saveJournal();return record.result;
 }
-async function task(fn){if(S.busy)return;S.busy=true;S.error='';render();try{await fn();}catch(e){S.error=e.message;const a=journal.action;if(a&&!journal[`${a.id}:command`]?.result&&((e.status>=400&&e.status<500&&e.status!==408)||!journal[`${a.id}:command`]&&!journal[`${a.id}:channel`])){delete journal.action;write(localStorage,storageKey(),journal);}}finally{S.busy=false;render();}}
+async function task(fn){if(S.busy)return;S.busy=true;S.error='';render();try{await fn();}catch(e){S.error=e.message;const a=journal.action;if(a&&!journal[`${a.id}:command`]?.result&&((e.status>=400&&e.status<500&&e.status!==408)||!journal[`${a.id}:command`]&&!journal[`${a.id}:channel`])){delete journal.action;write(localStorage,storageKey(),journal);}if(journal.startSlot&&!journal[journal.startSlot]?.result&&e.status>=400&&e.status<500&&e.status!==408){delete journal.startSlot;write(localStorage,storageKey(),journal);}}finally{S.busy=false;render();}}
 const button=(label,action,disabled=false)=>`<button class="btn" data-action="${action}" ${disabled?'disabled':''}>${label}</button>`;
 const tile=(title,body,span='c4',extra='')=>`<section class="tile ${span}"><div class="tile-h"><h2>${title}</h2>${extra}</div><div class="tile-b">${body}</div></section>`;
 const money=v=>v==null?'未配置 / 未采集':`¥${v.toFixed(4)}`,sec=v=>v==null?'未采集':`${(v/1000).toFixed(2)}s`;
