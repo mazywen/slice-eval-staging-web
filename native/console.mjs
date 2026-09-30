@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=fed7e2dcca2e';
-import {validate} from '../client-api/creator-client.mjs?v=fed7e2dcca2e';
-import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=fed7e2dcca2e';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=6550d4fe5289';
+import {validate} from '../client-api/creator-client.mjs?v=6550d4fe5289';
+import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=6550d4fe5289';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -63,6 +63,7 @@ function renderPlay(){
 }
 function playerOutput(outcome,step,records=[]){
   if(!step)return '<p class="note">提交后在这里查看。</p>';
+  if(!step.commandId&&!step.sourceId&&S.current.run?.opening?.generationStatus==='failed')return '<p class="error">开局生成失败，本局尚不能继续试玩。请排查模型服务后重新开局。</p>';
   if(!outcome)return `<p class="note">${step.commandId?'结果尚未读取。':step.sourceId?'活动管理接口无 Outcome，详情见下方当前活动状态。':'开局状态见下方当前玩家读接口。'}</p>`;
   const texts=[];
   const walk=(v,key='')=>{if(typeof v==='string'&&['narrativeSummary','text','body','narration','outputText','contentText'].includes(key))texts.push(v);else if(Array.isArray(v))v.forEach(x=>walk(x));else if(v&&typeof v==='object')for(const[k,x]of Object.entries(v))if(!['record','facts','memories','world','request'].includes(k))walk(x,k);};
