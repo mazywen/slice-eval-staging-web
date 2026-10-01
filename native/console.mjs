@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=6b003e20a639';
-import {validate} from '../client-api/creator-client.mjs?v=6b003e20a639';
-import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=6b003e20a639';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=66b0c49cf721';
+import {validate} from '../client-api/creator-client.mjs?v=66b0c49cf721';
+import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=66b0c49cf721';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -92,14 +92,14 @@ function openingPanel(){
     const control=vn?.status==='prepared'?button('进入本章互动小说','vn_enter',S.busy):vn?.status==='ready'?button('结束互动小说，进入自由环节','vn_exit',S.busy):vn?.status==='active'?`<h3>你的回应 · ${vn.repliesUsed+1} / 3</h3>${(vn.segments.at(-1)?.options||[]).map((text,i)=>`<button class="btn" data-vn-option="${i}" ${S.busy?'disabled':''}>${esc(text)}</button>`).join('')}<label>也可以自行回应<textarea id="input" maxlength="300" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>${button('提交回应','vn_reply',S.busy)}`:'<p>正在准备互动小说。</p>';
     return tile('章节互动小说',`${story.introduction?.text?`<p>${esc(story.introduction.text)}</p>`:''}${prose}${control}`,'c12');
   }
-  const birth=story.birth?Object.values(story.birth).filter(v=>typeof v==='string'&&v.trim()):[];
+  const birth=story.birth?['firstAct','secondAct','thirdAct'].map(key=>story.birth[key]).filter(v=>typeof v==='string'&&v.trim()):[];
   return tile('开场与当前章节',`${birth.length?birth.map((text,i)=>`<div class="screen"><h3>第 ${i+1} 幕</h3><p style="white-space:pre-wrap">${esc(text)}</p></div>`).join(''):''}${active?`<h3>第 ${active.ordinal} 章 · ${esc(active.title)}</h3><p>${esc(active.narrativeObjective)}</p>${(active.conditions||[]).map(c=>`<p>目标：${esc(c.label)}</p>`).join('')}<h3>今日日程</h3><p>${esc(active.dayCard?.description||'')}</p>`:'<p class="note">开局已完成，可在下方继续当前剧情操作。</p>'}`,'c12');
 }
 function syncOpeningAction(previousPhase){
   const phase=S.current.chapter?.mainline?.phase;
   if(phase==='awaiting_talent'){
     S.action='confirm_talent';if(!talentChoices().some(c=>c.choiceId===S.choice))S.choice='';
-  }else if(phase==='playing'&&previousPhase!=='playing'&&['confirm_talent','vn_reply'].includes(S.action))S.action='post';
+  }else if(phase==='playing'&&previousPhase!=='playing'&&['confirm_talent','vn_enter','vn_reply','vn_exit'].includes(S.action))S.action='post';
 }
 function talentChoices(){const find=v=>{if(!v||typeof v!=='object')return [];if(Array.isArray(v.talentCandidates)&&v.talentCandidates.length)return v.talentCandidates;for(const x of Object.values(v)){const found=find(x);if(found.length)return found;}return [];};return find(S.current.chapter).length?find(S.current.chapter):find(S.current.run);}
 const actions=[['vn_enter','进入 VN'],['vn_reply','VN 回应'],['vn_exit','结束 VN'],['confirm_talent','选择天赋'],['post','发帖'],['comment','评论'],['dm_message','私聊'],['activity_create','创建活动'],['activity_enter','进入活动'],['activity_turn','活动行动'],['activity_exit','退出活动'],['advance_day','换日'],['end_chapter','结束本章'],['next_chapter','下一章']];
