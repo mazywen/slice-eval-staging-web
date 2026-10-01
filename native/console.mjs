@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=046c8f8eeff4';
-import {validate} from '../client-api/creator-client.mjs?v=046c8f8eeff4';
-import {callLane,waitMs,stateDiff} from './console-metrics.mjs?v=046c8f8eeff4';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=441cfa50c7c6';
+import {validate} from '../client-api/creator-client.mjs?v=441cfa50c7c6';
+import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=441cfa50c7c6';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -136,20 +136,25 @@ function renderCostTree(){
     const steps=S.steps.filter(step=>node.commandIds.includes(step.commandId)||node.kind==='opening'&&step.actionType==='create_run');
     const jump=!node.children.length?steps.map(step=>`<button class="btn" data-step="${step.stepNo}">步骤 ${step.stepNo}</button>`).join(''):'';
     const title=`<span class="cost-node-label">${esc(node.label)}${node.branch==='rewound'?' · 回溯后':''}</span><strong>${money(node.cny)}${node.complete?'':'（已计价小计）'}</strong><span class="note">${node.status==='failed'?'操作失败':node.finished?'已完成':'未完成'}${node.passed===null?'':node.passed?' · 通过':' · 未通过'}</span>`;
-    const detail=`<div class="cost-node-info">${node.calls} 次调用 · 失败／修复 ${node.retries.count} 次，${money(node.retries.cny)}${node.retries.complete?'':'（小计）'} · 命令受理到完成：${sec(node.waitMs)}<br>${esc(costNote(node))}${jump?`<div class="row">${jump}</div>`:''}</div>`;
+    const counts=node.kind==='day'?['post','comment','dm','activity'].map(kind=>{const children=node.children.filter(child=>child.kind===kind);return children.length?`${esc(children[0].label)} ×${children.length}`:'';}).filter(Boolean).join(' · '):'';
+    const detail=`<div class="cost-node-info">${counts?`${counts}<br>`:''}${node.calls} 次调用 · 失败／修复 ${node.retries.count} 次，${money(node.retries.cny)}${node.retries.complete?'':'（小计）'} · 命令受理到完成：${sec(node.waitMs)}<br>${esc(costNote(node))}${jump?`<div class="row">${jump}</div>`:''}</div>`;
     return `<details class="cost-node" data-cost-node="${key}" ${S.costExpanded.has(key)?'open':''}><summary>${title}</summary>${detail}${node.children.map((child,index)=>row(child,`${key}.${index}`)).join('')}</details>`;
   };
   return `<p class="note">本局全部运行调用，包含开局、后台跟进、失败及已放弃分支；编译费用单独展示。父级金额是下方子级的汇总。读取时间 ${esc(S.costTree.asOf)}。</p><div class="cost-tree">${row(S.costTree.tree,'0')}</div>`;
 }
-function renderUnitStats(v){
-  return `<p class="note">${esc(v.unitsSince)} 起创建的 ${v.unitsRunCount} 局，逐局读取全部调用。均价和分位数只含已完成且全部计价的单元；首章单列。发帖、评论和私聊完成满 10 分钟后纳入。</p><div class="cost-table-wrap"><table class="call-table unit-prices"><thead><tr><th>业务单元</th><th>完成／已计价</th><th>均价</th><th>P50</th><th>P90</th><th>最高</th><th>失败成本</th><th>每完成一次分摊失败</th></tr></thead><tbody>${v.units.map(u=>`<tr><td>${esc(u.label)}</td><td>${u.count} / ${u.pricedCount}${u.missingCount?`<br><small>${u.missingCount} 个缺价</small>`:''}</td><td>${money(u.mean)}</td><td>${money(u.p50)}</td><td>${money(u.p90)}</td><td>${money(u.max)}</td><td>${money(u.failedCny)}${u.failedComplete?'':'（小计）'}</td><td>${money(u.failedPerFinished)}</td></tr>`).join('')||'<tr><td colspan="8">暂无单元记录</td></tr>'}</tbody></table></div>`;
+function renderUnitStats(){
+  if(!S.runId)return '<p class="note">选择一局后查看业务单元单价。</p>';
+  if(S.costTreeError)return `<p class="error">${esc(S.costTreeError)}</p>`;
+  if(!S.costTree)return '<p class="note">本局成本尚未读取。</p>';
+  const units=runUnitStats(S.costTree.tree);
+  return `<p class="note">当前局 ${esc(S.runId)}，只统计这一局的全部调用。读取时间 ${esc(S.costTree.asOf)}。均价和分位数只含已完成且全部计价的单元；首章单列。发帖、评论和私聊完成满 10 分钟后纳入。</p><div class="cost-table-wrap"><table class="call-table unit-prices"><thead><tr><th>业务单元</th><th>完成／已计价</th><th>均价</th><th>P50</th><th>P90</th><th>最高</th><th>失败成本</th><th>每完成一次分摊失败</th></tr></thead><tbody>${units.map(u=>`<tr><td>${esc(u.label)}</td><td>${u.count} / ${u.pricedCount}${u.missingCount?`<br><small>${u.missingCount} 个缺价</small>`:''}</td><td>${money(u.mean)}</td><td>${money(u.p50)}</td><td>${money(u.p90)}</td><td>${money(u.max)}</td><td>${money(u.failedCny)}${u.failedComplete?'':'（小计）'}</td><td>${money(u.failedPerFinished)}</td></tr>`).join('')||'<tr><td colspan="8">暂无单元记录</td></tr>'}</tbody></table></div>`;
 }
 async function loadCostTree(){
   const runId=S.runId,auth=S.auth;
   try{const value=await api('evalGetRunCostTree',{runId});if(S.runId===runId&&S.auth===auth){S.costTree=value;S.costTreeError='';}}
   catch(error){if(S.runId===runId&&S.auth===auth){S.costTree=null;S.costTreeError=`成本树读取失败：${error.message}`;}}
 }
-function renderStats(){const v=S.stats;return `${button('读取本作品最近 30 天','stats',S.busy||!S.worldId)}${v?`<p class="note">${esc(v.pricing?.basis||'按真实用量计价')} 价格核对日期 ${esc(v.pricing?.checkedAt||'未知')}。统计自 ${esc(v.since)}，运行调用最多 ${v.sampleLimit} 条，${v.possiblyTruncated||v.compiler?.possiblyTruncated?'已达到上限，以下仅为样本费用':'未达到截断上限'}；同批存档已完成章数 ${v.completedChapters}。</p><div class="bento">${costCard('人民币总费用 · 已读取样本',v.cost)}${costCard('游玩流程费用',v.runtimeCost)}${costCard('作品编译费用',v.compiler?.cost)}${tile('业务单元单价',renderUnitStats(v),'c12')}${v.items.map(c=>tile(esc(c.chainId),`<div class="stats"><div><b>${c.count}</b><span>调用</span></div><div><b>${sec(c.p50Ms)}</b><span>P50</span></div><div><b>${sec(c.p95Ms)}</b><span>P95</span></div><div><b>${(c.failureRate*100).toFixed(1)}%</b><span>失败</span></div></div><p><strong>人民币费用 ${money(c.cost?.cny)}</strong></p><p class="note">${esc(costNote(c.cost))}</p><details><summary>Token 与调用统计</summary>${pre({输入均值:c.inputTokensMean,输出均值:c.outputTokensMean,缓存命中率:c.cacheHitRate,每章调用:c.callsPerChapter})}</details>`,'c6')).join('')}${tile('作品编译 · 用量与用时',pre(v.compiler),'c12')}</div>`:'<p class="note">读取真实调用记录，展示总额、各流程和编译的人民币费用；失败重试中已返回的用量也计入。</p>'}`;}
+function renderStats(){const v=S.stats;return `<div class="bento">${launchPanel()}${tile('本局业务单元单价',renderUnitStats(),'c12')}${tile('本局成本明细',renderCostTree(),'c12')}</div>${button('读取本作品最近 30 天','stats',S.busy||!S.worldId)}${v?`<p class="note">${esc(v.pricing?.basis||'按真实用量计价')} 价格核对日期 ${esc(v.pricing?.checkedAt||'未知')}。统计自 ${esc(v.since)}，运行调用最多 ${v.sampleLimit} 条，${v.possiblyTruncated||v.compiler?.possiblyTruncated?'已达到上限，以下仅为样本费用':'未达到截断上限'}；同批存档已完成章数 ${v.completedChapters}。</p><div class="bento">${costCard('人民币总费用 · 已读取样本',v.cost)}${costCard('游玩流程费用',v.runtimeCost)}${costCard('作品编译费用',v.compiler?.cost)}${v.items.map(c=>tile(esc(c.chainId),`<div class="stats"><div><b>${c.count}</b><span>调用</span></div><div><b>${sec(c.p50Ms)}</b><span>P50</span></div><div><b>${sec(c.p95Ms)}</b><span>P95</span></div><div><b>${(c.failureRate*100).toFixed(1)}%</b><span>失败</span></div></div><p><strong>人民币费用 ${money(c.cost?.cny)}</strong></p><p class="note">${esc(costNote(c.cost))}</p><details><summary>Token 与调用统计</summary>${pre({输入均值:c.inputTokensMean,输出均值:c.outputTokensMean,缓存命中率:c.cacheHitRate,每章调用:c.callsPerChapter})}</details>`,'c6')).join('')}${tile('作品编译 · 用量与用时',pre(v.compiler),'c12')}</div>`:'<p class="note">读取真实调用记录，展示总额、各流程和编译的人民币费用；失败重试中已返回的用量也计入。</p>'}`;}
 function renderPrompts(){const nodes=S.catalog?.nodes||[];return `<div class="bento">${tile('提示词装配',`<div class="console-form">${button('读取提示词目录','catalog',S.busy)}<label>链路<select id="prompt-node">${option('','选择链路',S.promptNode)}${nodes.map(n=>option(n.nodeId,n.label,S.promptNode)).join('')}</select></label><p class="note">使用目录样例输入；真实调用原文见步骤详情。按步骤重装暂缓。</p><label>链路输入（JSON）<textarea id="prompt-input" rows="12">${esc(S.promptInput)}</textarea></label>${button('拼装预览 · 不调用模型','preview',S.busy||!S.promptNode)}</div>`,'c4')}${tile('实际拼装的 messages',S.promptPreview?pre(S.promptPreview):'<p class="note">只预览，不编辑 system，不保存到 Runtime。</p>','c8')}</div>`;}
 async function listAll(op,params={}){const rows=[];let cursor;do{const page=await api(op,params,undefined,cursor?{cursor}:{});rows.push(...items(page));cursor=page.pageInfo?.nextCursor;if(!page.pageInfo?.hasMore)break;}while(cursor);return rows;}
 async function boot(){S.costTree=null;S.costTreeError='';S.stats=null;S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');S.runs=items(await api('evalListConsoleRuns'));const prices=await api('evalGetModelPricing');S.prices=prices.models;S.pricing=prices;if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
@@ -287,7 +292,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
     if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
-    if(action==='refresh'){if(S.view==='flow'&&S.worldId){S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId)return loadRun();return boot();}
+    if(action==='refresh'){if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId)return loadRun();return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
 });
@@ -299,7 +304,7 @@ document.addEventListener('change',e=>{const el=e.target;if(inputs[el.id])S[inpu
   if(el.id==='world')task(async()=>{S.costTree=null;S.costTreeError='';S.worldId=el.value;S.version='draft';S.stats=null;S.runId='';S.steps=[];S.current={};observation++;await versions();});
   if(el.id==='version'){S.version=el.value;S.startOptions=[];render();}
   if(el.id==='run-pick'&&journal.action&&el.value!==journal.action.runId){S.error='请先完成上次提交';render();return;}
-  if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;const run=S.runs.find(r=>r.runId===S.runId);if(run){S.stats=null;S.worldId=run.worldId;await versions();await loadRun();}});
+  if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;S.costTree=null;S.costTreeError='';S.costExpanded=new Set(['0']);const run=S.runs.find(r=>r.runId===S.runId);if(run){S.stats=null;S.worldId=run.worldId;await versions();await loadRun();}});
   if(el.id==='playable'){S.playable=el.value;S.initial=(S.startOptions.find(c=>c.bindingId!==S.playable&&c.initialLinkedCharacterCandidate)||S.startOptions.find(c=>c.bindingId!==S.playable))?.characterId||'';render();}
   if(el.id==='initial')S.initial=el.value;
   if(el.id==='prompt-node'){S.promptNode=el.value;const node=S.catalog.nodes.find(n=>n.nodeId===el.value);S.promptInput=json(node?.prompt.input||{});render();}
