@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=b0a49e3055c8';
-import {validate} from '../client-api/creator-client.mjs?v=b0a49e3055c8';
-import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=b0a49e3055c8';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=a47b84fe863d';
+import {validate} from '../client-api/creator-client.mjs?v=a47b84fe863d';
+import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=a47b84fe863d';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -9,7 +9,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const q=new URLSearchParams(location.search);
 const S={auth:read(sessionStorage,'slice-console-auth'),view:'play',sub:'raw',worldId:q.get('worldId')||'',version:q.get('version')||'draft',
   runId:q.get('runId')||'',worlds:[],versions:[],runs:[],steps:[],calls:new Map(),detail:new Map(),evidence:new Map(),selected:0,
-  busy:false,error:'',notice:'',action:'vn_reply',input:'',target:'',post:'',activity:'',attempt:'',catalog:null,prices:{},current:{},currentErrors:{},startOptions:[],promptNode:'',promptInput:'',promptPreview:null};
+  busy:false,error:'',notice:'',action:'vn_reply',input:'',target:'',post:'',activity:'',attempt:'',catalog:null,prices:{},current:{},currentErrors:{},openingNotice:'',startOptions:[],promptNode:'',promptInput:'',promptPreview:null};
 const storageKey=()=>`slice-console-journal:${S.auth?.workspaceId}`;
 let journal={};
 function saveJournal(){if(!write(localStorage,storageKey(),journal))throw Error('无法保存操作恢复信息，请允许本机存储后再提交。');}
@@ -55,7 +55,7 @@ function renderPlay(){
   const step=S.steps.find(s=>s.stepNo===S.selected),calls=S.calls.get(step?.commandId)||[],e=S.evidence.get(step?.commandId)||{};
   const all=[...S.calls.values()].flat(),waits=[...S.evidence.values()].map(v=>waitMs(v.command)).filter(v=>v!=null);
   const kpi=(name,value,note)=>`<div class="tile c3 kpi"><div class="l">${name}</div><div class="v">${value}</div><div class="d">${note}</div></div>`;
-  return `<div class="bento">${launchPanel()}${S.runId?`${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用`)}${kpi('本局累计成本',money(sumCosts(all)),`${all.length} 次已读取调用；不含编译及无命令的开局`)}${kpi('本局累计等待',sec(waits.length?waits.reduce((a,b)=>a+b,0):null),'命令受理到完成')}
+  return `<div class="bento">${launchPanel()}${S.runId?`${openingPanel()}${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用`)}${kpi('本局累计成本',money(sumCosts(all)),`${all.length} 次已读取调用；不含编译及无命令的开局`)}${kpi('本局累计等待',sec(waits.length?waits.reduce((a,b)=>a+b,0):null),'命令受理到完成')}
     ${tile('玩家看到的',playerOutput(e.outcome,step,e.playerRecords),'c5')}${tile('提交下一步',inputPanel(),'c4')}${tile('步骤记录',S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}"><b>${s.stepNo}. ${esc(actions.find(([id])=>id===s.actionType)?.[1]|| (s.actionType==='create_run'?'开局':s.actionType))}</b><br><small>${esc(s.inputText||s.commandId||'开局')}</small></button>`).join(''),'c3 r2')}
     ${tile('模型输出',resultPanel(calls,e),'c5',`<div class="subtabs">${[['raw','原文'],['data','解析数据'],['judge','判定']].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${S.sub===v}">${l}</button>`).join('')}</div>`)}
     ${tile('这一步的调用',callsTable(calls,e.command),'c4')}${tile('状态变化',diffPanel(e),'c12')}
@@ -64,15 +64,40 @@ function renderPlay(){
 function playerOutput(outcome,step,records=[]){
   if(!step)return '<p class="note">提交后在这里查看。</p>';
   if(!step.commandId&&!step.sourceId&&S.current.run?.opening?.generationStatus==='failed')return '<p class="error">开局生成失败，本局尚不能继续试玩。请排查模型服务后重新开局。</p>';
-  if(!outcome)return `<p class="note">${step.commandId?'结果尚未读取。':step.sourceId?'活动管理接口无 Outcome，详情见下方当前活动状态。':'开局状态见下方当前玩家读接口。'}</p>`;
+  if(!outcome)return `<p class="note">${step.commandId?'结果尚未读取。':step.sourceId?'活动管理接口无 Outcome，详情见下方当前活动状态。':'开局进度、天赋和剧情见上方开局区域。'}</p>`;
   const texts=[];
   const walk=(v,key='')=>{if(typeof v==='string'&&['narrativeSummary','text','body','narration','outputText','contentText'].includes(key))texts.push(v);else if(Array.isArray(v))v.forEach(x=>walk(x));else if(v&&typeof v==='object')for(const[k,x]of Object.entries(v))if(!['record','facts','memories','world','request'].includes(k))walk(x,k);};
   // Outcome is the existing player-authorized projection, never model text.
   walk(outcome);walk(records);return texts.length?`<div class="screen">${[...new Set(texts)].map(t=>`<p>${esc(t)}</p>`).join('')}</div>`:'<p class="note">该 Outcome 没有玩家正文，查看解析数据与当前玩家读接口。</p>';
 }
+function openingStage(){
+  if(S.current.run?.opening?.generationStatus==='failed')return 'failed';
+  if(S.currentErrors.run||S.currentErrors.chapter)return 'unavailable';
+  const phase=S.current.chapter?.mainline?.phase;
+  if(phase==='failed')return 'failed';
+  if(phase==='awaiting_talent')return 'talents';
+  if(!phase||phase==='planning')return 'preparing';
+  return 'ready';
+}
+function openingPanel(){
+  const stage=openingStage(),chapter=S.current.chapter,selected=chapter?.mainline?.selectedTalent;
+  if(stage==='failed')return tile('开局生成失败','<p class="error">后台未能完成本局开局。请查看错误记录后重试，不会自动新建另一局。</p>','c12');
+  if(stage==='unavailable')return tile('开局状态暂未读到','<p class="note">请点击刷新，继续读取当前测试局。</p>','c12');
+  if(stage==='preparing')return tile(selected?'正在生成开场与第一章':'正在生成三张天赋',`<p role="status">${esc(S.openingNotice||(selected?'天赋已经确认，正在等待开场和首章。':'测试局已创建，正在等后台返回天赋。'))}</p><p class="note">本页会自动读取进度，不会自动选择天赋或提交下一步。</p>`,'c12');
+  if(stage==='talents')return tile('选择开局天赋',`<p class="note">开局已准备好。选择一张天赋并确认，随后生成开场与第一章。</p><div class="opening-talents">${talentChoices().map(c=>`<article class="opening-talent"><h3>${esc(c.title)}</h3><p>${esc(c.description)}</p><p class="note">${esc(c.overall)}</p>${c.skills.map(skill=>`<p><strong>${esc(skill.name)} ${Number(skill.value)} / 100</strong> · ${esc(skill.talentName)}<br><small>${esc(skill.narrativeRule)}</small></p>`).join('')}<button class="btn ${S.choice===c.choiceId?'primary':''}" data-talent="${esc(c.choiceId)}" aria-pressed="${S.choice===c.choiceId}" ${S.busy||journal.action?'disabled':''}>${S.choice===c.choiceId?'已选择':'选择这张'}</button></article>`).join('')}</div>${button(journal.action?'继续确认原天赋':'确认天赋，生成开场','confirm-opening',S.busy||(!journal.action&&!S.choice))}`,'c12');
+  const story=chapter.story||{},active=chapter.mainline?.activeChapter;
+  const birth=story.birth?Object.values(story.birth).filter(v=>typeof v==='string'&&v.trim()):[];
+  return tile('开场与当前章节',`${birth.length?birth.map((text,i)=>`<div class="screen"><h3>第 ${i+1} 幕</h3><p style="white-space:pre-wrap">${esc(text)}</p></div>`).join(''):''}${active?`<h3>第 ${active.ordinal} 章 · ${esc(active.title)}</h3><p>${esc(active.narrativeObjective)}</p>${(active.conditions||[]).map(c=>`<p>目标：${esc(c.label)}</p>`).join('')}<h3>今日日程</h3><p>${esc(active.dayCard?.description||'')}</p>`:'<p class="note">开局已完成，可在下方继续当前剧情操作。</p>'}`,'c12');
+}
+function syncOpeningAction(previousPhase){
+  const phase=S.current.chapter?.mainline?.phase;
+  if(phase==='awaiting_talent'){
+    S.action='confirm_talent';if(!talentChoices().some(c=>c.choiceId===S.choice))S.choice='';
+  }else if(phase==='playing'&&previousPhase!=='playing'&&['confirm_talent','vn_reply'].includes(S.action))S.action='post';
+}
 function talentChoices(){const find=v=>{if(!v||typeof v!=='object')return [];if(Array.isArray(v.talentCandidates)&&v.talentCandidates.length)return v.talentCandidates;for(const x of Object.values(v)){const found=find(x);if(found.length)return found;}return [];};return find(S.current.chapter).length?find(S.current.chapter):find(S.current.run);}
 const actions=[['vn_enter','进入 VN'],['vn_reply','VN 回应'],['confirm_talent','选择天赋'],['post','发帖'],['comment','评论'],['dm_message','私聊'],['activity_create','创建活动'],['activity_enter','进入活动'],['activity_turn','活动行动'],['activity_exit','退出活动'],['advance_day','换日'],['end_chapter','结束本章'],['next_chapter','下一章']];
-function inputPanel(){return `<div class="console-form"><label>操作<select id="action">${actions.map(([v,l])=>option(v,l,S.action)).join('')}</select></label><label>玩家输入<textarea id="input" maxlength="500" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>
+function inputPanel(){if(['preparing','talents','failed','unavailable'].includes(openingStage()))return '<p class="note">先完成上方开局步骤，再提交剧情行动。</p>';return `<div class="console-form"><label>操作<select id="action">${actions.map(([v,l])=>option(v,l,S.action)).join('')}</select></label><label>玩家输入<textarea id="input" maxlength="500" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>
   ${S.action==='dm_message'?`<label>人物<select id="target">${option('','选择人物',S.target)}${items(S.current.cast).filter(c=>c.actorId!==S.current.run?.playerActorId).map(c=>option(c.actorId,c.displayName||c.actorId,S.target)).join('')}</select></label>`:''}
   ${S.action==='comment'?`<label>帖子<select id="post">${option('','选择帖子',S.post)}${items(S.current.feed).map(p=>option(p.postId||p.contentId,p.text||p.body||p.postId,S.post)).join('')}</select></label>`:''}
   ${S.action==='confirm_talent'?`<label>天赋<select id="choice">${option('','选择服务端返回的天赋',S.choice)}${talentChoices().map(c=>option(c.choiceId,`${c.title} · ${c.description}`,S.choice)).join('')}</select></label>`:''}
@@ -119,8 +144,8 @@ async function prepare(){const world=S.worlds.find(w=>w.worldId===S.worldId);if(
 }
 async function poll(read,done){const deadline=Date.now()+120000;while(true){const value=await read();if(done(value))return value;if(Date.now()>deadline)throw Error('仍在处理中，请点击刷新或继续原操作；不会创建重复请求。');await pause(1800);}}
 async function start(){const person=S.startOptions.find(c=>c.bindingId===S.playable);if(!person||!S.initial)throw Error('请选择扮演人物与首位 AI');
-  journal.startSlot ||= `start:${crypto.randomUUID()}`;saveJournal();const value=await mutation(journal.startSlot,'evalCreateRun',{worldId:S.worldId},{worldVersionId:S.version,identitySelection:{sourceType:'playable_character',characterVersionId:person.characterVersionId,worldCastBindingId:person.bindingId},initialLinkedCharacterId:S.initial});
-  observation++;S.runId=value.runId;S.current={};await mutation(`session:${S.runId}`,'evalRecordConsoleStep',{runId:S.runId},{});delete journal.startSlot;saveJournal();S.startOptions=[];setRunUrl();await loadRun();S.runs=items(await api('evalListConsoleRuns'));S.notice='已开局。先在章节状态中查看开场与天赋，再手动提交下一步。';}
+  S.notice='正在创建测试局…';S.openingNotice='';render();journal.startSlot ||= `start:${crypto.randomUUID()}`;saveJournal();const value=await mutation(journal.startSlot,'evalCreateRun',{worldId:S.worldId},{worldVersionId:S.version,identitySelection:{sourceType:'playable_character',characterVersionId:person.characterVersionId,worldCastBindingId:person.bindingId},initialLinkedCharacterId:S.initial});
+  observation++;S.runId=value.runId;S.current={};S.currentErrors={};S.steps=[];S.selected=0;S.calls.clear();S.detail.clear();S.evidence.clear();S.notice='测试局已创建，正在读取开局进度。';setRunUrl();render();await mutation(`session:${S.runId}`,'evalRecordConsoleStep',{runId:S.runId},{});delete journal.startSlot;saveJournal();S.startOptions=[];setRunUrl();await loadRun();S.runs=items(await api('evalListConsoleRuns'));S.notice='测试局已创建，开局进度显示在下方。';}
 function setRunUrl(){const url=new URL(location.href);url.searchParams.set('runId',S.runId);url.searchParams.set('worldId',S.worldId);url.searchParams.set('version',S.version);history.replaceState(null,'',url);}
 async function loadCurrent(){
   const runId=S.runId,auth=S.auth,params={runId};
@@ -129,11 +154,11 @@ async function loadCurrent(){
   if(S.runId!==runId||S.auth!==auth)return;
   const current={},errors={};
   values.forEach((value,i)=>{const [name,label]=reads[i];if(value.status==='fulfilled')current[name]=value.value;else{const message=value.reason?.message;errors[name]=`${label}：${message==='Failed to fetch'?'网络连接中断，未收到响应':message||'读取失败'}`;}});
-  S.current=current;S.currentErrors=errors;
+  const previousPhase=S.current.chapter?.mainline?.phase;S.current=current;S.currentErrors=errors;syncOpeningAction(previousPhase);
 }
 async function loadRun(){observation++;S.calls.clear();S.detail.clear();S.evidence.clear();await loadCurrent();S.steps=items(await api('evalListConsoleSteps',{runId:S.runId}));S.selected=S.steps.at(-1)?.stepNo||0;
   const historySteps=S.steps.filter(s=>s.commandId);for(let i=0;i<historySteps.length;i+=4)await Promise.all(historySteps.slice(i,i+4).map(step=>loadEvidence(step,{full:step.stepNo===S.selected})));
-  setRunUrl();}
+  setRunUrl();observeOpening();}
 async function playerRecords(step,outcome){
   if(!outcome)return [];
   const payload=step.payload||{},params={runId:S.runId},ids=new Set(outcome.createdContentIds||[]);
@@ -184,12 +209,29 @@ async function submit(){
     S.notice='命令已受理，正在等待结果。';render();
     const command=await poll(async()=>{await loadEvidence(step);render();return S.evidence.get(commandId).command;},c=>['applied','rejected'].includes(c.status));
     S.notice=command.status==='rejected'?`命令未应用：${command.errorCode||'查看结果'}`:'结果已返回，继续观察后台调用。';
-    delete journal.action;saveJournal();S.input='';await loadCurrent();S.steps=items(await api('evalListConsoleSteps',{runId:a.runId}));
+    delete journal.action;saveJournal();S.input='';await loadCurrent();observeOpening();S.steps=items(await api('evalListConsoleSteps',{runId:a.runId}));
     await loadEvidence(S.steps.find(s=>s.commandId===commandId));render();observeBackground(a.runId,commandId);
   }else{const sourceId=result.activityAttemptId&&a.type==='activity_create'?result.activityAttemptId:result.activityId||a.activity;if(sourceId)await mutation(`${a.id}:record`,'evalRecordConsoleStep',{runId:a.runId},{sourceId,actionType:a.type});delete journal.action;saveJournal();await loadCurrent();S.steps=items(await api('evalListConsoleSteps',{runId:a.runId}));S.selected=S.steps.at(-1)?.stepNo||0;S.notice='活动管理步骤已保存。该接口没有命令调用记录，详情见当前活动状态。';}
   if(a.channelId)S.current.messages=await api('evalListDmMessages',{runId:a.runId,channelId:a.channelId});
   if(a.post)S.current.replies=await api('evalListPostReplies',{runId:a.runId,postId:a.post});
   if(a.activity)S.current.turns=await api('evalListRunActivityTurns',{runId:a.runId,activityId:a.activity});
+}
+let openingObservation=0;
+async function observeOpening(){
+  const generation=++openingObservation,runId=S.runId,auth=S.auth;
+  if(!runId||!auth||openingStage()!=='preparing')return;
+  const deadline=Date.now()+120000;S.openingNotice='';
+  const current=()=>generation===openingObservation&&S.runId===runId&&S.auth===auth;
+  try{
+    while(current()&&Date.now()<deadline){
+      await pause(2500);if(!current())return;if(S.busy)continue;
+      const [run,chapter]=await Promise.all([api('evalGetRun',{runId}),api('evalGetRunChapter',{runId})]);
+      if(!current())return;
+      const previousPhase=S.current.chapter?.mainline?.phase;S.current.run=run;S.current.chapter=chapter;delete S.currentErrors.run;delete S.currentErrors.chapter;syncOpeningAction(previousPhase);render();
+      if(openingStage()!=='preparing')return;
+    }
+    if(current()){S.openingNotice='后台仍在生成，进度已保留。点击刷新继续读取当前局，无需再次开局。';render();}
+  }catch(e){if(current()){S.openingNotice=`进度读取中断：${e.message}。点击刷新继续当前局，无需再次开局。`;render();}}
 }
 let observation=0;
 async function observeBackground(runId,commandId){const generation=observation;const start=Date.now();let changed=start,last=(S.calls.get(commandId)||[]).map(c=>c.callId).join(',');
@@ -213,9 +255,10 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   if(el.dataset.sub){S.sub=el.dataset.sub;render();return;}
   if(el.dataset.step){S.selected=Number(el.dataset.step);const step=S.steps.find(s=>s.stepNo===S.selected);if(step?.commandId)task(()=>loadEvidence(step));else render();return;}
   if(el.dataset.call){const c=[...S.calls.values()].flat().find(c=>c.callId===el.dataset.call),d=S.detail.get(el.dataset.call);drawer('模型调用',`${pre({chain:c.chainId,usage:c.usage,startedAt:c.startedAt,completedAt:c.completedAt,latencyMs:c.latencyMs,cost:cost(c),errorCode:c.errorCode})}<h3>实际 messages</h3>${pre(d?.requestJson??'未开启测试模式或没有保存原文')}<h3>模型原文</h3>${pre(d?.outputText??'未开启测试模式或没有保存原文')}`);return;}
+  if(el.dataset.talent){if(S.busy||journal.action)return;S.choice=el.dataset.talent;S.action='confirm_talent';render();return;}
   const action=el.dataset.action;if(!action)return;
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
-    if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
+    if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
     if(action==='refresh'){if(S.runId)return loadRun();return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});for(const c of S.stats.items)for(const m of c.models||[])if(!S.prices[m.model])S.prices[m.model]={cacheHit:null,cacheMiss:null,output:null};}
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
