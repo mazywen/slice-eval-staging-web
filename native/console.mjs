@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=a47b84fe863d';
-import {validate} from '../client-api/creator-client.mjs?v=a47b84fe863d';
-import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=a47b84fe863d';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=6b003e20a639';
+import {validate} from '../client-api/creator-client.mjs?v=6b003e20a639';
+import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=6b003e20a639';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -86,6 +86,12 @@ function openingPanel(){
   if(stage==='preparing')return tile(selected?'正在生成开场与第一章':'正在生成三张天赋',`<p role="status">${esc(S.openingNotice||(selected?'天赋已经确认，正在等待开场和首章。':'测试局已创建，正在等后台返回天赋。'))}</p><p class="note">本页会自动读取进度，不会自动选择天赋或提交下一步。</p>`,'c12');
   if(stage==='talents')return tile('选择开局天赋',`<p class="note">开局已准备好。选择一张天赋并确认，随后生成开场与第一章。</p><div class="opening-talents">${talentChoices().map(c=>`<article class="opening-talent"><h3>${esc(c.title)}</h3><p>${esc(c.description)}</p><p class="note">${esc(c.overall)}</p>${c.skills.map(skill=>`<p><strong>${esc(skill.name)} ${Number(skill.value)} / 100</strong> · ${esc(skill.talentName)}<br><small>${esc(skill.narrativeRule)}</small></p>`).join('')}<button class="btn ${S.choice===c.choiceId?'primary':''}" data-talent="${esc(c.choiceId)}" aria-pressed="${S.choice===c.choiceId}" ${S.busy||journal.action?'disabled':''}>${S.choice===c.choiceId?'已选择':'选择这张'}</button></article>`).join('')}</div>${button(journal.action?'继续确认原天赋':'确认天赋，生成开场','confirm-opening',S.busy||(!journal.action&&!S.choice))}`,'c12');
   const story=chapter.story||{},active=chapter.mainline?.activeChapter;
+  if(story.phase==='vn'){
+    const vn=story.vn;
+    const prose=(vn?.segments||[]).map(row=>`<div class="screen">${row.reply?`<p><strong>你的回应：</strong>${esc(row.reply)}</p>`:''}<p style="white-space:pre-wrap">${esc(row.text)}</p></div>`).join('');
+    const control=vn?.status==='prepared'?button('进入本章互动小说','vn_enter',S.busy):vn?.status==='ready'?button('结束互动小说，进入自由环节','vn_exit',S.busy):vn?.status==='active'?`<h3>你的回应 · ${vn.repliesUsed+1} / 3</h3>${(vn.segments.at(-1)?.options||[]).map((text,i)=>`<button class="btn" data-vn-option="${i}" ${S.busy?'disabled':''}>${esc(text)}</button>`).join('')}<label>也可以自行回应<textarea id="input" maxlength="300" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>${button('提交回应','vn_reply',S.busy)}`:'<p>正在准备互动小说。</p>';
+    return tile('章节互动小说',`${story.introduction?.text?`<p>${esc(story.introduction.text)}</p>`:''}${prose}${control}`,'c12');
+  }
   const birth=story.birth?Object.values(story.birth).filter(v=>typeof v==='string'&&v.trim()):[];
   return tile('开场与当前章节',`${birth.length?birth.map((text,i)=>`<div class="screen"><h3>第 ${i+1} 幕</h3><p style="white-space:pre-wrap">${esc(text)}</p></div>`).join(''):''}${active?`<h3>第 ${active.ordinal} 章 · ${esc(active.title)}</h3><p>${esc(active.narrativeObjective)}</p>${(active.conditions||[]).map(c=>`<p>目标：${esc(c.label)}</p>`).join('')}<h3>今日日程</h3><p>${esc(active.dayCard?.description||'')}</p>`:'<p class="note">开局已完成，可在下方继续当前剧情操作。</p>'}`,'c12');
 }
@@ -96,8 +102,8 @@ function syncOpeningAction(previousPhase){
   }else if(phase==='playing'&&previousPhase!=='playing'&&['confirm_talent','vn_reply'].includes(S.action))S.action='post';
 }
 function talentChoices(){const find=v=>{if(!v||typeof v!=='object')return [];if(Array.isArray(v.talentCandidates)&&v.talentCandidates.length)return v.talentCandidates;for(const x of Object.values(v)){const found=find(x);if(found.length)return found;}return [];};return find(S.current.chapter).length?find(S.current.chapter):find(S.current.run);}
-const actions=[['vn_enter','进入 VN'],['vn_reply','VN 回应'],['confirm_talent','选择天赋'],['post','发帖'],['comment','评论'],['dm_message','私聊'],['activity_create','创建活动'],['activity_enter','进入活动'],['activity_turn','活动行动'],['activity_exit','退出活动'],['advance_day','换日'],['end_chapter','结束本章'],['next_chapter','下一章']];
-function inputPanel(){if(['preparing','talents','failed','unavailable'].includes(openingStage()))return '<p class="note">先完成上方开局步骤，再提交剧情行动。</p>';return `<div class="console-form"><label>操作<select id="action">${actions.map(([v,l])=>option(v,l,S.action)).join('')}</select></label><label>玩家输入<textarea id="input" maxlength="500" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>
+const actions=[['vn_enter','进入 VN'],['vn_reply','VN 回应'],['vn_exit','结束 VN'],['confirm_talent','选择天赋'],['post','发帖'],['comment','评论'],['dm_message','私聊'],['activity_create','创建活动'],['activity_enter','进入活动'],['activity_turn','活动行动'],['activity_exit','退出活动'],['advance_day','换日'],['end_chapter','结束本章'],['next_chapter','下一章']];
+function inputPanel(){if(S.current.chapter?.story?.phase==='vn')return '<p class="note">请先完成上方章节互动小说。</p>';if(['preparing','talents','failed','unavailable'].includes(openingStage()))return '<p class="note">先完成上方开局步骤，再提交剧情行动。</p>';return `<div class="console-form"><label>操作<select id="action">${actions.map(([v,l])=>option(v,l,S.action)).join('')}</select></label><label>玩家输入<textarea id="input" maxlength="500" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>
   ${S.action==='dm_message'?`<label>人物<select id="target">${option('','选择人物',S.target)}${items(S.current.cast).filter(c=>c.actorId!==S.current.run?.playerActorId).map(c=>option(c.actorId,c.displayName||c.actorId,S.target)).join('')}</select></label>`:''}
   ${S.action==='comment'?`<label>帖子<select id="post">${option('','选择帖子',S.post)}${items(S.current.feed).map(p=>option(p.postId||p.contentId,p.text||p.body||p.postId,S.post)).join('')}</select></label>`:''}
   ${S.action==='confirm_talent'?`<label>天赋<select id="choice">${option('','选择服务端返回的天赋',S.choice)}${talentChoices().map(c=>option(c.choiceId,`${c.title} · ${c.description}`,S.choice)).join('')}</select></label>`:''}
@@ -255,9 +261,11 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   if(el.dataset.sub){S.sub=el.dataset.sub;render();return;}
   if(el.dataset.step){S.selected=Number(el.dataset.step);const step=S.steps.find(s=>s.stepNo===S.selected);if(step?.commandId)task(()=>loadEvidence(step));else render();return;}
   if(el.dataset.call){const c=[...S.calls.values()].flat().find(c=>c.callId===el.dataset.call),d=S.detail.get(el.dataset.call);drawer('模型调用',`${pre({chain:c.chainId,usage:c.usage,startedAt:c.startedAt,completedAt:c.completedAt,latencyMs:c.latencyMs,cost:cost(c),errorCode:c.errorCode})}<h3>实际 messages</h3>${pre(d?.requestJson??'未开启测试模式或没有保存原文')}<h3>模型原文</h3>${pre(d?.outputText??'未开启测试模式或没有保存原文')}`);return;}
+  if(el.dataset.vnOption!==undefined){if(S.busy)return;S.input=S.current.chapter.story.vn.segments.at(-1).options[Number(el.dataset.vnOption)];render();return;}
   if(el.dataset.talent){if(S.busy||journal.action)return;S.choice=el.dataset.talent;S.action='confirm_talent';render();return;}
   const action=el.dataset.action;if(!action)return;
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
+    if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
     if(action==='refresh'){if(S.runId)return loadRun();return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});for(const c of S.stats.items)for(const m of c.models||[])if(!S.prices[m.model])S.prices[m.model]={cacheHit:null,cacheMiss:null,output:null};}
