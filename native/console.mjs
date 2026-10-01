@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=13ec2c0c37ae';
-import {validate} from '../client-api/creator-client.mjs?v=13ec2c0c37ae';
-import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=13ec2c0c37ae';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=425a67a86fef';
+import {validate} from '../client-api/creator-client.mjs?v=425a67a86fef';
+import {callCost,callLane,waitMs,stateDiff} from './console-metrics.mjs?v=425a67a86fef';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -43,7 +43,7 @@ const sumCosts=calls=>{const values=calls.map(cost);return !values.length||value
 function render(){
   const focused=document.activeElement,focusId=focused?.id,selection=[focused?.selectionStart,focused?.selectionEnd];
   $('#world').innerHTML=option('','选择作品',S.worldId)+S.worlds.map(w=>option(w.worldId,w.title,S.worldId)).join('');
-  $('#version').innerHTML=option('draft','草稿',S.version)+S.versions.map(v=>option(v.worldVersionId,`发布 v${v.versionNumber} · ${v.publicationStatus}`,S.version)).join('');
+  $('#version').innerHTML=(S.worlds.find(w=>w.worldId===S.worldId)?.publishedWorldVersionId||S.versions.some(v=>v.current&&v.publicationStatus==='published')?'':option('draft','草稿',S.version))+S.versions.map(v=>option(v.worldVersionId,`发布 v${v.versionNumber} · ${v.publicationStatus}`,S.version)).join('');
   $('#world').disabled=$('#version').disabled=S.busy||!!journal.action;
   document.querySelectorAll('[data-view]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.view===S.view)));
   if(!S.auth){$('#main').innerHTML=`<section class="tile login"><div class="tile-h"><h2>登录试玩中台</h2></div><form id="login" class="tile-b console-form"><p class="note">使用内部 Eval 账号，连接 staging。</p><label>账号<input name="username" autocomplete="username" value="slice-eval" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button class="btn primary" ${S.busy?'disabled':''}>登录</button><p role="alert" class="error">${esc(S.error)}</p></form></section>`;return;}
@@ -101,10 +101,10 @@ function renderStats(){const v=S.stats;return `${button('读取本作品最近 3
 function renderPrompts(){const nodes=S.catalog?.nodes||[];return `<div class="bento">${tile('提示词装配',`<div class="console-form">${button('读取提示词目录','catalog',S.busy)}<label>链路<select id="prompt-node">${option('','选择链路',S.promptNode)}${nodes.map(n=>option(n.nodeId,n.label,S.promptNode)).join('')}</select></label><p class="note">使用目录样例输入；真实调用原文见步骤详情。按步骤重装暂缓。</p><label>链路输入（JSON）<textarea id="prompt-input" rows="12">${esc(S.promptInput)}</textarea></label>${button('拼装预览 · 不调用模型','preview',S.busy||!S.promptNode)}</div>`,'c4')}${tile('实际拼装的 messages',S.promptPreview?pre(S.promptPreview):'<p class="note">只预览，不编辑 system，不保存到 Runtime。</p>','c8')}</div>`;}
 async function listAll(op,params={}){const rows=[];let cursor;do{const page=await api(op,params,undefined,cursor?{cursor}:{});rows.push(...items(page));cursor=page.pageInfo?.nextCursor;if(!page.pageInfo?.hasMore)break;}while(cursor);return rows;}
 async function boot(){S.steps=[];S.current={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');S.runs=items(await api('evalListConsoleRuns'));const prices=await api('evalGetModelPricing');S.prices={...prices.models,...read(localStorage,'slice-console-prices',{})};if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
-async function versions(requireRequestedVersion=false){S.versions=await listAll('evalListWorldVersions',{worldId:S.worldId});if(S.version!=='draft'&&!S.versions.some(v=>v.worldVersionId===S.version)){if(requireRequestedVersion)throw Error('指定的作品版本不可读取，请从创作端重新进入。');S.version='draft';}S.startOptions=[];}
+async function versions(requireRequestedVersion=false){const world=S.worlds.find(w=>w.worldId===S.worldId);if(S.version==='draft'&&world?.publishedWorldVersionId)S.version=world.publishedWorldVersionId;S.versions=await listAll('evalListWorldVersions',{worldId:S.worldId});if(S.version==='draft'){const published=S.versions.find(v=>v.current&&v.publicationStatus==='published');if(published)S.version=published.worldVersionId;}if(S.version!=='draft'&&!S.versions.some(v=>v.worldVersionId===S.version)){if(requireRequestedVersion)throw Error('指定的作品版本不可读取，请从创作端重新进入。');S.version='draft';}S.startOptions=[];}
 async function prepare(){const world=S.worlds.find(w=>w.worldId===S.worldId);if(!world)throw Error('当前工作区没有这个作品');
   if(S.version==='draft'){
-    const draft=await api('evalGetWorldDraft',{worldDraftId:world.worldDraftId});if(!journal.prepare||journal.prepare.worldId!==S.worldId){journal.prepare={worldId:S.worldId,slot:`compile:${crypto.randomUUID()}`};saveJournal();}const slot=journal.prepare.slot;
+    const draft=await api('evalGetWorldDraft',{worldDraftId:world.worldDraftId});if(draft.publishedWorldVersionId){S.version=draft.publishedWorldVersionId;await versions(true);return prepare();}if(!journal.prepare||journal.prepare.worldId!==S.worldId){journal.prepare={worldId:S.worldId,slot:`compile:${crypto.randomUUID()}`};saveJournal();}const slot=journal.prepare.slot;
     const allowed=definitions.WorldDraftContent.properties;const content=Object.fromEntries(Object.entries(draft.seed||{}).filter(([k])=>Object.hasOwn(allowed,k)));
     content.schemaVersion='slice.world-draft-content.v6';content.characterBindings=draft.seed.castBindings;
     S.notice='第 0 步 · 保存草稿版本';render();const rev=await mutation(`${slot}:revision`,'evalCreateWorldDraftRevision',{worldDraftId:draft.worldDraftId},{expectedDraftRevision:draft.currentRevisionNumber,content});
