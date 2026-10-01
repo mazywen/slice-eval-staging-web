@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=9aa0b9e6161c';
-import {validate} from '../client-api/creator-client.mjs?v=9aa0b9e6161c';
-import {callLane,waitMs,stateDiff} from './console-metrics.mjs?v=9aa0b9e6161c';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=898e738d120a';
+import {validate} from '../client-api/creator-client.mjs?v=898e738d120a';
+import {callLane,waitMs,stateDiff} from './console-metrics.mjs?v=898e738d120a';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -55,7 +55,7 @@ function renderPlay(){
   const step=S.steps.find(s=>s.stepNo===S.selected),calls=S.calls.get(step?.commandId)||[],e=S.evidence.get(step?.commandId)||{};
   const all=[...S.calls.values()].flat(),waits=[...S.evidence.values()].map(v=>waitMs(v.command)).filter(v=>v!=null);
   const kpi=(name,value,note)=>`<div class="tile c3 kpi"><div class="l">${name}</div><div class="v">${value}</div><div class="d">${note}</div></div>`;
-  return `<div class="bento">${launchPanel()}${S.runId?`${openingPanel()}${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用`)}${kpi('本局累计成本',money(sumCosts(all)),`${all.length} 次已读取调用；不含编译及无命令的开局`)}${kpi('本局累计等待',sec(waits.length?waits.reduce((a,b)=>a+b,0):null),'命令受理到完成')}
+  return `<div class="bento">${launchPanel()}${S.runId?`${openingPanel()}${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用；${calls.filter(c=>c.cost?.cacheEstimated).length} 次缺缓存明细，按未命中计价`)}${kpi('本局累计成本',money(sumCosts(all)),`${all.length} 次已读取调用；${all.filter(c=>c.cost?.cacheEstimated).length} 次缓存按未命中。此处不含编译及无命令的开局`)}${kpi('本局累计等待',sec(waits.length?waits.reduce((a,b)=>a+b,0):null),'命令受理到完成')}
     ${tile('玩家看到的',playerOutput(e.outcome,step,e.playerRecords),'c5')}${tile('提交下一步',inputPanel(),'c4')}${tile('步骤记录',S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}"><b>${s.stepNo}. ${esc(actions.find(([id])=>id===s.actionType)?.[1]|| (s.actionType==='create_run'?'开局':s.actionType))}</b><br><small>${esc(s.inputText||s.commandId||'开局')}</small></button>`).join(''),'c3 r2')}
     ${tile('模型输出',resultPanel(calls,e),'c5',`<div class="subtabs">${[['raw','原文'],['data','解析数据'],['judge','判定']].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${S.sub===v}">${l}</button>`).join('')}</div>`)}
     ${tile('这一步的调用',callsTable(calls,e.command),'c4')}${tile('状态变化',diffPanel(e),'c12')}
@@ -132,7 +132,7 @@ function costCard(label,c){return tile(label,`<div class="kpi"><div class="v">${
 function renderStats(){const v=S.stats;return `${button('读取本作品最近 30 天','stats',S.busy||!S.worldId)}${v?`<p class="note">${esc(v.pricing?.basis||'按真实用量计价')} 价格核对日期 ${esc(v.pricing?.checkedAt||'未知')}。统计自 ${esc(v.since)}，运行调用最多 ${v.sampleLimit} 条，${v.possiblyTruncated||v.compiler?.possiblyTruncated?'已达到上限，以下仅为样本费用':'未达到截断上限'}；同批存档已完成章数 ${v.completedChapters}。</p><div class="bento">${costCard('人民币总费用 · 已读取样本',v.cost)}${costCard('游玩流程费用',v.runtimeCost)}${costCard('作品编译费用',v.compiler?.cost)}${v.items.map(c=>tile(esc(c.chainId),`<div class="stats"><div><b>${c.count}</b><span>调用</span></div><div><b>${sec(c.p50Ms)}</b><span>P50</span></div><div><b>${sec(c.p95Ms)}</b><span>P95</span></div><div><b>${(c.failureRate*100).toFixed(1)}%</b><span>失败</span></div></div><p><strong>人民币费用 ${money(c.cost?.cny)}</strong> · 按章均摊 ${money(!c.cost?.complete||!v.completedChapters?null:c.cost.cny/v.completedChapters)}</p><p class="note">${esc(costNote(c.cost))}</p><details><summary>Token 与调用统计</summary>${pre({输入均值:c.inputTokensMean,输出均值:c.outputTokensMean,缓存命中率:c.cacheHitRate,每章调用:c.callsPerChapter})}</details>`,'c6')).join('')}${tile('作品编译 · 用量与用时',pre(v.compiler),'c12')}</div>`:'<p class="note">读取真实调用记录，展示总额、各流程和编译的人民币费用；失败重试中已返回的用量也计入。</p>'}`;}
 function renderPrompts(){const nodes=S.catalog?.nodes||[];return `<div class="bento">${tile('提示词装配',`<div class="console-form">${button('读取提示词目录','catalog',S.busy)}<label>链路<select id="prompt-node">${option('','选择链路',S.promptNode)}${nodes.map(n=>option(n.nodeId,n.label,S.promptNode)).join('')}</select></label><p class="note">使用目录样例输入；真实调用原文见步骤详情。按步骤重装暂缓。</p><label>链路输入（JSON）<textarea id="prompt-input" rows="12">${esc(S.promptInput)}</textarea></label>${button('拼装预览 · 不调用模型','preview',S.busy||!S.promptNode)}</div>`,'c4')}${tile('实际拼装的 messages',S.promptPreview?pre(S.promptPreview):'<p class="note">只预览，不编辑 system，不保存到 Runtime。</p>','c8')}</div>`;}
 async function listAll(op,params={}){const rows=[];let cursor;do{const page=await api(op,params,undefined,cursor?{cursor}:{});rows.push(...items(page));cursor=page.pageInfo?.nextCursor;if(!page.pageInfo?.hasMore)break;}while(cursor);return rows;}
-async function boot(){S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');S.runs=items(await api('evalListConsoleRuns'));const prices=await api('evalGetModelPricing');S.prices=prices.models;S.pricing=prices;if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
+async function boot(){S.stats=null;S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');S.runs=items(await api('evalListConsoleRuns'));const prices=await api('evalGetModelPricing');S.prices=prices.models;S.pricing=prices;if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
 async function versions(requireRequestedVersion=false){const world=S.worlds.find(w=>w.worldId===S.worldId);if(S.version==='draft'&&world?.publishedWorldVersionId)S.version=world.publishedWorldVersionId;S.versions=await listAll('evalListWorldVersions',{worldId:S.worldId});if(S.version==='draft'){const published=S.versions.find(v=>v.current&&v.publicationStatus==='published');if(published)S.version=published.worldVersionId;}if(S.version!=='draft'&&!S.versions.some(v=>v.worldVersionId===S.version)){if(requireRequestedVersion)throw Error('指定的作品版本不可读取，请从创作端重新进入。');S.version='draft';}S.startOptions=[];}
 async function prepare(){const world=S.worlds.find(w=>w.worldId===S.worldId);if(!world)throw Error('当前工作区没有这个作品');
   if(S.version==='draft'){
@@ -256,7 +256,7 @@ document.addEventListener('submit',e=>{if(e.target.id==='login'){e.preventDefaul
 document.addEventListener('click',e=>{const el=e.target.closest('button,[data-call]');if(!el)return;
   if(el.id==='theme'){const dark=document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.dataset.theme=dark?'light':'dark';write(localStorage,'slice-console-theme',document.documentElement.dataset.theme);return;}
   if(el.id==='open-prices')return prices();if(el.id==='dr-close')return closeDrawer();
-  if(el.dataset.view){S.view=el.dataset.view;render();return;}
+  if(el.dataset.view){S.view=el.dataset.view;if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});render();return;}
   if(el.dataset.sub){S.sub=el.dataset.sub;render();return;}
   if(el.dataset.step){S.selected=Number(el.dataset.step);const step=S.steps.find(s=>s.stepNo===S.selected);if(step?.commandId)task(()=>loadEvidence(step));else render();return;}
   if(el.dataset.call){const c=[...S.calls.values()].flat().find(c=>c.callId===el.dataset.call),d=S.detail.get(el.dataset.call);drawer('模型调用',`${pre({chain:c.chainId,usage:c.usage,startedAt:c.startedAt,completedAt:c.completedAt,latencyMs:c.latencyMs,cost:c.cost,errorCode:c.errorCode})}<h3>实际 messages</h3>${pre(d?.requestJson??'未开启测试模式或没有保存原文')}<h3>模型原文</h3>${pre(d?.outputText??'未开启测试模式或没有保存原文')}`);return;}
@@ -266,7 +266,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
     if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
-    if(action==='refresh'){if(S.runId)return loadRun();return boot();}
+    if(action==='refresh'){if(S.view==='flow'&&S.worldId){S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId)return loadRun();return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
 });
@@ -278,7 +278,7 @@ document.addEventListener('change',e=>{const el=e.target;if(inputs[el.id])S[inpu
   if(el.id==='world')task(async()=>{S.worldId=el.value;S.version='draft';S.stats=null;S.runId='';S.steps=[];S.current={};observation++;await versions();});
   if(el.id==='version'){S.version=el.value;S.startOptions=[];render();}
   if(el.id==='run-pick'&&journal.action&&el.value!==journal.action.runId){S.error='请先完成上次提交';render();return;}
-  if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;const run=S.runs.find(r=>r.runId===S.runId);if(run){S.worldId=run.worldId;await versions();await loadRun();}});
+  if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;const run=S.runs.find(r=>r.runId===S.runId);if(run){S.stats=null;S.worldId=run.worldId;await versions();await loadRun();}});
   if(el.id==='playable'){S.playable=el.value;S.initial=(S.startOptions.find(c=>c.bindingId!==S.playable&&c.initialLinkedCharacterCandidate)||S.startOptions.find(c=>c.bindingId!==S.playable))?.characterId||'';render();}
   if(el.id==='initial')S.initial=el.value;
   if(el.id==='prompt-node'){S.promptNode=el.value;const node=S.catalog.nodes.find(n=>n.nodeId===el.value);S.promptInput=json(node?.prompt.input||{});render();}
