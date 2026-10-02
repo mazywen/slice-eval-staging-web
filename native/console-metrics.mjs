@@ -34,3 +34,29 @@ export function runUnitStats(tree) {
       p90:values[Math.ceil(values.length*.9)-1]??null,max:values.at(-1)??null,failedPerFinished:g.count&&g.failedComplete?g.failedCny/g.count:null};
   });
 }
+// Console history starts at October 2 in the product's Shanghai timezone.
+export function visibleConsoleRun(run){
+  return Date.parse(run?.createdAt)>=Date.parse('2026-10-02T00:00:00+08:00');
+}
+
+export function callElapsedMs(calls){
+  if(!calls.length)return null;
+  const ranges=calls.map(c=>[Date.parse(c.startedAt),Date.parse(c.completedAt)]);
+  if(ranges.some(([start,end])=>!Number.isFinite(start)||!Number.isFinite(end)||end<start))return null;
+  return Math.max(...ranges.map(r=>r[1]))-Math.min(...ranges.map(r=>r[0]));
+}
+
+export function promptHeadings(content){
+  const text=typeof content==='string'?content:Array.isArray(content)?content.filter(p=>p.type==='text').map(p=>p.text||'').join('\n'):'';
+  const headings=[];let fence=null;
+  for(const line of text.split(/\r?\n/)){
+    const marker=line.match(/^\s*(`{3,}|~{3,})/);
+    if(marker){if(!fence)fence=marker[1];else if(marker[1][0]===fence[0]&&marker[1].length>=fence.length)fence=null;continue;}
+    if(fence)continue;
+    const markdown=line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    const bracket=line.match(/^\s*【([^】\n]+)】\s*$/);
+    if(markdown)headings.push({level:markdown[1].length,title:markdown[2]});
+    else if(bracket)headings.push({level:2,title:bracket[1]});
+  }
+  return headings;
+}
