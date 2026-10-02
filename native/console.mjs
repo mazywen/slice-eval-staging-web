@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=5d8ffcbd0a54';
-import {validate} from '../client-api/creator-client.mjs?v=5d8ffcbd0a54';
-import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=5d8ffcbd0a54';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=a60b064f0312';
+import {validate} from '../client-api/creator-client.mjs?v=a60b064f0312';
+import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=a60b064f0312';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -9,11 +9,11 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const q=new URLSearchParams(location.search);
 const S={auth:read(sessionStorage,'slice-console-auth'),view:'play',sub:'raw',worldId:q.get('worldId')||'',version:q.get('version')||'draft',
   runId:q.get('runId')||'',worlds:[],versions:[],runs:[],steps:[],calls:new Map(),detail:new Map(),evidence:new Map(),selected:0,
-  costTree:null,costTreeError:'',costExpanded:new Set(['0']),busy:false,error:'',notice:'',action:'vn_reply',input:'',target:'',post:'',activity:'',attempt:'',catalog:null,prices:{},current:{},currentErrors:{},openingNotice:'',startOptions:[],promptNode:'',promptInput:'',promptPreview:null};
+  runCalls:[],traceRunId:'',traceError:'',costTree:null,costTreeError:'',costExpanded:new Set(['0']),busy:false,error:'',notice:'',action:'vn_reply',input:'',target:'',post:'',activity:'',attempt:'',catalog:null,prices:{},current:{},currentErrors:{},openingNotice:'',startOptions:[],promptNode:'',promptInput:'',promptPreview:null};
 const storageKey=()=>`slice-console-journal:${S.auth?.workspaceId}`;
 let journal={};
 function saveJournal(){if(!write(localStorage,storageKey(),journal))throw Error('无法保存操作恢复信息，请允许本机存储后再提交。');}
-async function api(op,params={},body,query={},key){
+async function api(op,params={},body,query={},key,validateResponse=true){
   const route=operations[op];if(!route)throw Error(`未部署接口合同：${op}`);
   if(route.requestType)validate(body,route.requestType);
   const url=new URL(route.routePath.replace(/\{([^}]+)\}/g,(_,name)=>{if(!params[name])throw Error(`缺少 ${name}`);return encodeURIComponent(params[name]);}),document.querySelector('meta[name="slice-api-origin"]')?.content||location.origin);
@@ -24,7 +24,7 @@ async function api(op,params={},body,query={},key){
   const data=await response.json().catch(()=>null);
   if(!response.ok){const error=Error(`${data?.error?.code||response.status}：${data?.error?.message||'请求未完成'}`);error.status=response.status;
     if(response.status===401){S.auth=null;write(sessionStorage,'slice-console-auth',null);}throw error;}
-  if(route.responseType)validate(data,route.responseType);return data;
+  if(route.responseType&&validateResponse)validate(data,route.responseType);return data;
 }
 async function mutation(slot,op,params,body){
   let record=journal[slot];if(!record){
@@ -164,7 +164,30 @@ async function loadCostTree(){
   catch(error){if(S.runId===runId&&S.auth===auth){S.costTree=null;S.costTreeError=`成本树读取失败：${error.message}`;}}
 }
 function renderStats(){const v=S.stats;return `<div class="bento">${launchPanel()}${tile('本局业务单元单价',renderUnitStats(),'c12')}${tile('本局成本明细',renderCostTree(),'c12')}</div>${button('读取本作品最近 30 天','stats',S.busy||!S.worldId)}${v?`<p class="note">${esc(v.pricing?.basis||'按真实用量计价')} 价格核对日期 ${esc(v.pricing?.checkedAt||'未知')}。统计自 ${esc(v.since)}，运行调用最多 ${v.sampleLimit} 条，${v.possiblyTruncated||v.compiler?.possiblyTruncated?'已达到上限，以下仅为样本费用':'未达到截断上限'}；同批存档已完成章数 ${v.completedChapters}。</p><div class="bento">${costCard('人民币总费用 · 已读取样本',v.cost)}${costCard('游玩流程费用',v.runtimeCost)}${costCard('作品编译费用',v.compiler?.cost)}${v.items.map(c=>tile(esc(c.chainId),`<div class="stats"><div><b>${c.count}</b><span>调用</span></div><div><b>${sec(c.p50Ms)}</b><span>P50</span></div><div><b>${sec(c.p95Ms)}</b><span>P95</span></div><div><b>${(c.failureRate*100).toFixed(1)}%</b><span>失败</span></div></div><p><strong>人民币费用 ${money(c.cost?.cny)}</strong></p><p class="note">${esc(costNote(c.cost))}</p><details><summary>Token 与调用统计</summary>${pre({输入均值:c.inputTokensMean,输出均值:c.outputTokensMean,缓存命中率:c.cacheHitRate,每章调用:c.callsPerChapter})}</details>`,'c6')).join('')}${tile('作品编译 · 用量与用时',pre(v.compiler),'c12')}</div>`:'<p class="note">读取真实调用记录，展示总额、各流程和编译的人民币费用；失败重试中已返回的用量也计入。</p>'}`;}
-function renderPrompts(){const nodes=S.catalog?.nodes||[];return `<div class="bento">${tile('提示词装配',`<div class="console-form">${button('读取提示词目录','catalog',S.busy)}<label>链路<select id="prompt-node">${option('','选择链路',S.promptNode)}${nodes.map(n=>option(n.nodeId,n.label,S.promptNode)).join('')}</select></label><p class="note">使用目录样例输入；真实调用原文见步骤详情。按步骤重装暂缓。</p><label>链路输入（JSON）<textarea id="prompt-input" rows="12">${esc(S.promptInput)}</textarea></label>${button('拼装预览 · 不调用模型','preview',S.busy||!S.promptNode)}</div>`,'c4')}${tile('实际拼装的 messages',S.promptPreview?pre(S.promptPreview):'<p class="note">只预览，不编辑 system，不保存到 Runtime。</p>','c8')}</div>`;}
+function renderActualPromptTrace(){
+  if(!S.runId)return '<p class="note">先选择一个开局。</p>';
+  if(S.traceError)return `<p class="error">${esc(S.traceError)}</p>${button('重新读取这局实际调用','trace',S.busy)}`;
+  if(S.traceRunId!==S.runId)return `<p class="note">这里展示数据库里这局实际发给模型的 messages、模型原文和逐次费用，不是模板预览。</p>${button('读取这局实际调用','trace',S.busy)}`;
+  if(!S.runCalls.length)return '<p class="note">这局尚未保存任何模型调用。</p>';
+  const known=S.runCalls.filter(c=>cost(c)!=null),missing=S.runCalls.length-known.length,total=known.reduce((sum,c)=>sum+cost(c),0);
+  const byChain=[...new Set(S.runCalls.map(c=>c.chainId))].map(chainId=>{const calls=S.runCalls.filter(c=>c.chainId===chainId),priced=calls.filter(c=>cost(c)!=null);
+    return `<span class="chip">${esc(chainId)} · ${priced.length?money(priced.reduce((s,c)=>s+cost(c),0)):'待计价'} · ${calls.length} 次</span>`;}).join(' ');
+  const rows=S.runCalls.map((c,index)=>{const d=S.detail.get(c.callId),messages=d?.requestJson;
+    const scope=c.commandId?`命令 ${c.commandId.slice(-8)}`:'开局 / 后台无命令调用';
+    return `<details class="prompt-call" ${index===0?'open':''}><summary><strong>${esc(c.chainId)}</strong> · ${esc(c.usage?.model||'模型未采集')} · ${money(cost(c))} · ${esc(fmtTime(c.startedAt||c.createdAt))} · ${esc(c.status)}</summary>
+      <p class="note">${esc(scope)} · ${sec(c.latencyMs)} · 输入 ${c.usage?.inputTokens??'未采集'} / 输出 ${c.usage?.outputTokens??'未采集'} Token</p>
+      <h3>实际发送给模型的 messages</h3>
+      ${Array.isArray(messages)?messages.map((m,i)=>`<div class="raw-block"><b>${i+1}. ${esc(m.role||'unknown')}</b>${pre(m.content??m)}</div>`).join(''):pre(messages??'未保存实际 prompt；只有开启 staging Story Test Mode 的调用才会记录')}
+      <h3>模型原始输出</h3>${pre(d?.outputText??'未保存模型原文')}
+      <h3>本次调用与费用</h3>${pre({callId:c.callId,chainId:c.chainId,commandId:c.commandId,status:c.status,latencyMs:c.latencyMs,usage:c.usage,cost:c.cost,errorCode:c.errorCode,createdAt:c.createdAt})}
+    </details>`;}).join('');
+  return `<p class="note">本局共 ${S.runCalls.length} 次真实模型调用；已计价 ${known.length} 次合计 ${money(total)}${missing?`，${missing} 次待计价`:''}。下方每条都是当时数据库保存的实际 request_json / output_text。</p><div class="row">${byChain}</div>${rows}`;
+}
+function renderPrompts(){const nodes=S.catalog?.nodes||[];return `<div class="bento">
+  ${tile('真实执行 · 这局实际发给模型的内容',renderActualPromptTrace(),'c12')}
+  ${tile('模板装配预览',`<div class="console-form">${button('读取提示词目录','catalog',S.busy)}<label>链路<select id="prompt-node">${option('','选择链路',S.promptNode)}${nodes.map(n=>option(n.nodeId,n.label,S.promptNode)).join('')}</select></label><p class="note">这里仅用于查看当前代码如何组装模板，不代表某次历史调用。上面的“真实执行”才是实际发送内容。</p><label>链路输入（JSON）<textarea id="prompt-input" rows="12">${esc(S.promptInput)}</textarea></label>${button('拼装预览 · 不调用模型','preview',S.busy||!S.promptNode)}</div>`,'c4')}
+  ${tile('模板预览 messages',S.promptPreview?pre(S.promptPreview):'<p class="note">未执行模型、不保存 Runtime，只展示当前模板组装结果。</p>','c8')}
+</div>`;}
 async function listAll(op,params={}){const rows=[];let cursor;do{const page=await api(op,params,undefined,cursor?{cursor}:{});rows.push(...items(page));cursor=page.pageInfo?.nextCursor;if(!page.pageInfo?.hasMore)break;}while(cursor);return rows;}
 async function boot(){S.costTree=null;S.costTreeError='';S.stats=null;S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');S.runs=items(await api('evalListConsoleRuns'));const prices=await api('evalGetModelPricing');S.prices=prices.models;S.pricing=prices;if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
 async function versions(requireRequestedVersion=false){const world=S.worlds.find(w=>w.worldId===S.worldId);if(S.version==='draft'&&world?.publishedWorldVersionId)S.version=world.publishedWorldVersionId;S.versions=await listAll('evalListWorldVersions',{worldId:S.worldId});if(S.version==='draft'){const published=S.versions.find(v=>v.current&&v.publicationStatus==='published');if(published)S.version=published.worldVersionId;}if(S.version!=='draft'&&!S.versions.some(v=>v.worldVersionId===S.version)){if(requireRequestedVersion)throw Error('指定的作品版本不可读取，请从创作端重新进入。');S.version='draft';}S.startOptions=[];}
@@ -186,19 +209,20 @@ async function prepare(){const world=S.worlds.find(w=>w.worldId===S.worldId);if(
 async function poll(read,done){const deadline=Date.now()+120000;while(true){const value=await read();if(done(value))return value;if(Date.now()>deadline)throw Error('仍在处理中，请点击刷新或继续原操作；不会创建重复请求。');await pause(1800);}}
 async function start(){const person=S.startOptions.find(c=>c.bindingId===S.playable);if(!person||!S.initial)throw Error('请选择扮演人物与首位 AI');
   S.notice='正在创建测试局…';S.openingNotice='';render();journal.startSlot ||= `start:${crypto.randomUUID()}`;saveJournal();const value=await mutation(journal.startSlot,'evalCreateRun',{worldId:S.worldId},{worldVersionId:S.version,identitySelection:{sourceType:'playable_character',characterVersionId:person.characterVersionId,worldCastBindingId:person.bindingId},initialLinkedCharacterId:S.initial});
-  observation++;S.runId=value.runId;S.costTree=null;S.costTreeError='';S.current={};S.currentErrors={};S.steps=[];S.selected=0;S.calls.clear();S.detail.clear();S.evidence.clear();S.notice='测试局已创建，正在读取开局进度。';setRunUrl();render();await mutation(`session:${S.runId}`,'evalRecordConsoleStep',{runId:S.runId},{});delete journal.startSlot;saveJournal();S.startOptions=[];setRunUrl();await loadRun();S.runs=items(await api('evalListConsoleRuns'));S.notice='测试局已创建，开局进度显示在下方。';}
+  observation++;S.runId=value.runId;S.costTree=null;S.costTreeError='';S.current={};S.currentErrors={};S.steps=[];S.selected=0;S.calls.clear();S.detail.clear();S.evidence.clear();S.runCalls=[];S.traceRunId='';S.traceError='';S.notice='测试局已创建，正在读取开局进度。';setRunUrl();render();await mutation(`session:${S.runId}`,'evalRecordConsoleStep',{runId:S.runId},{});delete journal.startSlot;saveJournal();S.startOptions=[];setRunUrl();await loadRun();S.runs=items(await api('evalListConsoleRuns'));S.notice='测试局已创建，开局进度显示在下方。';}
 function setRunUrl(){const url=new URL(location.href);url.searchParams.set('runId',S.runId);url.searchParams.set('worldId',S.worldId);url.searchParams.set('version',S.version);history.replaceState(null,'',url);}
 async function loadCurrent(){
   const runId=S.runId,auth=S.auth,params={runId};
-  const reads=[['run','开局状态','evalGetRun'],['chapter','章节 / 天赋','evalGetRunChapter'],['cast','人物','evalListRunCast'],['feed','信息流','evalListRunFeed'],['activities','活动','evalListActivityInstances'],['attempts','活动邀请','evalListActivityAttempts']];
-  const values=await Promise.allSettled(reads.map(([, ,op])=>api(op,params)));
+  const reads=[['run','开局状态','evalGetRun',true],['chapter','章节 / 天赋','evalGetRunChapter',false],['cast','人物','evalListRunCast',true],['feed','信息流','evalListRunFeed',true],['activities','活动','evalListActivityInstances',true],['attempts','活动邀请','evalListActivityAttempts',true]];
+  const values=await Promise.allSettled(reads.map(([, ,op,validateResponse])=>api(op,params,undefined,{},undefined,validateResponse)));
   if(S.runId!==runId||S.auth!==auth)return;
   const current={},errors={};
   values.forEach((value,i)=>{const [name,label]=reads[i];if(value.status==='fulfilled')current[name]=value.value;else{const message=value.reason?.message;errors[name]=`${label}：${message==='Failed to fetch'?'网络连接中断，未收到响应':message||'读取失败'}`;}});
   const previousPhase=S.current.chapter?.mainline?.phase;S.current=current;S.currentErrors=errors;syncOpeningAction(previousPhase);
 }
-async function loadRun(){observation++;S.costTree=null;S.costTreeError='';S.calls.clear();S.detail.clear();S.evidence.clear();await loadCurrent();S.steps=items(await api('evalListConsoleSteps',{runId:S.runId}));S.selected=S.steps.at(-1)?.stepNo||0;
-  const historySteps=S.steps.filter(s=>s.commandId);for(let i=0;i<historySteps.length;i+=4)await Promise.all(historySteps.slice(i,i+4).map(step=>loadEvidence(step,{full:step.stepNo===S.selected})));
+async function loadRun(){observation++;S.costTree=null;S.costTreeError='';S.calls.clear();S.detail.clear();S.evidence.clear();S.runCalls=[];S.traceRunId='';S.traceError='';await loadCurrent();S.steps=items(await api('evalListConsoleSteps',{runId:S.runId}));S.selected=S.steps.at(-1)?.stepNo||0;
+  const historySteps=S.steps.filter(s=>s.commandId);const evidenceErrors=[];for(let i=0;i<historySteps.length;i+=4){const batch=await Promise.allSettled(historySteps.slice(i,i+4).map(step=>loadEvidence(step,{full:step.stepNo===S.selected})));for(const result of batch)if(result.status==='rejected')evidenceErrors.push(result.reason?.message||'步骤证据读取失败');}
+  if(evidenceErrors.length)S.currentErrors.evidence=`操作证据：${evidenceErrors[0]}${evidenceErrors.length>1?`（另有 ${evidenceErrors.length-1} 项）`:''}`;
   await loadCostTree();setRunUrl();observeOpening();}
 async function playerRecords(step,outcome){
   if(!outcome)return [];
@@ -267,7 +291,7 @@ async function observeOpening(){
   try{
     while(current()&&Date.now()<deadline){
       await pause(2500);if(!current())return;if(S.busy)continue;
-      const [run,chapter]=await Promise.all([api('evalGetRun',{runId}),api('evalGetRunChapter',{runId})]);
+      const [run,chapter]=await Promise.all([api('evalGetRun',{runId}),api('evalGetRunChapter',{runId},undefined,{},undefined,false)]);
       if(!current())return;
       const previousPhase=S.current.chapter?.mainline?.phase;S.current.run=run;S.current.chapter=chapter;delete S.currentErrors.run;delete S.currentErrors.chapter;syncOpeningAction(previousPhase);render();
       if(openingStage()!=='preparing'){await loadCostTree();if(current())render();return;}
@@ -282,6 +306,25 @@ async function observeBackground(runId,commandId){const generation=observation;c
     if(generation===observation&&!S.busy){S.notice='后台观察结束：连续 15 秒无新调用，或已达到 120 秒上限。可手动刷新。';render();}
   }catch(e){if(generation===observation&&!S.busy){S.notice=`后台观察中止：${e.message}`;render();}}
 }
+async function loadRunTrace(force=false){
+  if(!S.runId)return;
+  if(!force&&S.traceRunId===S.runId&&!S.traceError)return;
+  const runId=S.runId,auth=S.auth;S.traceError='';
+  try{
+    const page=await api('evalListStoryEngineCalls',{runId},undefined,{},undefined,false);
+    if(S.runId!==runId||S.auth!==auth)return;
+    S.runCalls=items(page);S.traceRunId=runId;
+    for(let i=0;i<S.runCalls.length;i+=8){
+      const batch=S.runCalls.slice(i,i+8).filter(c=>!S.detail.has(c.callId));
+      const values=await Promise.allSettled(batch.map(c=>api('evalGetStoryEngineCall',{runId,callId:c.callId})));
+      if(S.runId!==runId||S.auth!==auth)return;
+      values.forEach((value,index)=>{if(value.status==='fulfilled')S.detail.set(batch[index].callId,value.value);});
+      render();
+    }
+  }catch(error){
+    if(S.runId===runId&&S.auth===auth){S.runCalls=[];S.traceRunId=runId;S.traceError=`实际调用读取失败：${error.message}`;}
+  }
+}
 async function preview(){const node=S.catalog.nodes.find(n=>n.nodeId===S.promptNode);if(!node)throw Error('请选择链路');const input=JSON.parse(S.promptInput||'{}');
   S.promptPreview=await api('evalPreviewPromptRequest',{}, {nodeId:node.nodeId,input});
 }
@@ -292,7 +335,7 @@ document.addEventListener('submit',e=>{if(e.target.id==='login'){e.preventDefaul
 document.addEventListener('click',e=>{const el=e.target.closest('button,[data-call]');if(!el)return;
   if(el.id==='theme'){const dark=document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.dataset.theme=dark?'light':'dark';write(localStorage,'slice-console-theme',document.documentElement.dataset.theme);return;}
   if(el.id==='open-prices')return prices();if(el.id==='dr-close')return closeDrawer();
-  if(el.dataset.view){S.view=el.dataset.view;if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});render();return;}
+  if(el.dataset.view){S.view=el.dataset.view;if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});if(S.view==='prompts'&&S.runId&&S.traceRunId!==S.runId)return task(()=>loadRunTrace());render();return;}
   if(el.dataset.sub){S.sub=el.dataset.sub;render();return;}
   if(el.dataset.step){if(S.busy)return;const fromCostTree=!!el.closest('.cost-tree');S.view='play';S.selected=Number(el.dataset.step);const step=S.steps.find(s=>s.stepNo===S.selected);const ready=step?.commandId?task(()=>loadEvidence(step)):Promise.resolve(render());if(fromCostTree)ready.then(()=>$('#step-result')?.scrollIntoView({behavior:'smooth',block:'center'}));return;}
   if(el.dataset.call){const c=[...S.calls.values()].flat().find(c=>c.callId===el.dataset.call),d=S.detail.get(el.dataset.call);drawer('模型调用',`${pre({chain:c.chainId,usage:c.usage,startedAt:c.startedAt,completedAt:c.completedAt,latencyMs:c.latencyMs,cost:c.cost,errorCode:c.errorCode})}<h3>实际 messages</h3>${pre(d?.requestJson??'未开启测试模式或没有保存原文')}<h3>模型原文</h3>${pre(d?.outputText??'未开启测试模式或没有保存原文')}`);return;}
@@ -302,8 +345,9 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
     if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
-    if(action==='refresh'){S.runs=items(await api('evalListConsoleRuns'));if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId)return loadRun();return boot();}
+    if(action==='refresh'){S.runs=items(await api('evalListConsoleRuns'));if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId){await loadRun();if(S.view==='prompts')await loadRunTrace(true);return;}return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
+    if(action==='trace')await loadRunTrace(true);
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
 });
 $('#scrim').addEventListener('click',closeDrawer);document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();if(e.key==='Enter'&&e.target.matches('[data-call]'))e.target.click();});
@@ -311,10 +355,10 @@ const inputs={input:'input',target:'target',post:'post',choice:'choice',activity
 document.addEventListener('input',e=>{if(inputs[e.target.id])S[inputs[e.target.id]]=e.target.value;});
 document.addEventListener('change',e=>{const el=e.target;if(inputs[el.id])S[inputs[el.id]]=el.value;
   if(el.id==='action'){S.action=el.value;render();}if(el.id==='invite')S.invite=[...el.selectedOptions].map(o=>o.value);
-  if(el.id==='world')task(async()=>{S.costTree=null;S.costTreeError='';S.worldId=el.value;S.version='draft';S.stats=null;S.runId='';S.steps=[];S.current={};observation++;await versions();});
+  if(el.id==='world')task(async()=>{S.costTree=null;S.costTreeError='';S.worldId=el.value;S.version='draft';S.stats=null;S.runId='';S.steps=[];S.current={};S.runCalls=[];S.traceRunId='';S.traceError='';observation++;await versions();});
   if(el.id==='version'){S.version=el.value;S.startOptions=[];render();}
   if(el.id==='run-pick'&&journal.action&&el.value!==journal.action.runId){S.error='请先完成上次提交';render();return;}
-  if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;S.costTree=null;S.costTreeError='';S.costExpanded=new Set(['0']);const run=S.runs.find(r=>r.runId===S.runId);if(run){S.stats=null;S.worldId=run.worldId;await versions();await loadRun();}});
+  if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;S.costTree=null;S.costTreeError='';S.costExpanded=new Set(['0']);S.runCalls=[];S.traceRunId='';S.traceError='';const run=S.runs.find(r=>r.runId===S.runId);if(run){S.stats=null;S.worldId=run.worldId;await versions();await loadRun();if(S.view==='prompts')await loadRunTrace();}});
   if(el.id==='playable'){S.playable=el.value;S.initial=(S.startOptions.find(c=>c.bindingId!==S.playable&&c.initialLinkedCharacterCandidate)||S.startOptions.find(c=>c.bindingId!==S.playable))?.characterId||'';render();}
   if(el.id==='initial')S.initial=el.value;
   if(el.id==='prompt-node'){S.promptNode=el.value;const node=S.catalog.nodes.find(n=>n.nodeId===el.value);S.promptInput=json(node?.prompt.input||{});render();}
