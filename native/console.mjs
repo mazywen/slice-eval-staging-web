@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=a60b064f0312';
-import {validate} from '../client-api/creator-client.mjs?v=a60b064f0312';
-import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=a60b064f0312';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=8795725105f0';
+import {validate} from '../client-api/creator-client.mjs?v=8795725105f0';
+import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=8795725105f0';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -43,6 +43,28 @@ const sumCosts=calls=>{const values=calls.map(cost);return !values.length||value
 const fmtTime=value=>{if(!value)return '时间未采集';const date=new Date(value);if(!Number.isFinite(date.getTime()))return String(value);return date.toLocaleString('zh-CN',{hour12:false});};
 const runMeta=()=>S.runs.find(row=>row.runId===S.runId)||null;
 const runReadOnly=()=>runMeta()?.readOnly===true;
+const stepCallKey=step=>step?.commandId||`step:${step?.stepNo??0}`;
+function assignRunCallsToSteps(){
+  const ordered=[...S.steps].sort((a,b)=>Date.parse(a.createdAt)-Date.parse(b.createdAt)||a.stepNo-b.stepNo);
+  const byCommand=new Map(ordered.filter(s=>s.commandId).map(s=>[s.commandId,s]));
+  for(const call of S.runCalls){
+    let step=call.commandId?byCommand.get(call.commandId):null;
+    if(!step){
+      const time=Date.parse(call.startedAt||call.createdAt||'');
+      if(Number.isFinite(time))for(const candidate of ordered){
+        const started=Date.parse(candidate.createdAt||'');
+        if(Number.isFinite(started)&&started<=time)step=candidate;else if(Number.isFinite(started)&&started>time)break;
+      }
+      step ||= ordered[0];
+    }
+    if(!step)continue;
+    const key=stepCallKey(step),current=S.calls.get(key)||[];
+    if(!current.some(row=>row.callId===call.callId)){
+      current.push(call);current.sort((a,b)=>Date.parse(a.startedAt||a.createdAt)-Date.parse(b.startedAt||b.createdAt));
+      S.calls.set(key,current);
+    }
+  }
+}
 function render(){
   if(document.querySelector('.cost-tree'))S.costExpanded=new Set([...document.querySelectorAll('[data-cost-node][open]')].map(el=>el.dataset.costNode));
   const focused=document.activeElement,focusId=focused?.id,selection=[focused?.selectionStart,focused?.selectionEnd];
@@ -56,7 +78,7 @@ function render(){
 }
 function launchPanel(){const current=runMeta();return tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>后端全部开局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${fmtTime(r.createdAt)} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${current?`开局时间：${fmtTime(current.createdAt)} · ${current.readOnly?'外部入口创建，只读观察':'中台可操作'} · ${current.hasConsoleSteps?'含中台登记步骤':'流程直接读取后端命令'}`:esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
 function renderPlay(){
-  const step=S.steps.find(s=>s.stepNo===S.selected),calls=S.calls.get(step?.commandId)||[],e=S.evidence.get(step?.commandId)||{};
+  const step=S.steps.find(s=>s.stepNo===S.selected),calls=S.calls.get(stepCallKey(step))||[],e=S.evidence.get(step?.commandId)||{};
   const kpi=(name,value,note)=>`<div class="tile c3 kpi"><div class="l">${name}</div><div class="v">${value}</div><div class="d">${note}</div></div>`;
   return `<div class="bento">${launchPanel()}${S.runId?`${initialOutlinePanel()}${openingPanel()}${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用；${calls.filter(c=>c.cost?.cacheEstimated).length} 次缺缓存明细，按未命中计价`)}${kpi('本局累计成本',money(S.costTree?.tree.cny),S.costTree?costNote(S.costTree.tree):'本局成本尚未读取')}${kpi('本局累计等待',sec(S.costTree?.tree.waitMs),'命令受理到完成')}
     ${tile('玩家看到的',`<div id="step-result">${playerOutput(e.outcome,step,e.playerRecords)}</div>`,'c5')}${tile('提交下一步',inputPanel(),'c4')}${tile('步骤记录',S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}"><b>${s.stepNo}. ${esc(actions.find(([id])=>id===s.actionType)?.[1]|| (s.actionType==='create_run'?'开局':s.actionType))}</b><br><small>${esc(fmtTime(s.createdAt))} · ${esc(s.inputText||s.commandId||'开局')}</small></button>`).join(''),'c3 r2')}
@@ -135,7 +157,7 @@ function diffPanel(e){
   const world=!d?missing:d.world.length?d.world.map(r=>`<div class="world-item"><span class="chip">${r.kind}</span> ${esc(r.after?.text||r.before?.text||r.key)}</div>`).join(''):'<p class="note">无变化</p>';
   return `<div class="state"><div><h3>关系三轴 · 正式结算</h3>${relationships}</div><div><h3>本章目标</h3>${!d?missing:d.goals.length?pre(d.goals):'<p class="note">无变化</p>'}</div><div><h3>世界现状</h3>${world}</div></div>`;
 }
-function renderTimeline(){return `<div class="bento">${S.steps.map(s=>tile(`第 ${s.stepNo} 步 · ${esc(s.actionType)}`,`<p class="note">${esc(fmtTime(s.createdAt))}</p><p>${esc(s.inputText)}</p>${callsTable(S.calls.get(s.commandId)||[],S.evidence.get(s.commandId)?.command)}`,'c12')).join('')||'<p class="note">先开一局。</p>'}</div>`;}
+function renderTimeline(){return `<div class="bento">${S.steps.map(s=>tile(`第 ${s.stepNo} 步 · ${esc(s.actionType)}`,`<p class="note">${esc(fmtTime(s.createdAt))}</p><p>${esc(s.inputText)}</p>${callsTable(S.calls.get(stepCallKey(s))||[],S.evidence.get(s.commandId)?.command)}`,'c12')).join('')||'<p class="note">先开一局。</p>'}</div>`;}
 function costNote(c){return !c?'费用未采集':`${c.pricedCalls} / ${c.totalCalls} 次已计价${c.missingCalls?`；${c.missingCalls} 次缺用量、时间或单价，未计入`:''}${c.cacheEstimatedCalls?`；${c.cacheEstimatedCalls} 次缺缓存明细，按未命中计价`:''}`;}
 function costCard(label,c){return tile(label,`<div class="kpi"><div class="v">${money(c?.cny)}</div><p class="note">${esc(costNote(c))}${c?.missingCalls?'；此金额仅为已计价小计':''}</p></div>`,'c4');}
 function renderCostTree(){
@@ -223,6 +245,8 @@ async function loadCurrent(){
 async function loadRun(){observation++;S.costTree=null;S.costTreeError='';S.calls.clear();S.detail.clear();S.evidence.clear();S.runCalls=[];S.traceRunId='';S.traceError='';await loadCurrent();S.steps=items(await api('evalListConsoleSteps',{runId:S.runId}));S.selected=S.steps.at(-1)?.stepNo||0;
   const historySteps=S.steps.filter(s=>s.commandId);const evidenceErrors=[];for(let i=0;i<historySteps.length;i+=4){const batch=await Promise.allSettled(historySteps.slice(i,i+4).map(step=>loadEvidence(step,{full:step.stepNo===S.selected})));for(const result of batch)if(result.status==='rejected')evidenceErrors.push(result.reason?.message||'步骤证据读取失败');}
   if(evidenceErrors.length)S.currentErrors.evidence=`操作证据：${evidenceErrors[0]}${evidenceErrors.length>1?`（另有 ${evidenceErrors.length-1} 项）`:''}`;
+  else delete S.currentErrors.evidence;
+  try{await loadRunCallMetadata();}catch(error){S.currentErrors.calls=`整局调用：${error.message}`;}
   await loadCostTree();setRunUrl();observeOpening();}
 async function playerRecords(step,outcome){
   if(!outcome)return [];
@@ -236,12 +260,12 @@ async function playerRecords(step,outcome){
   }
   return [];
 }
-async function loadEvidence(step,{full=true}={}){const runId=S.runId;const params={runId,commandId:step.commandId};const e=S.evidence.get(step.commandId)||{};e.command=await api('evalGetWorldCommand',params);const calls=items(await api('evalListStoryEngineCalls',{runId},undefined,{commandId:step.commandId}));if(S.runId!==runId)return;S.calls.set(step.commandId,calls);
+async function loadEvidence(step,{full=true}={}){const runId=S.runId;const params={runId,commandId:step.commandId};const e=S.evidence.get(step.commandId)||{};e.command=await api('evalGetWorldCommand',params);const calls=items(await api('evalListStoryEngineCalls',{runId},undefined,{commandId:step.commandId}));if(S.runId!==runId)return;S.calls.set(stepCallKey(step),calls);
   if(full&&(e.command.status==='applied'||e.command.status==='rejected')){try{e.outcome=await api('evalGetOutcomeByCommand',params);}catch(err){if(err.status!==404)throw err;}}
   if(full&&e.outcome)e.playerRecords=await playerRecords(step,e.outcome);
   for(const [key,revision]of [['before',step.beforeRevision],['after',step.afterRevision]])if(full&&revision!=null){try{e[key]=await api('evalGetStoryEngineSnapshot',{runId:S.runId},undefined,{revision,branchId:step.branchId});}catch(err){if(err.status!==404)throw err;}}
   if(S.runId!==runId)return;
-  S.evidence.set(step.commandId,e);for(const c of full?S.calls.get(step.commandId):[])if(!S.detail.has(c.callId))S.detail.set(c.callId,await api('evalGetStoryEngineCall',{runId:S.runId,callId:c.callId}));
+  S.evidence.set(step.commandId,e);for(const c of full?(S.calls.get(stepCallKey(step))||[]):[])if(!S.detail.has(c.callId))S.detail.set(c.callId,await api('evalGetStoryEngineCall',{runId:S.runId,callId:c.callId}));
 }
 async function submit(){
   if(runReadOnly())throw Error('外部入口创建的 Run 在输出中台只读，请回原入口继续操作。');
@@ -306,14 +330,20 @@ async function observeBackground(runId,commandId){const generation=observation;c
     if(generation===observation&&!S.busy){S.notice='后台观察结束：连续 15 秒无新调用，或已达到 120 秒上限。可手动刷新。';render();}
   }catch(e){if(generation===observation&&!S.busy){S.notice=`后台观察中止：${e.message}`;render();}}
 }
+async function loadRunCallMetadata(){
+  if(!S.runId)return;
+  const runId=S.runId,auth=S.auth;
+  const page=await api('evalListStoryEngineCalls',{runId},undefined,{},undefined,false);
+  if(S.runId!==runId||S.auth!==auth)return;
+  S.runCalls=items(page);assignRunCallsToSteps();
+}
 async function loadRunTrace(force=false){
   if(!S.runId)return;
   if(!force&&S.traceRunId===S.runId&&!S.traceError)return;
   const runId=S.runId,auth=S.auth;S.traceError='';
   try{
-    const page=await api('evalListStoryEngineCalls',{runId},undefined,{},undefined,false);
+    if(!S.runCalls.length)await loadRunCallMetadata();
     if(S.runId!==runId||S.auth!==auth)return;
-    S.runCalls=items(page);S.traceRunId=runId;
     for(let i=0;i<S.runCalls.length;i+=8){
       const batch=S.runCalls.slice(i,i+8).filter(c=>!S.detail.has(c.callId));
       const values=await Promise.allSettled(batch.map(c=>api('evalGetStoryEngineCall',{runId,callId:c.callId})));
@@ -321,6 +351,7 @@ async function loadRunTrace(force=false){
       values.forEach((value,index)=>{if(value.status==='fulfilled')S.detail.set(batch[index].callId,value.value);});
       render();
     }
+    if(S.runId===runId&&S.auth===auth)S.traceRunId=runId;
   }catch(error){
     if(S.runId===runId&&S.auth===auth){S.runCalls=[];S.traceRunId=runId;S.traceError=`实际调用读取失败：${error.message}`;}
   }
