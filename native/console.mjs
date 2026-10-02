@@ -1,6 +1,6 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=441cfa50c7c6';
-import {validate} from '../client-api/creator-client.mjs?v=441cfa50c7c6';
-import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=441cfa50c7c6';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=5d8ffcbd0a54';
+import {validate} from '../client-api/creator-client.mjs?v=5d8ffcbd0a54';
+import {callLane,waitMs,stateDiff,runUnitStats} from './console-metrics.mjs?v=5d8ffcbd0a54';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -40,6 +40,9 @@ const money=v=>v==null?'待计价':`¥${v.toFixed(6)}`,sec=v=>v==null?'未采集
 const option=(value,label,selected)=>`<option value="${esc(value)}" ${value===selected?'selected':''}>${esc(label)}</option>`;
 const cost=c=>c.cost?.cny??null;
 const sumCosts=calls=>{const values=calls.map(cost);return !values.length||values.some(v=>v==null)?null:values.reduce((a,b)=>a+b,0);};
+const fmtTime=value=>{if(!value)return '时间未采集';const date=new Date(value);if(!Number.isFinite(date.getTime()))return String(value);return date.toLocaleString('zh-CN',{hour12:false});};
+const runMeta=()=>S.runs.find(row=>row.runId===S.runId)||null;
+const runReadOnly=()=>runMeta()?.readOnly===true;
 function render(){
   if(document.querySelector('.cost-tree'))S.costExpanded=new Set([...document.querySelectorAll('[data-cost-node][open]')].map(el=>el.dataset.costNode));
   const focused=document.activeElement,focusId=focused?.id,selection=[focused?.selectionStart,focused?.selectionEnd];
@@ -51,12 +54,12 @@ function render(){
   $('#main').innerHTML=`${S.error?`<div class="notice error" role="alert">${esc(S.error)}</div>`:''}${S.notice?`<div class="notice" role="status">${esc(S.notice)}</div>`:''}${Object.keys(S.currentErrors).length?`<div class="notice error" role="status">当前读取失败：${esc(Object.values(S.currentErrors).join('；'))}。请点击刷新重新读取。</div>`:''}<div class="head"><div><h1>${{play:'逐步试玩',timeline:'这一局的时间线',flow:'流程与成本',prompts:'提示词'}[S.view]}</h1><p>每次由你提交一步，查看真实结果。回溯与切换尝试暂未接入。</p></div><div class="row">${button('刷新','refresh',S.busy)}${button('退出登录','logout',S.busy)}</div></div>${S.view==='play'?renderPlay():S.view==='timeline'?renderTimeline():S.view==='flow'?renderStats():renderPrompts()}`;
   if(focusId){const next=document.getElementById(focusId);if(next){next.focus({preventScroll:true});try{next.setSelectionRange(...selection);}catch{}}}
 }
-function launchPanel(){return tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>已有测试局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
+function launchPanel(){const current=runMeta();return tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>后端全部开局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${fmtTime(r.createdAt)} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${current?`开局时间：${fmtTime(current.createdAt)} · ${current.readOnly?'外部入口创建，只读观察':'中台可操作'} · ${current.hasConsoleSteps?'含中台登记步骤':'流程直接读取后端命令'}`:esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
 function renderPlay(){
   const step=S.steps.find(s=>s.stepNo===S.selected),calls=S.calls.get(step?.commandId)||[],e=S.evidence.get(step?.commandId)||{};
   const kpi=(name,value,note)=>`<div class="tile c3 kpi"><div class="l">${name}</div><div class="v">${value}</div><div class="d">${note}</div></div>`;
-  return `<div class="bento">${launchPanel()}${S.runId?`${openingPanel()}${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用；${calls.filter(c=>c.cost?.cacheEstimated).length} 次缺缓存明细，按未命中计价`)}${kpi('本局累计成本',money(S.costTree?.tree.cny),S.costTree?costNote(S.costTree.tree):'本局成本尚未读取')}${kpi('本局累计等待',sec(S.costTree?.tree.waitMs),'命令受理到完成')}
-    ${tile('玩家看到的',`<div id="step-result">${playerOutput(e.outcome,step,e.playerRecords)}</div>`,'c5')}${tile('提交下一步',inputPanel(),'c4')}${tile('步骤记录',S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}"><b>${s.stepNo}. ${esc(actions.find(([id])=>id===s.actionType)?.[1]|| (s.actionType==='create_run'?'开局':s.actionType))}</b><br><small>${esc(s.inputText||s.commandId||'开局')}</small></button>`).join(''),'c3 r2')}
+  return `<div class="bento">${launchPanel()}${S.runId?`${initialOutlinePanel()}${openingPanel()}${kpi('这一步 · 玩家等待',sec(waitMs(e.command)),e.command?.status||'开局')}${kpi('这一步 · 成本',money(sumCosts(calls)),`${calls.length} 次调用；${calls.filter(c=>c.cost?.cacheEstimated).length} 次缺缓存明细，按未命中计价`)}${kpi('本局累计成本',money(S.costTree?.tree.cny),S.costTree?costNote(S.costTree.tree):'本局成本尚未读取')}${kpi('本局累计等待',sec(S.costTree?.tree.waitMs),'命令受理到完成')}
+    ${tile('玩家看到的',`<div id="step-result">${playerOutput(e.outcome,step,e.playerRecords)}</div>`,'c5')}${tile('提交下一步',inputPanel(),'c4')}${tile('步骤记录',S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}"><b>${s.stepNo}. ${esc(actions.find(([id])=>id===s.actionType)?.[1]|| (s.actionType==='create_run'?'开局':s.actionType))}</b><br><small>${esc(fmtTime(s.createdAt))} · ${esc(s.inputText||s.commandId||'开局')}</small></button>`).join(''),'c3 r2')}
     ${tile('模型输出',resultPanel(calls,e),'c5',`<div class="subtabs">${[['raw','原文'],['data','解析数据'],['judge','判定']].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${S.sub===v}">${l}</button>`).join('')}</div>`)}
     ${tile('这一步的调用',callsTable(calls,e.command),'c4')}${tile('状态变化',diffPanel(e),'c12')}${tile('本局成本树',renderCostTree(),'c12')}
     ${tile('当前玩家读接口',`<p class="note">当前有效分支的最新画面；历史步骤结果以上方 Outcome 为准。</p>${Object.entries(S.current).filter(([k])=>['run','chapter','feed','messages','turns','replies','activities','attempts'].includes(k)).map(([k,v])=>`<details><summary>${esc({run:'开局 / 天赋',chapter:'章节 / VN',feed:'信息流',messages:'私聊',turns:'活动回合',replies:'评论',activities:'活动',attempts:'活动邀请'}[k])}</summary>${pre(v)}</details>`).join('')}`,'c12')}`:''}</div>`;
@@ -79,17 +82,23 @@ function openingStage(){
   if(!phase||phase==='planning')return 'preparing';
   return 'ready';
 }
+function initialOutlinePanel(){
+  const outline=runMeta()?.initialOutline;
+  if(!outline)return tile('初始章节规划','<p class="note">这局尚未生成整体走向，或旧开局没有保存可读取的初始规划。</p>','c12');
+  const stages=Array.isArray(outline.stages)?outline.stages:[];
+  return tile('初始章节规划',`<p class="note">这是开局后台第一次生成并保存的整体走向，不会随之后的偏离修订覆盖。</p>${outline.synopsis?`<details open><summary>整篇故事构思</summary><p style="white-space:pre-wrap">${esc(outline.synopsis)}</p></details>`:''}<div class="state">${stages.map(row=>`<div class="screen"><h3>${esc(row.title||'阶段')} · 第 ${esc(row.start)}–${esc(row.end)} 章</h3><p><strong>目标：</strong>${esc(row.goal||'')}</p><p><strong>冲突：</strong>${esc(row.conflict||'')}</p><p><strong>阶段转折：</strong>${esc(row.turn||'')}</p></div>`).join('')||'<p class="note">章节阶段尚未采集。</p>'}</div>`,'c12');
+}
 function openingPanel(){
-  const stage=openingStage(),chapter=S.current.chapter,selected=chapter?.mainline?.selectedTalent;
+  const stage=openingStage(),chapter=S.current.chapter,selected=chapter?.mainline?.selectedTalent,readOnly=runReadOnly();
   if(stage==='failed')return tile('开局生成失败','<p class="error">后台未能完成本局开局。请查看错误记录后重试，不会自动新建另一局。</p>','c12');
   if(stage==='unavailable')return tile('开局状态暂未读到','<p class="note">请点击刷新，继续读取当前测试局。</p>','c12');
   if(stage==='preparing')return tile(selected?'正在生成开场与第一章':'正在生成三张天赋',`<p role="status">${esc(S.openingNotice||(selected?'天赋已经确认，正在等待开场和首章。':'测试局已创建，正在等后台返回天赋。'))}</p><p class="note">本页会自动读取进度，不会自动选择天赋或提交下一步。</p>`,'c12');
-  if(stage==='talents')return tile('选择开局天赋',`<p class="note">开局已准备好。选择一张天赋并确认，随后生成开场与第一章。</p><div class="opening-talents">${talentChoices().map(c=>`<article class="opening-talent"><h3>${esc(c.title)}</h3><p>${esc(c.description)}</p><p class="note">${esc(c.overall)}</p>${c.skills.map(skill=>`<p><strong>${esc(skill.name)} ${Number(skill.value)} / 100</strong> · ${esc(skill.talentName)}<br><small>${esc(skill.narrativeRule)}</small></p>`).join('')}<button class="btn ${S.choice===c.choiceId?'primary':''}" data-talent="${esc(c.choiceId)}" aria-pressed="${S.choice===c.choiceId}" ${S.busy||journal.action?'disabled':''}>${S.choice===c.choiceId?'已选择':'选择这张'}</button></article>`).join('')}</div>${button(journal.action?'继续确认原天赋':'确认天赋，生成开场','confirm-opening',S.busy||(!journal.action&&!S.choice))}`,'c12');
+  if(stage==='talents')return tile('选择开局天赋',`<p class="note">${readOnly?'这是其他入口创建的局；中台只展示服务端返回的天赋，不代替原入口确认。':'开局已准备好。选择一张天赋并确认，随后生成开场与第一章。'}</p><div class="opening-talents">${talentChoices().map(c=>`<article class="opening-talent"><h3>${esc(c.title)}</h3><p>${esc(c.description)}</p><p class="note">${esc(c.overall)}</p>${c.skills.map(skill=>`<p><strong>${esc(skill.name)} ${Number(skill.value)} / 100</strong> · ${esc(skill.talentName)}<br><small>${esc(skill.narrativeRule)}</small></p>`).join('')}${readOnly?'':`<button class="btn ${S.choice===c.choiceId?'primary':''}" data-talent="${esc(c.choiceId)}" aria-pressed="${S.choice===c.choiceId}" ${S.busy||journal.action?'disabled':''}>${S.choice===c.choiceId?'已选择':'选择这张'}</button>`}</article>`).join('')}</div>${readOnly?'':button(journal.action?'继续确认原天赋':'确认天赋，生成开场','confirm-opening',S.busy||(!journal.action&&!S.choice))}`,'c12');
   const story=chapter.story||{},active=chapter.mainline?.activeChapter;
   if(story.phase==='vn'){
     const vn=story.vn;
     const prose=(vn?.segments||[]).map(row=>`<div class="screen">${row.reply?`<p><strong>你的回应：</strong>${esc(row.reply)}</p>`:''}<p style="white-space:pre-wrap">${esc(row.text)}</p></div>`).join('');
-    const control=vn?.status==='prepared'?button('进入本章互动小说','vn_enter',S.busy):vn?.status==='ready'?button('结束互动小说，进入自由环节','vn_exit',S.busy):vn?.status==='active'?`<h3>你的回应 · ${vn.repliesUsed+1} / 3</h3>${(vn.segments.at(-1)?.options||[]).map((text,i)=>`<button class="btn" data-vn-option="${i}" ${S.busy?'disabled':''}>${esc(text)}</button>`).join('')}<label>也可以自行回应<textarea id="input" maxlength="300" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>${button('提交回应','vn_reply',S.busy)}`:'<p>正在准备互动小说。</p>';
+    const control=readOnly?'<p class="note">外部入口创建的局：这里只观察 VN 进度，请回原入口继续操作。</p>':vn?.status==='prepared'?button('进入本章互动小说','vn_enter',S.busy):vn?.status==='ready'?button('结束互动小说，进入自由环节','vn_exit',S.busy):vn?.status==='active'?`<h3>你的回应 · ${vn.repliesUsed+1} / 3</h3>${(vn.segments.at(-1)?.options||[]).map((text,i)=>`<button class="btn" data-vn-option="${i}" ${S.busy?'disabled':''}>${esc(text)}</button>`).join('')}<label>也可以自行回应<textarea id="input" maxlength="300" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>${button('提交回应','vn_reply',S.busy)}`:'<p>正在准备互动小说。</p>';
     return tile('章节互动小说',`${story.introduction?.text?`<p>${esc(story.introduction.text)}</p>`:''}${prose}${control}`,'c12');
   }
   const birth=story.birth?['firstAct','secondAct','thirdAct'].map(key=>story.birth[key]).filter(v=>typeof v==='string'&&v.trim()):[];
@@ -103,7 +112,7 @@ function syncOpeningAction(previousPhase){
 }
 function talentChoices(){const find=v=>{if(!v||typeof v!=='object')return [];if(Array.isArray(v.talentCandidates)&&v.talentCandidates.length)return v.talentCandidates;for(const x of Object.values(v)){const found=find(x);if(found.length)return found;}return [];};return find(S.current.chapter).length?find(S.current.chapter):find(S.current.run);}
 const actions=[['vn_enter','进入 VN'],['vn_reply','VN 回应'],['vn_exit','结束 VN'],['confirm_talent','选择天赋'],['post','发帖'],['comment','评论'],['dm_message','私聊'],['activity_create','创建活动'],['activity_enter','进入活动'],['activity_turn','活动行动'],['activity_exit','退出活动'],['advance_day','换日'],['end_chapter','结束本章'],['next_chapter','下一章']];
-function inputPanel(){if(S.current.chapter?.story?.phase==='vn')return '<p class="note">请先完成上方章节互动小说。</p>';if(['preparing','talents','failed','unavailable'].includes(openingStage()))return '<p class="note">先完成上方开局步骤，再提交剧情行动。</p>';return `<div class="console-form"><label>操作<select id="action">${actions.map(([v,l])=>option(v,l,S.action)).join('')}</select></label><label>玩家输入<textarea id="input" maxlength="500" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>
+function inputPanel(){if(runReadOnly())return '<p class="note">这是网页 Demo 或其他入口创建的局，中台只读展示其后端流程；请回原入口继续操作。</p>';if(S.current.chapter?.story?.phase==='vn')return '<p class="note">请先完成上方章节互动小说。</p>';if(['preparing','talents','failed','unavailable'].includes(openingStage()))return '<p class="note">先完成上方开局步骤，再提交剧情行动。</p>';return `<div class="console-form"><label>操作<select id="action">${actions.map(([v,l])=>option(v,l,S.action)).join('')}</select></label><label>玩家输入<textarea id="input" maxlength="500" ${S.busy?'disabled':''}>${esc(S.input)}</textarea></label>
   ${S.action==='dm_message'?`<label>人物<select id="target">${option('','选择人物',S.target)}${items(S.current.cast).filter(c=>c.actorId!==S.current.run?.playerActorId).map(c=>option(c.actorId,c.displayName||c.actorId,S.target)).join('')}</select></label>`:''}
   ${S.action==='comment'?`<label>帖子<select id="post">${option('','选择帖子',S.post)}${items(S.current.feed).map(p=>option(p.postId||p.contentId,p.text||p.body||p.postId,S.post)).join('')}</select></label>`:''}
   ${S.action==='confirm_talent'?`<label>天赋<select id="choice">${option('','选择服务端返回的天赋',S.choice)}${talentChoices().map(c=>option(c.choiceId,`${c.title} · ${c.description}`,S.choice)).join('')}</select></label>`:''}
@@ -126,7 +135,7 @@ function diffPanel(e){
   const world=!d?missing:d.world.length?d.world.map(r=>`<div class="world-item"><span class="chip">${r.kind}</span> ${esc(r.after?.text||r.before?.text||r.key)}</div>`).join(''):'<p class="note">无变化</p>';
   return `<div class="state"><div><h3>关系三轴 · 正式结算</h3>${relationships}</div><div><h3>本章目标</h3>${!d?missing:d.goals.length?pre(d.goals):'<p class="note">无变化</p>'}</div><div><h3>世界现状</h3>${world}</div></div>`;
 }
-function renderTimeline(){return `<div class="bento">${S.steps.map(s=>tile(`第 ${s.stepNo} 步 · ${esc(s.actionType)}`,`<p>${esc(s.inputText)}</p>${callsTable(S.calls.get(s.commandId)||[],S.evidence.get(s.commandId)?.command)}`,'c12')).join('')||'<p class="note">先开一局。</p>'}</div>`;}
+function renderTimeline(){return `<div class="bento">${S.steps.map(s=>tile(`第 ${s.stepNo} 步 · ${esc(s.actionType)}`,`<p class="note">${esc(fmtTime(s.createdAt))}</p><p>${esc(s.inputText)}</p>${callsTable(S.calls.get(s.commandId)||[],S.evidence.get(s.commandId)?.command)}`,'c12')).join('')||'<p class="note">先开一局。</p>'}</div>`;}
 function costNote(c){return !c?'费用未采集':`${c.pricedCalls} / ${c.totalCalls} 次已计价${c.missingCalls?`；${c.missingCalls} 次缺用量、时间或单价，未计入`:''}${c.cacheEstimatedCalls?`；${c.cacheEstimatedCalls} 次缺缓存明细，按未命中计价`:''}`;}
 function costCard(label,c){return tile(label,`<div class="kpi"><div class="v">${money(c?.cny)}</div><p class="note">${esc(costNote(c))}${c?.missingCalls?'；此金额仅为已计价小计':''}</p></div>`,'c4');}
 function renderCostTree(){
@@ -211,6 +220,7 @@ async function loadEvidence(step,{full=true}={}){const runId=S.runId;const param
   S.evidence.set(step.commandId,e);for(const c of full?S.calls.get(step.commandId):[])if(!S.detail.has(c.callId))S.detail.set(c.callId,await api('evalGetStoryEngineCall',{runId:S.runId,callId:c.callId}));
 }
 async function submit(){
+  if(runReadOnly())throw Error('外部入口创建的 Run 在输出中台只读，请回原入口继续操作。');
   if(!journal.action){journal.action={id:crypto.randomUUID(),runId:S.runId,type:S.action,text:S.input,target:S.target,post:S.post,choice:S.choice,
     activity:S.activity,attempt:S.attempt,activityTitle:S.activityTitle,activityWhen:S.activityWhen,activityLocation:S.activityLocation,activityPurpose:S.activityPurpose,invite:S.invite||[]};saveJournal();}
   const a=journal.action;if(a.runId!==S.runId)throw Error('请先恢复上次提交所在的测试局。');const params={runId:a.runId};
@@ -292,7 +302,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
     if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
-    if(action==='refresh'){if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId)return loadRun();return boot();}
+    if(action==='refresh'){S.runs=items(await api('evalListConsoleRuns'));if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId)return loadRun();return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
 });
