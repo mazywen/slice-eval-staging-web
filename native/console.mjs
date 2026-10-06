@@ -1,6 +1,7 @@
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=ace54ac22dd5';
-import {validate} from '../client-api/creator-client.mjs?v=ace54ac22dd5';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=ace54ac22dd5';
+import {createSafetyConsole} from './console-safety.mjs?v=96c0b5d7ac9b';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=96c0b5d7ac9b';
+import {validate} from '../client-api/creator-client.mjs?v=96c0b5d7ac9b';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=96c0b5d7ac9b';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -65,6 +66,7 @@ function assignRunCallsToSteps(){
     }
   }
 }
+const safetyConsole=createSafetyConsole({api,mutation,task,refresh:()=>render()});
 function render(){
   if(document.querySelector('.cost-tree'))S.costExpanded=new Set([...document.querySelectorAll('[data-cost-node][open]')].map(el=>el.dataset.costNode));
   const focused=document.activeElement,focusId=focused?.id,selection=[focused?.selectionStart,focused?.selectionEnd];
@@ -73,7 +75,7 @@ function render(){
   $('#world').disabled=$('#version').disabled=S.busy||!!journal.action;
   document.querySelectorAll('[data-view]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.view===S.view)));
   if(!S.auth){$('#main').innerHTML=`<section class="tile login"><div class="tile-h"><h2>登录试玩中台</h2></div><form id="login" class="tile-b console-form"><p class="note">使用内部 Eval 账号，连接 staging。</p><label>账号<input name="username" autocomplete="username" value="slice-eval" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button class="btn primary" ${S.busy?'disabled':''}>登录</button><p role="alert" class="error">${esc(S.error)}</p></form></section>`;return;}
-  $('#main').innerHTML=`${S.error?`<div class="notice error" role="alert">${esc(S.error)}</div>`:''}${S.notice?`<div class="notice" role="status">${esc(S.notice)}</div>`:''}${Object.keys(S.currentErrors).length?`<div class="notice error" role="status">当前读取失败：${esc(Object.values(S.currentErrors).join('；'))}。请点击刷新重新读取。</div>`:''}<div class="head"><div><h1>${{play:'逐步试玩',timeline:'这一局的时间线',flow:'流程与成本',prompts:'提示词'}[S.view]}</h1><p>每次由你提交一步，查看真实结果。回溯与切换尝试暂未接入。</p></div><div class="row">${button('刷新','refresh',S.busy)}${button('退出登录','logout',S.busy)}</div></div>${S.view==='play'?renderPlay():S.view==='timeline'?renderTimeline():S.view==='flow'?renderStats():renderPrompts()}`;
+  $('#main').innerHTML=`${S.error?`<div class="notice error" role="alert">${esc(S.error)}</div>`:''}${S.notice?`<div class="notice" role="status">${esc(S.notice)}</div>`:''}${Object.keys(S.currentErrors).length?`<div class="notice error" role="status">当前读取失败：${esc(Object.values(S.currentErrors).join('；'))}。请点击刷新重新读取。</div>`:''}<div class="head"><div><h1>${{play:'逐步试玩',timeline:'这一局的时间线',flow:'流程与成本',prompts:'提示词',safety:'举报与申诉'}[S.view]}</h1><p>每次由你提交一步，查看真实结果。回溯与切换尝试暂未接入。</p></div><div class="row">${button('刷新','refresh',S.busy)}${button('退出登录','logout',S.busy)}</div></div>${S.view==='safety'?safetyConsole.render():S.view==='play'?renderPlay():S.view==='timeline'?renderTimeline():S.view==='flow'?renderStats():renderPrompts()}`;
   if(focusId){const next=document.getElementById(focusId);if(next){next.focus({preventScroll:true});try{next.setSelectionRange(...selection);}catch{}}}
 }
 function launchPanel(){const current=runMeta();return tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>10 月 2 日起的开局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${fmtTime(r.createdAt)} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${current?`开局时间：${fmtTime(current.createdAt)} · ${current.readOnly?'外部入口创建，只读观察':'中台可操作'} · ${current.hasConsoleSteps?'含中台登记步骤':'流程直接读取后端命令'}`:esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
@@ -412,7 +414,7 @@ document.addEventListener('submit',e=>{if(e.target.id==='login'){e.preventDefaul
 document.addEventListener('click',e=>{const el=e.target.closest('button,[data-call]');if(!el)return;
   if(el.id==='theme'){const dark=document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.dataset.theme=dark?'light':'dark';write(localStorage,'slice-console-theme',document.documentElement.dataset.theme);return;}
   if(el.id==='open-prices')return prices();if(el.id==='dr-close')return closeDrawer();
-  if(el.dataset.view){S.view=el.dataset.view;if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});if(S.view==='prompts'&&S.runId&&S.traceRunId!==S.runId)return task(()=>loadRunTrace());render();return;}
+  if(el.dataset.view){S.view=el.dataset.view;if(S.view==='safety')return task(()=>safetyConsole.load());if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});if(S.view==='prompts'&&S.runId&&S.traceRunId!==S.runId)return task(()=>loadRunTrace());render();return;}
   if(el.dataset.sub){S.sub=el.dataset.sub;render();return;}
   if(el.dataset.promptMode){S.promptMode=el.dataset.promptMode;render();return;}
   if(el.dataset.inspectCall!==undefined){S.selectedCall=el.dataset.inspectCall;render();return;}
@@ -424,7 +426,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
     if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
-    if(action==='refresh'){await loadConsoleRuns();if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId){await loadRun();if(S.view==='prompts')await loadRunTrace(true);return;}return boot();}
+    if(action==='refresh'){if(S.view==='safety')return safetyConsole.load();await loadConsoleRuns();if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId){await loadRun();if(S.view==='prompts')await loadRunTrace(true);return;}return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
     if(action==='trace')await loadRunTrace(true);
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
