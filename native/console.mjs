@@ -1,7 +1,7 @@
-import {createSafetyConsole} from './console-safety.mjs?v=96c0b5d7ac9b';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=96c0b5d7ac9b';
-import {validate} from '../client-api/creator-client.mjs?v=96c0b5d7ac9b';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=96c0b5d7ac9b';
+import {createSafetyConsole} from './console-safety.mjs?v=0a492cc4fda5';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=0a492cc4fda5';
+import {validate} from '../client-api/creator-client.mjs?v=0a492cc4fda5';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=0a492cc4fda5';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -91,7 +91,7 @@ function renderPlay(){
       <div class="stage-metrics">${kpi('环节用时',sec(callElapsedMs(calls)),`首个调用开始至最后完成${selectedCall?'':` · 玩家等待 ${sec(waitMs(e.command))}`}`)}${kpi('环节费用',money(sumCosts(calls)),calls.some(c=>c.cost?.cny==null)?'包含未计价调用，费用尚不完整':'人民币 · 实际调用用量计价')}${kpi('调用次数',String(calls.length),'含失败及重试调用')}</div>
       ${stepCalls.length?`<nav class="call-picker" aria-label="选择环节调用"><button class="btn" data-inspect-call="" aria-pressed="${!selectedCall}">整个环节</button>${stepCalls.map((c,i)=>`<button class="btn" data-inspect-call="${esc(c.callId)}" aria-pressed="${selectedCall?.callId===c.callId}">${i+1}. ${esc(c.chainId)}</button>`).join('')}</nav>`:''}
       <div class="stage-columns">
-        <section class="stage-output"><h3>环节输出</h3><div id="step-result">${!selectedCall&&e.outcome?playerOutput(e.outcome,step,e.playerRecords):''}${calls.length?calls.map(c=>`<article class="raw-block"><h4>${esc(c.chainId)} · ${esc(c.status)}</h4>${pre(parseOutput(S.detail.get(c.callId)?.outputText||'')??S.detail.get(c.callId)?.outputText??'尚未保存或读取到该环节的输出')}</article>`).join(''):playerOutput(e.outcome,step,e.playerRecords)}</div></section>
+        <section class="stage-output"><h3>环节输出</h3><div id="step-result">${!selectedCall&&e.outcome?playerOutput(e.outcome,step,e.playerRecords):''}${calls.length?calls.map(c=>`<article class="raw-block"><h4>${esc(c.chainId)} · ${esc(callStatusLabel(c))}</h4>${pre(parseOutput(S.detail.get(c.callId)?.outputText||'')??S.detail.get(c.callId)?.outputText??'尚未保存或读取到该环节的输出')}</article>`).join(''):playerOutput(e.outcome,step,e.playerRecords)}</div></section>
         <section class="stage-prompt"><div class="prompt-heading"><h3>原始提示词 · 输入与输出</h3><div class="subtabs">${[['full','查看原文'],['outline','查看简版']].map(([value,label])=>`<button data-prompt-mode="${value}" aria-pressed="${S.promptMode===value}">${label}</button>`).join('')}</div></div>${stagePromptPanel(calls)}</section>
       </div>
     </section>
@@ -101,11 +101,13 @@ function renderPlay(){
     ${tile('当前玩家读接口',`<details><summary>查看当前状态</summary><p class="note">当前有效分支的最新画面；历史环节结果以上方输出为准。</p>${Object.entries(S.current).filter(([k])=>['run','chapter','feed','messages','turns','replies','activities','attempts'].includes(k)).map(([k,v])=>`<details><summary>${esc({run:'开局 / 天赋',chapter:'章节 / VN',feed:'信息流',messages:'私聊',turns:'活动回合',replies:'评论',activities:'活动',attempts:'活动邀请'}[k])}</summary>${pre(v)}</details>`).join('')}</details>`,'c12')}`:''}</div>`;
 }
 function stepLabel(step){return actions.find(([id])=>id===step?.actionType)?.[1]||(step?.actionType==='create_run'?'开局':step?.actionType)||'选择环节';}
+function callStatusLabel(c){return c.status==='failed'?'模型调用失败':c.validation?.status==='failed'?'模型已返回 · 业务校验失败':c.validation?.status==='passed'?'模型已返回 · 业务校验通过':'模型已返回 · 业务校验未采集';}
+function validationPanel(c){const v=c.validation;if(!v)return '<p class="note">业务校验结果未采集；模型返回成功不代表结果已可提交。</p>';return v.status==='passed'?'<p class="note">业务校验通过。</p>':`<p class="error">业务校验失败：${esc(v.code||'错误码未采集')}${v.fields?.length?` · 字段：${esc(v.fields.join('、'))}`:''}</p>`;}
 function stagePromptPanel(calls){
   if(!calls.length)return '<p class="note">该环节尚无已保存的模型调用。</p>';
   return `${S.promptMode==='outline'?'<p class="note">按实际发送顺序只展示提示词小标题，缩进保留标题层级。</p>':''}${calls.map(c=>{
     const d=S.detail.get(c.callId),request=d?.requestJson,messages=Array.isArray(request)?request:request?.messages;
-    return `<article class="prompt-call"><h4>${esc(c.chainId)} · ${esc(c.status)}</h4><h4>原始输入</h4>${Array.isArray(messages)?messages.map((m,i)=>{
+    return `<article class="prompt-call"><h4>${esc(c.chainId)} · ${esc(callStatusLabel(c))}</h4>${validationPanel(c)}<h4>原始输入</h4>${Array.isArray(messages)?messages.map((m,i)=>{
       const headings=promptHeadings(m.content);
       return `<div class="raw-block"><b>${i+1}. ${esc(m.role||'unknown')}</b>${S.promptMode==='outline'?(headings.length?`<ol class="prompt-outline">${headings.map(h=>`<li style="--heading-depth:${h.level-1}">${esc(h.title)}</li>`).join('')}</ol>`:'<p class="note">此消息没有小标题，可切换原文查看。</p>'):pre(m.content??m)}</div>`;
     }).join(''):S.promptMode==='outline'?'<p class="note">未读取到可提取标题的消息，请切换原文查看。</p>':pre(request??'尚未保存或读取到实际提示词')}<details ${S.promptMode==='full'?'open':''}><summary>模型原始输出</summary>${pre(d?.outputText??'尚未保存或读取到模型原文')}</details></article>`;
@@ -167,11 +169,11 @@ function inputPanel(){if(runReadOnly())return '<p class="note">这是网页 Demo
   ${S.action==='activity_create'?`<label>标题<input id="activity-title" value="${esc(S.activityTitle)}"></label><label>时间<input id="activity-when" value="${esc(S.activityWhen)}"></label><label>地点<input id="activity-location" value="${esc(S.activityLocation)}"></label><label>目的<input id="activity-purpose" value="${esc(S.activityPurpose)}"></label><label>邀请人物<select id="invite" multiple>${items(S.current.cast).map(c=>`<option value="${esc(c.actorId)}">${esc(c.displayName||c.actorId)}</option>`).join('')}</select></label>`:''}
   ${button(journal.action?'继续上次提交':'提交这一步','submit',S.busy)}<small class="note">${journal.action?'上次提交尚未完成，继续会复用原始请求和幂等键。':'不自动连续执行。'}</small></div>`;}
 function callsTable(calls,command){if(!calls.length)return '<p class="note">尚无已保存调用。</p>';const start=Math.min(...calls.map(c=>Date.parse(c.startedAt)||Infinity)),end=Math.max(...calls.map(c=>Date.parse(c.completedAt)||0)),span=Math.max(1,end-start);
-  return `<table class="calls"><tbody>${calls.map(c=>{const lane=callLane(c,command?.completedAt);return `<tr data-call="${c.callId}" tabindex="0" role="button"><td>${esc(c.chainId)}<small>${esc(c.usage?.model||'模型未采集')} · ${{foreground:'玩家要等',background:'后台',unknown:'时间未采集'}[lane]}</small></td><td><div class="track"><i class="${lane==='background'?'bg':''}" style="left:${Number.isFinite(start)?Math.max(0,(Date.parse(c.startedAt)-start)/span*100)||0:0}%;width:${Math.max(1,(c.latencyMs||0)/span*100)}%"></i></div></td><td>${sec(c.latencyMs)}<br>${money(cost(c))}${c.cost?.cacheEstimated?'<small>缓存未采集 · 按未命中</small>':''}${c.cost?.reason?`<small>${esc(c.cost.reason)}</small>`:''}</td></tr>`;}).join('')}</tbody></table>`;}
+  return `<table class="calls"><tbody>${calls.map(c=>{const lane=callLane(c,command?.completedAt);return `<tr data-call="${c.callId}" tabindex="0" role="button"><td>${esc(c.chainId)}<small>${esc(callStatusLabel(c))}</small><small>${esc(c.usage?.model||'模型未采集')} · ${{foreground:'玩家要等',background:'后台',unknown:'时间未采集'}[lane]}</small></td><td><div class="track"><i class="${lane==='background'?'bg':''}" style="left:${Number.isFinite(start)?Math.max(0,(Date.parse(c.startedAt)-start)/span*100)||0:0}%;width:${Math.max(1,(c.latencyMs||0)/span*100)}%"></i></div></td><td>${sec(c.latencyMs)}<br>${money(cost(c))}${c.cost?.cacheEstimated?'<small>缓存未采集 · 按未命中</small>':''}${c.cost?.reason?`<small>${esc(c.cost.reason)}</small>`:''}</td></tr>`;}).join('')}</tbody></table>`;}
 function parseOutput(text){try{return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{return null;}}
 function resultPanel(calls,e){if(S.sub==='data')return e.outcome?`<h3>已提交 Outcome</h3>${pre(e.outcome)}<h3>模型解析记录</h3>${calls.map(c=>{const raw=S.detail.get(c.callId)?.outputText||'';const section=raw.split('【记录】')[1]?.split(/【[^】]+】/)[0];return section?pre(parseOutput(section.trim())||'记录未能解析，请查看原文'):'';}).join('')||'<p class="note">无已保存的记录段。</p>'}`:'<p class="note">Outcome 尚未返回。</p>';
   if(S.sub==='judge'){const judges=calls.filter(c=>['turn_judgment','vn_judgment','chapter_condition','outline_drift'].includes(c.chainId));return judges.length?judges.map(c=>{const d=S.detail.get(c.callId),out=parseOutput(d?.outputText||'');const user=d?.requestJson?.find(m=>m.role==='user');const input=parseOutput(user?.content||'');return `<h3>${esc(c.chainId)}</h3>${out?.answers?Object.entries(out.answers).map(([k,v])=>`<div class="raw-block"><b>${esc(input?.questions?.[k]?.instructions||input?.questions?.[k]?.question||input?.questions?.[k]?.text||k)}</b><span class="chip">${esc(json(v.value))}</span><p>${esc(v.reason)}</p></div>`).join(''):'<p class="note">未采集判定原文或尚未加载。</p>'}`;}).join(''):'<p class="note">这一步暂无已保存的判定调用。</p>';}
-  return calls.map(c=>`<details><summary>${esc(c.chainId)} · ${esc(c.status)}</summary>${pre(S.detail.get(c.callId)?.outputText??'未开启测试模式或没有保存原文')}</details>`).join('')||'<p class="note">尚无调用原文。</p>';
+  return calls.map(c=>`<details><summary>${esc(c.chainId)} · ${esc(callStatusLabel(c))}</summary>${pre(S.detail.get(c.callId)?.outputText??'未开启测试模式或没有保存原文')}</details>`).join('')||'<p class="note">尚无调用原文。</p>';
 }
 function diffPanel(e){
   const exact=e.before?.revision===e.before?.requestedRevision&&e.after?.revision===e.after?.requestedRevision;
@@ -221,12 +223,12 @@ function renderActualPromptTrace(){
     return `<span class="chip">${esc(chainId)} · ${priced.length?money(priced.reduce((s,c)=>s+cost(c),0)):'待计价'} · ${calls.length} 次</span>`;}).join(' ');
   const rows=S.runCalls.map((c,index)=>{const d=S.detail.get(c.callId),messages=d?.requestJson;
     const scope=c.commandId?`命令 ${c.commandId.slice(-8)}`:'开局 / 后台无命令调用';
-    return `<details class="prompt-call" ${index===0?'open':''}><summary><strong>${esc(c.chainId)}</strong> · ${esc(c.usage?.model||'模型未采集')} · ${money(cost(c))} · ${esc(fmtTime(c.startedAt||c.createdAt))} · ${esc(c.status)}</summary>
+    return `<details class="prompt-call" ${index===0?'open':''}><summary><strong>${esc(c.chainId)}</strong> · ${esc(c.usage?.model||'模型未采集')} · ${money(cost(c))} · ${esc(fmtTime(c.startedAt||c.createdAt))} · ${esc(callStatusLabel(c))}</summary>
       <p class="note">${esc(scope)} · ${sec(c.latencyMs)} · 输入 ${c.usage?.inputTokens??'未采集'} / 输出 ${c.usage?.outputTokens??'未采集'} Token</p>
-      <h3>实际发送给模型的 messages</h3>
+      ${validationPanel(c)}<h3>实际发送给模型的 messages</h3>
       ${Array.isArray(messages)?messages.map((m,i)=>`<div class="raw-block"><b>${i+1}. ${esc(m.role||'unknown')}</b>${pre(m.content??m)}</div>`).join(''):pre(messages??'未保存实际 prompt；只有开启 staging Story Test Mode 的调用才会记录')}
       <h3>模型原始输出</h3>${pre(d?.outputText??'未保存模型原文')}
-      <h3>本次调用与费用</h3>${pre({callId:c.callId,chainId:c.chainId,commandId:c.commandId,status:c.status,latencyMs:c.latencyMs,usage:c.usage,cost:c.cost,errorCode:c.errorCode,createdAt:c.createdAt})}
+      <h3>本次调用与费用</h3>${pre({callId:c.callId,chainId:c.chainId,commandId:c.commandId,status:c.status,latencyMs:c.latencyMs,usage:c.usage,cost:c.cost,errorCode:c.errorCode,validation:c.validation,createdAt:c.createdAt})}
     </details>`;}).join('');
   return `<p class="note">本局共 ${S.runCalls.length} 次真实模型调用；已计价 ${known.length} 次合计 ${money(total)}${missing?`，${missing} 次待计价`:''}。下方每条都是当时数据库保存的实际 request_json / output_text。</p><div class="row">${byChain}</div>${rows}`;
 }
@@ -419,7 +421,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   if(el.dataset.promptMode){S.promptMode=el.dataset.promptMode;render();return;}
   if(el.dataset.inspectCall!==undefined){S.selectedCall=el.dataset.inspectCall;render();return;}
   if(el.dataset.step){if(S.busy)return;S.view='play';S.selected=Number(el.dataset.step);S.selectedCall='';const step=S.steps.find(s=>s.stepNo===S.selected);task(async()=>{if(step?.commandId)await loadEvidence(step);assignRunCallsToSteps();await loadStepDetails(step);}).then(()=>$('#stage-detail')?.scrollIntoView({behavior:'smooth',block:'start'}));return;}
-  if(el.dataset.call){const c=[...S.calls.values()].flat().find(c=>c.callId===el.dataset.call),d=S.detail.get(el.dataset.call);drawer('模型调用',`${pre({chain:c.chainId,usage:c.usage,startedAt:c.startedAt,completedAt:c.completedAt,latencyMs:c.latencyMs,cost:c.cost,errorCode:c.errorCode})}<h3>实际 messages</h3>${pre(d?.requestJson??'未开启测试模式或没有保存原文')}<h3>模型原文</h3>${pre(d?.outputText??'未开启测试模式或没有保存原文')}`);return;}
+  if(el.dataset.call){const c=[...S.calls.values()].flat().find(c=>c.callId===el.dataset.call),d=S.detail.get(el.dataset.call);drawer('模型调用',`${pre({chain:c.chainId,usage:c.usage,startedAt:c.startedAt,completedAt:c.completedAt,latencyMs:c.latencyMs,cost:c.cost,errorCode:c.errorCode,validation:c.validation})}<h3>实际 messages</h3>${pre(d?.requestJson??'未开启测试模式或没有保存原文')}<h3>模型原文</h3>${pre(d?.outputText??'未开启测试模式或没有保存原文')}`);return;}
   if(el.dataset.vnOption!==undefined){if(S.busy)return;S.input=S.current.chapter.story.vn.segments.at(-1).options[Number(el.dataset.vnOption)];render();return;}
   if(el.dataset.talent){if(S.busy||journal.action)return;S.choice=el.dataset.talent;S.action='confirm_talent';render();return;}
   const action=el.dataset.action;if(!action)return;
