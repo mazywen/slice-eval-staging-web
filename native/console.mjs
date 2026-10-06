@@ -1,7 +1,7 @@
-import {createSafetyConsole} from './console-safety.mjs?v=0a492cc4fda5';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=0a492cc4fda5';
-import {validate} from '../client-api/creator-client.mjs?v=0a492cc4fda5';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=0a492cc4fda5';
+import {createSafetyConsole} from './console-safety.mjs?v=0fbc532e008a';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=0fbc532e008a';
+import {validate} from '../client-api/creator-client.mjs?v=0fbc532e008a';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=0fbc532e008a';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
