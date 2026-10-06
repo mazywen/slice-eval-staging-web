@@ -1,7 +1,7 @@
-import {createSafetyConsole} from './console-safety.mjs?v=0fbc532e008a';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=0fbc532e008a';
-import {validate} from '../client-api/creator-client.mjs?v=0fbc532e008a';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=0fbc532e008a';
+import {createSafetyConsole} from './console-safety.mjs?v=967fc0a462ce';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=967fc0a462ce';
+import {validate} from '../client-api/creator-client.mjs?v=967fc0a462ce';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=967fc0a462ce';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -102,7 +102,7 @@ function renderPlay(){
 }
 function stepLabel(step){return actions.find(([id])=>id===step?.actionType)?.[1]||(step?.actionType==='create_run'?'开局':step?.actionType)||'选择环节';}
 function callStatusLabel(c){return c.status==='failed'?'模型调用失败':c.validation?.status==='failed'?'模型已返回 · 业务校验失败':c.validation?.status==='passed'?'模型已返回 · 业务校验通过':'模型已返回 · 业务校验未采集';}
-function validationPanel(c){const v=c.validation;if(!v)return '<p class="note">业务校验结果未采集；模型返回成功不代表结果已可提交。</p>';return v.status==='passed'?'<p class="note">业务校验通过。</p>':`<p class="error">业务校验失败：${esc(v.code||'错误码未采集')}${v.fields?.length?` · 字段：${esc(v.fields.join('、'))}`:''}</p>`;}
+function validationPanel(c){if(c.status==='failed')return `<p class="error">模型调用失败：${esc(c.errorCode||'错误码未采集')}。尚未执行输出校验。</p>`;const v=c.validation;if(!v)return '<p class="note">业务校验结果未采集；模型返回成功不代表结果已可提交。</p>';return v.status==='passed'?'<p class="note">业务校验通过。</p>':`<p class="error">业务校验失败：${esc(v.code||'错误码未采集')}${v.fields?.length?` · 字段：${esc(v.fields.join('、'))}`:''}</p>`;}
 function stagePromptPanel(calls){
   if(!calls.length)return '<p class="note">该环节尚无已保存的模型调用。</p>';
   return `${S.promptMode==='outline'?'<p class="note">按实际发送顺序只展示提示词小标题，缩进保留标题层级。</p>':''}${calls.map(c=>{
@@ -123,6 +123,7 @@ function playerOutput(outcome,step,records=[]){
   walk(outcome);walk(records);return texts.length?`<div class="screen">${[...new Set(texts)].map(t=>`<p>${esc(t)}</p>`).join('')}</div>`:'<p class="note">该 Outcome 没有玩家正文，查看解析数据与当前玩家读接口。</p>';
 }
 function openingStage(){
+  if(S.current.chapter?.preparation?.status==='failed')return 'failed';
   if(S.current.run?.opening?.generationStatus==='failed')return 'failed';
   if(S.currentErrors.run||S.currentErrors.chapter)return 'unavailable';
   const phase=S.current.chapter?.mainline?.phase;
@@ -139,7 +140,7 @@ function initialOutlinePanel(){
 }
 function openingPanel(){
   const stage=openingStage(),chapter=S.current.chapter,selected=chapter?.mainline?.selectedTalent,readOnly=runReadOnly();
-  if(stage==='failed')return tile('开局生成失败','<p class="error">后台未能完成本局开局。请查看错误记录后重试，不会自动新建另一局。</p>','c12');
+  if(stage==='failed')return tile('开局生成失败',`<p class="error">后台未能完成本局开局${chapter?.preparation?.errorCode?`：${esc(chapter.preparation.errorCode)}`:''}。请查看错误记录后重试，不会自动新建另一局。</p>`,'c12');
   if(stage==='unavailable')return tile('开局状态暂未读到','<p class="note">请点击刷新，继续读取当前测试局。</p>','c12');
   if(stage==='preparing')return tile(selected?'正在生成开场与第一章':'正在生成三张天赋',`<p role="status">${esc(S.openingNotice||(selected?'天赋已经确认，正在等待开场和首章。':'测试局已创建，正在等后台返回天赋。'))}</p><p class="note">本页会自动读取进度，不会自动选择天赋或提交下一步。</p>`,'c12');
   if(stage==='talents')return tile('选择开局天赋',`<p class="note">${readOnly?'这是其他入口创建的局；中台只展示服务端返回的天赋，不代替原入口确认。':'开局已准备好。选择一张天赋并确认，随后生成开场与第一章。'}</p><div class="opening-talents">${talentChoices().map(c=>`<article class="opening-talent"><h3>${esc(c.title)}</h3><p>${esc(c.description)}</p><p class="note">${esc(c.overall)}</p>${c.skills.map(skill=>`<p><strong>${esc(skill.name)} ${Number(skill.value)} / 100</strong> · ${esc(skill.talentName)}<br><small>${esc(skill.narrativeRule)}</small></p>`).join('')}${readOnly?'':`<button class="btn ${S.choice===c.choiceId?'primary':''}" data-talent="${esc(c.choiceId)}" aria-pressed="${S.choice===c.choiceId}" ${S.busy||journal.action?'disabled':''}>${S.choice===c.choiceId?'已选择':'选择这张'}</button>`}</article>`).join('')}</div>${readOnly?'':button(journal.action?'继续确认原天赋':'确认天赋，生成开场','confirm-opening',S.busy||(!journal.action&&!S.choice))}`,'c12');
