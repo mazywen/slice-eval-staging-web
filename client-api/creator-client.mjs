@@ -1,4 +1,4 @@
-import { operations, definitions } from './creator-network-shape.mjs?v=a992adda28ce';
+import { operations, definitions } from './creator-network-shape.mjs?v=bc628d97e11d';
 export function validate(value, schema, path = '$') {
   if (typeof schema === 'string') schema = definitions[schema];
   if (!schema) throw Error(`未找到字段合同：${path}`);
@@ -11,7 +11,7 @@ export function validate(value, schema, path = '$') {
   if ('const' in schema && value !== schema.const) throw Error(`${path} 必须为 ${schema.const}`);
   if (schema.enum && !schema.enum.includes(value)) throw Error(`${path} 可选值：${schema.enum.join('、')}`);
   const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
-  if (schema.type && !(schema.type === 'integer' ? Number.isInteger(value) : type === schema.type)) throw Error(`${path} 类型必须为 ${schema.type}`);
+  if (schema.type && !(Array.isArray(schema.type) ? schema.type : [schema.type]).some(allowed => allowed === 'integer' ? Number.isInteger(value) : type === allowed)) throw Error(`${path} 类型必须为 ${schema.type}`);
   if (type === 'object') {
     for (const key of schema.required || []) if (!(key in value)) throw Error(`${path}.${key} 缺失`);
     for (const [key, item] of Object.entries(value)) {
