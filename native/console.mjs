@@ -1,7 +1,8 @@
-import {createSafetyConsole} from './console-safety.mjs?v=bc628d97e11d';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=bc628d97e11d';
-import {validate} from '../client-api/creator-client.mjs?v=bc628d97e11d';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=bc628d97e11d';
+import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=d83395c2fee8';
+import {createSafetyConsole} from './console-safety.mjs?v=d83395c2fee8';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=d83395c2fee8';
+import {validate} from '../client-api/creator-client.mjs?v=d83395c2fee8';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=d83395c2fee8';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -75,7 +76,7 @@ function render(){
   $('#world').disabled=$('#version').disabled=S.busy||!!journal.action;
   document.querySelectorAll('[data-view]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.view===S.view)));
   if(!S.auth){$('#main').innerHTML=`<section class="tile login"><div class="tile-h"><h2>登录试玩中台</h2></div><form id="login" class="tile-b console-form"><p class="note">使用内部 Eval 账号，连接 staging。</p><label>账号<input name="username" autocomplete="username" value="slice-eval" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button class="btn primary" ${S.busy?'disabled':''}>登录</button><p role="alert" class="error">${esc(S.error)}</p></form></section>`;return;}
-  $('#main').innerHTML=`${S.error?`<div class="notice error" role="alert">${esc(S.error)}</div>`:''}${S.notice?`<div class="notice" role="status">${esc(S.notice)}</div>`:''}${Object.keys(S.currentErrors).length?`<div class="notice error" role="status">当前读取失败：${esc(Object.values(S.currentErrors).join('；'))}。请点击刷新重新读取。</div>`:''}<div class="head"><div><h1>${{play:'逐步试玩',timeline:'这一局的时间线',flow:'流程与成本',prompts:'提示词',safety:'举报与申诉'}[S.view]}</h1><p>每次由你提交一步，查看真实结果。回溯与切换尝试暂未接入。</p></div><div class="row">${button('刷新','refresh',S.busy)}${button('退出登录','logout',S.busy)}</div></div>${S.view==='safety'?safetyConsole.render():S.view==='play'?renderPlay():S.view==='timeline'?renderTimeline():S.view==='flow'?renderStats():renderPrompts()}`;
+  $('#main').innerHTML=`${S.error?`<div class="notice error" role="alert">${esc(S.error)}</div>`:''}${S.notice?`<div class="notice" role="status">${esc(S.notice)}</div>`:''}${Object.keys(S.currentErrors).length?`<div class="notice error" role="status">当前读取失败：${esc(Object.values(S.currentErrors).join('；'))}。请点击刷新重新读取。</div>`:''}<div class="head"><div><h1>${{play:'逐步试玩',timeline:'这一局的时间线',flow:'流程与成本',prompts:'提示词',safety:'举报与申诉'}[S.view]}</h1><p>每次由你提交一步，查看真实结果。回溯与切换尝试暂未接入。</p></div><div class="row">${button('导出本次测试整局','export-run',S.busy||!S.runId)}${button('刷新','refresh',S.busy)}${button('退出登录','logout',S.busy)}</div></div>${S.view==='safety'?safetyConsole.render():S.view==='play'?renderPlay():S.view==='timeline'?renderTimeline():S.view==='flow'?renderStats():renderPrompts()}`;
   if(focusId){const next=document.getElementById(focusId);if(next){next.focus({preventScroll:true});try{next.setSelectionRange(...selection);}catch{}}}
 }
 function compilationPanel(){
@@ -94,7 +95,7 @@ function renderPlay(){
   return `<div class="bento">${launchPanel()}${S.runId?`
     ${tile('环节记录',`<div class="step-list">${S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}" ${S.busy?'disabled':''}><b>${s.stepNo}. ${esc(stepLabel(s))}</b><small>${esc(fmtTime(s.createdAt))}</small></button>`).join('')||'<p class="note">暂无环节记录。</p>'}</div>`,'c12')}
     <section id="stage-detail" class="tile c12 stage-detail" aria-label="环节详情">
-      <div class="tile-h"><h2>${esc(name)}</h2><span class="sub">${esc(fmtTime(selectedCall?.startedAt||step?.createdAt))}</span></div>
+      <div class="tile-h"><h2>${esc(name)}</h2>${button('导出当前轮','export-step',S.busy||!step)}<span class="sub">${esc(fmtTime(selectedCall?.startedAt||step?.createdAt))}</span></div>
       <div class="stage-metrics">${kpi('环节用时',sec(callElapsedMs(calls)),`首个调用开始至最后完成${selectedCall?'':` · 玩家等待 ${sec(waitMs(e.command))}`}`)}${kpi('环节费用',money(sumCosts(calls)),calls.some(c=>c.cost?.cny==null)?'包含未计价调用，费用尚不完整':'人民币 · 实际调用用量计价')}${kpi('调用次数',String(calls.length),'含失败及重试调用')}</div>
       ${stepCalls.length?`<nav class="call-picker" aria-label="选择环节调用"><button class="btn" data-inspect-call="" aria-pressed="${!selectedCall}">整个环节</button>${stepCalls.map((c,i)=>`<button class="btn" data-inspect-call="${esc(c.callId)}" aria-pressed="${selectedCall?.callId===c.callId}">${i+1}. ${esc(c.chainId)}</button>`).join('')}</nav>`:''}
       <div class="stage-columns">
@@ -401,19 +402,33 @@ async function loadRunTrace(force=false){
   if(!force&&S.traceRunId===S.runId&&!S.traceError)return;
   const runId=S.runId,auth=S.auth;S.traceError='';
   try{
-    if(!S.runCalls.length)await loadRunCallMetadata();
+    await loadRunCallMetadata();
     if(S.runId!==runId||S.auth!==auth)return;
     for(let i=0;i<S.runCalls.length;i+=8){
       const batch=S.runCalls.slice(i,i+8).filter(c=>!S.detail.has(c.callId));
       const values=await Promise.allSettled(batch.map(c=>api('evalGetStoryEngineCall',{runId,callId:c.callId})));
       if(S.runId!==runId||S.auth!==auth)return;
       values.forEach((value,index)=>{if(value.status==='fulfilled')S.detail.set(batch[index].callId,value.value);});
+      const failed=values.find(value=>value.status==='rejected');
+      if(failed)throw failed.reason;
       render();
     }
     if(S.runId===runId&&S.auth===auth)S.traceRunId=runId;
   }catch(error){
     if(S.runId===runId&&S.auth===auth){S.runCalls=[];S.traceRunId=runId;S.traceError=`实际调用读取失败：${error.message}`;}
   }
+}
+async function exportEvidence(scope){
+  const runId=S.runId,auth=S.auth,stepNo=S.selected;
+  S.notice='正在读取已保存的提示词与输出…';render();
+  const pack=await collectConsoleExport({runId,scope,stepNo,
+    api:async(...args)=>{if(S.runId!==runId||S.auth!==auth)throw Error('测试局或登录状态已变化，请重新导出。');return api(...args);},
+    onProgress:(done,total)=>{S.notice=`正在导出提示词与输出：${done} / ${total}`;render();}});
+  if(S.runId!==runId||S.auth!==auth)throw Error('测试局或登录状态已变化，请重新导出。');
+  const url=URL.createObjectURL(new Blob([json(pack)+'\n'],{type:'application/json;charset=utf-8'}));
+  const link=document.createElement('a');link.href=url;link.download=consoleExportFilename(pack);
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  S.notice=`已导出${scope==='step'?'当前轮':'本次测试整局'}，包含 ${pack.calls.length} 次调用${pack.coverage.missingRawCallCount?`；${pack.coverage.missingRawCallCount} 次原文不完整，文件已标记 unavailable`:''}。仍在生成的内容请完成后再次导出。`;
 }
 async function preview(){const node=S.catalog.nodes.find(n=>n.nodeId===S.promptNode);if(!node)throw Error('请选择链路');const input=JSON.parse(S.promptInput||'{}');
   S.promptPreview=await api('evalPreviewPromptRequest',{}, {nodeId:node.nodeId,input});
@@ -425,7 +440,7 @@ document.addEventListener('submit',e=>{if(e.target.id==='login'){e.preventDefaul
 document.addEventListener('click',e=>{const el=e.target.closest('button,[data-call]');if(!el)return;
   if(el.id==='theme'){const dark=document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.dataset.theme=dark?'light':'dark';write(localStorage,'slice-console-theme',document.documentElement.dataset.theme);return;}
   if(el.id==='open-prices')return prices();if(el.id==='dr-close')return closeDrawer();
-  if(el.dataset.view){S.view=el.dataset.view;if(S.view==='safety')return task(()=>safetyConsole.load());if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});if(S.view==='prompts'&&S.runId&&S.traceRunId!==S.runId)return task(()=>loadRunTrace());render();return;}
+  if(el.dataset.view){if(S.busy)return;S.view=el.dataset.view;if(S.view==='safety')return task(()=>safetyConsole.load());if(S.view==='flow'&&S.worldId&&!S.stats)return task(async()=>{S.stats=await api('evalGetChainStats',{worldId:S.worldId});});if(S.view==='prompts'&&S.runId&&S.traceRunId!==S.runId)return task(()=>loadRunTrace());render();return;}
   if(el.dataset.sub){S.sub=el.dataset.sub;render();return;}
   if(el.dataset.promptMode){S.promptMode=el.dataset.promptMode;render();return;}
   if(el.dataset.inspectCall!==undefined){S.selectedCall=el.dataset.inspectCall;render();return;}
@@ -440,6 +455,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
     if(action==='refresh'){if(S.view==='safety')return safetyConsole.load();await loadConsoleRuns();if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId){await loadRun();if(S.view==='prompts')await loadRunTrace(true);return;}return boot();}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
     if(action==='trace')await loadRunTrace(true);
+    if(action==='export-run'||action==='export-step')return exportEvidence(action==='export-step'?'step':'run');
     if(action==='catalog')S.catalog=await api('evalGetPromptCatalog');if(action==='preview')await preview();});
 });
 $('#scrim').addEventListener('click',closeDrawer);document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();if(e.key==='Enter'&&e.target.matches('[data-call]'))e.target.click();});
@@ -447,7 +463,7 @@ const inputs={input:'input',target:'target',post:'post',choice:'choice',activity
 document.addEventListener('input',e=>{if(inputs[e.target.id])S[inputs[e.target.id]]=e.target.value;});
 document.addEventListener('change',e=>{const el=e.target;if(inputs[el.id])S[inputs[el.id]]=el.value;
   if(el.id==='action'){S.action=el.value;render();}if(el.id==='invite')S.invite=[...el.selectedOptions].map(o=>o.value);
-  if(el.id==='world')task(async()=>{S.costTree=null;S.costTreeError='';S.worldId=el.value;S.version='draft';S.stats=null;S.runId='';S.steps=[];S.current={};S.runCalls=[];S.traceRunId='';S.traceError='';observation++;await versions();});
+  if(el.id==='world')task(async()=>{S.costTree=null;S.costTreeError='';S.worldId=el.value;S.version='draft';S.stats=null;S.runId='';S.steps=[];S.current={};S.runCalls=[];S.traceRunId='';S.traceError='';observation++;S.calls.clear();S.detail.clear();S.evidence.clear();S.compilation=null;S.versions=[];S.startOptions=[];setRunUrl();if(S.worldId)await versions();});
   if(el.id==='version')task(async()=>{S.compilation=null;S.version=el.value;S.startOptions=[];await loadCompilation();});
   if(el.id==='run-pick'&&journal.action&&el.value!==journal.action.runId){S.error='请先完成上次提交';render();return;}
   if(el.id==='run-pick')task(async()=>{observation++;S.runId=el.value;S.costTree=null;S.costTreeError='';S.costExpanded=new Set(['0']);S.runCalls=[];S.traceRunId='';S.traceError='';const run=S.runs.find(r=>r.runId===S.runId);if(run){S.stats=null;S.worldId=run.worldId;await versions();await loadRun();if(S.view==='prompts')await loadRunTrace();}});
