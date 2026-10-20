@@ -1,8 +1,8 @@
-import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=a08117eb1e67';
-import {createSafetyConsole} from './console-safety.mjs?v=a08117eb1e67';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=a08117eb1e67';
-import {validate} from '../client-api/creator-client.mjs?v=a08117eb1e67';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=a08117eb1e67';
+import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=602c9d0a27d8';
+import {createSafetyConsole} from './console-safety.mjs?v=602c9d0a27d8';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=602c9d0a27d8';
+import {validate} from '../client-api/creator-client.mjs?v=602c9d0a27d8';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=602c9d0a27d8';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -86,7 +86,7 @@ function compilationPanel(){
     ['场景表',(value.scenes||[]).map(row=>({...row,'地图显示':row.onMap?'是':'否'}))],['人物开局边界 / 引爆事件',value.openingBoundaries],['校对补丁',value.patches]];
   return tile('编译产出',sections.map(([label,data])=>`<details><summary>${esc(label)}</summary>${pre(data??[])}</details>`).join(''),'c12');
 }
-function launchPanel(){const current=runMeta();return compilationPanel()+tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>10 月 2 日起的开局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${fmtTime(r.createdAt)} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${current?`开局时间：${fmtTime(current.createdAt)} · ${current.readOnly?'外部入口创建，只读观察':'中台可操作'} · ${current.hasConsoleSteps?'含中台登记步骤':'流程直接读取后端命令'}`:esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
+function launchPanel(){const current=runMeta();return compilationPanel()+tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>10 月 19 日起的开局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${fmtTime(r.createdAt)} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${current?`开局时间：${fmtTime(current.createdAt)} · ${current.readOnly?'外部入口创建，只读观察':'中台可操作'} · ${current.hasConsoleSteps?'含中台登记步骤':'流程直接读取后端命令'}`:esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
 function renderPlay(){
   const step=S.steps.find(s=>s.stepNo===S.selected),stepCalls=S.calls.get(stepCallKey(step))||[],e=S.evidence.get(step?.commandId)||{};
   const selectedCall=stepCalls.find(c=>c.callId===S.selectedCall),calls=selectedCall?[selectedCall]:stepCalls;
@@ -255,10 +255,10 @@ async function loadConsoleRuns(){
   if(S.runId&&!S.runs.some(r=>r.runId===S.runId)){
     observation++;S.runId='';S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();S.runCalls=[];S.costTree=null;S.selectedCall='';
     const url=new URL(location.href);url.searchParams.delete('runId');history.replaceState(null,'',url);
-    S.notice='仅展示北京时间 2026 年 10 月 2 日及之后创建的局，请重新选择。';
+    S.notice='仅展示北京时间 2026 年 10 月 19 日及之后创建的局，请重新选择。';
   }
 }
-async function boot(){S.costTree=null;S.costTreeError='';S.stats=null;S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');await loadConsoleRuns();const prices=await api('evalGetModelPricing');S.prices=prices.models;S.pricing=prices;if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
+async function boot(){S.costTree=null;S.costTreeError='';S.stats=null;S.steps=[];S.current={};S.currentErrors={};S.calls.clear();S.detail.clear();S.evidence.clear();journal=read(localStorage,storageKey(),{});S.worlds=await listAll('evalListWorldDrafts');await loadConsoleRuns();S.worlds=S.worlds.filter(w=>visibleConsoleRun(w)||S.runs.some(r=>r.worldId===w.worldId));const prices=await api('evalGetModelPricing');S.prices=prices.models;S.pricing=prices;if(!S.worldId)S.worldId=S.worlds[0]?.worldId||'';if(S.worldId&&!S.worlds.some(w=>w.worldId===S.worldId))throw Error('当前 Eval 账号或工作区无权读取这个作品，请使用创作时的账号登录。');if(S.worldId)await versions(true);if(S.runId)await loadRun();}
 async function loadCompilation(){S.compilation=S.version==='draft'?null:await api('evalGetConsoleCompilation',{worldId:S.worldId},undefined,{worldVersionId:S.version});}
 async function versions(requireRequestedVersion=false){const world=S.worlds.find(w=>w.worldId===S.worldId);if(S.version==='draft'&&world?.publishedWorldVersionId)S.version=world.publishedWorldVersionId;S.versions=await listAll('evalListWorldVersions',{worldId:S.worldId});if(S.version==='draft'){const published=S.versions.find(v=>v.current&&v.publicationStatus==='published');if(published)S.version=published.worldVersionId;}if(S.version!=='draft'&&!S.versions.some(v=>v.worldVersionId===S.version)){if(requireRequestedVersion)throw Error('指定的作品版本不可读取，请从创作端重新进入。');S.version='draft';}S.startOptions=[];await loadCompilation();}
 async function prepare(){const world=S.worlds.find(w=>w.worldId===S.worldId);if(!world)throw Error('当前工作区没有这个作品');

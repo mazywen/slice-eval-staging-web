@@ -34,9 +34,9 @@ export function runUnitStats(tree) {
       p90:values[Math.ceil(values.length*.9)-1]??null,max:values.at(-1)??null,failedPerFinished:g.count&&g.failedComplete?g.failedCny/g.count:null};
   });
 }
-// Console history starts at October 2 in the product's Shanghai timezone.
+// Console history starts at October 19 in the product's Shanghai timezone.
 export function visibleConsoleRun(run){
-  return Date.parse(run?.createdAt)>=Date.parse('2026-10-02T00:00:00+08:00');
+  return Date.parse(run?.createdAt)>=Date.parse('2026-10-19T00:00:00+08:00');
 }
 
 export function callElapsedMs(calls){
