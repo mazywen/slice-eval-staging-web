@@ -1,4 +1,4 @@
-import { operations, definitions } from './creator-network-shape.mjs?v=d83395c2fee8';
+import { operations, definitions } from './creator-network-shape.mjs?v=a08117eb1e67';
 export function validate(value, schema, path = '$') {
   if (typeof schema === 'string') schema = definitions[schema];
   if (!schema) throw Error(`未找到字段合同：${path}`);

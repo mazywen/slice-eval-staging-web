@@ -23,6 +23,7 @@ export async function collectConsoleExport({api, runId, scope, stepNo, onProgres
   const steps = rows(stepPage), allCalls = rows(callPage);
   // The current API is capped. Never label a possibly truncated list as a whole run.
   if (allCalls.length >= 2000) throw Error('调用记录达到接口 2000 条上限，无法保证完整，未生成导出文件。');
+  if (steps.length >= 2000) throw Error('步骤记录达到接口 2000 条上限，无法保证完整，未生成导出文件。');
   const selected = steps.find(step => step.stepNo === stepNo);
   if (scope === 'step' && !selected) throw Error('当前轮已不存在，请刷新后重新选择。');
   const selectedSteps = scope === 'step' ? [selected] : steps;

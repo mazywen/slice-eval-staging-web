@@ -1,8 +1,8 @@
-import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=d83395c2fee8';
-import {createSafetyConsole} from './console-safety.mjs?v=d83395c2fee8';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=d83395c2fee8';
-import {validate} from '../client-api/creator-client.mjs?v=d83395c2fee8';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=d83395c2fee8';
+import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=a08117eb1e67';
+import {createSafetyConsole} from './console-safety.mjs?v=a08117eb1e67';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=a08117eb1e67';
+import {validate} from '../client-api/creator-client.mjs?v=a08117eb1e67';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=a08117eb1e67';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
