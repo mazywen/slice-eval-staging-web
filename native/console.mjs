@@ -1,8 +1,8 @@
-import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=602c9d0a27d8';
-import {createSafetyConsole} from './console-safety.mjs?v=602c9d0a27d8';
-import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=602c9d0a27d8';
-import {validate} from '../client-api/creator-client.mjs?v=602c9d0a27d8';
-import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=602c9d0a27d8';
+import {collectConsoleExport,consoleExportFilename} from './console-export.mjs?v=686934c8a726';
+import {createSafetyConsole} from './console-safety.mjs?v=686934c8a726';
+import {operations,definitions} from '../client-api/creator-network-shape.mjs?v=686934c8a726';
+import {validate} from '../client-api/creator-client.mjs?v=686934c8a726';
+import {callLane,waitMs,stateDiff,runUnitStats,promptHeadings,visibleConsoleRun,callElapsedMs} from './console-metrics.mjs?v=686934c8a726';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const json=v=>JSON.stringify(v,null,2),pre=v=>`<pre>${esc(typeof v==='string'?v:json(v))}</pre>`,items=v=>Array.isArray(v)?v:v?.items||[];
 const read=(store,key,fallback=null)=>{try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}};
@@ -35,7 +35,7 @@ async function mutation(slot,op,params,body){
   // Always reuse the exact original request after an uncertain response.
   record.result=await api(record.op,record.params,record.body,{},record.key);saveJournal();return record.result;
 }
-async function task(fn){if(S.busy)return;S.busy=true;S.error='';render();try{await fn();}catch(e){S.error=e.message;const a=journal.action;if(a&&!journal[`${a.id}:command`]?.result&&((e.status>=400&&e.status<500&&e.status!==408)||!journal[`${a.id}:command`]&&!journal[`${a.id}:channel`])){delete journal.action;write(localStorage,storageKey(),journal);}if(journal.startSlot&&!journal[journal.startSlot]?.result&&e.status>=400&&e.status<500&&e.status!==408){delete journal.startSlot;write(localStorage,storageKey(),journal);}}finally{S.busy=false;render();}}
+async function task(fn){if(S.busy)return;S.busy=true;S.error='';render();try{await fn();}catch(e){S.error=e.message;const a=journal.action;if(a&&!journal[`${a.id}:command`]?.result&&((e.status>=400&&e.status<500&&e.status!==408)||!journal[`${a.id}:command`]&&!journal[`${a.id}:channel`])){delete journal.action;write(localStorage,storageKey(),journal);}if(journal.cardResourceSlot&&e.status>=400&&e.status<500&&e.status!==408){delete journal[journal.cardResourceSlot];delete journal.cardResourceSlot;saveJournal();}if(journal.startSlot&&!journal[journal.startSlot]?.result&&e.status>=400&&e.status<500&&e.status!==408){delete journal.startSlot;write(localStorage,storageKey(),journal);}}finally{S.busy=false;render();}}
 const button=(label,action,disabled=false)=>`<button class="btn" data-action="${action}" ${disabled?'disabled':''}>${label}</button>`;
 const tile=(title,body,span='c4',extra='')=>`<section class="tile ${span}"><div class="tile-h"><h2>${title}</h2>${extra}</div><div class="tile-b">${body}</div></section>`;
 const money=v=>v==null?'待计价':`¥${v.toFixed(6)}`,sec=v=>v==null?'未采集':`${(v/1000).toFixed(2)}s`;
@@ -87,12 +87,13 @@ function compilationPanel(){
   return tile('编译产出',sections.map(([label,data])=>`<details><summary>${esc(label)}</summary>${pre(data??[])}</details>`).join(''),'c12');
 }
 function launchPanel(){const current=runMeta();return compilationPanel()+tile('开局与恢复',`<details ${!S.runId||S.startOptions.length?'open':''}><summary>${S.runId?'切换测试局 / 开新局':'选择人物与测试局'}</summary><div class="console-form"><label>10 月 19 日起的开局<select id="run-pick">${option('','选择测试局',S.runId)}${S.runs.map(r=>option(r.runId,`${r.title} · ${fmtTime(r.createdAt)} · ${r.runId.slice(-8)}`,S.runId)).join('')}</select></label><div class="row">${button(S.version==='draft'?'编译草稿 · 准备开局':'读取开局人物','prepare',S.busy||!S.worldId||!!journal.action)}</div>${S.startOptions.length?`<label>扮演人物<select id="playable">${S.startOptions.filter(c=>c.playable).map(c=>option(c.bindingId,c.name,S.playable)).join('')}</select></label><label>首位 AI 人物<select id="initial">${S.startOptions.filter(c=>c.bindingId!==S.playable).map(c=>option(c.characterId,c.name,S.initial)).join('')}</select></label>${button('开一局','start',S.busy||!!journal.action)}`:''}<p class="note">${current?`开局时间：${fmtTime(current.createdAt)} · ${current.readOnly?'外部入口创建，只读观察':'中台可操作'} · ${current.hasConsoleSteps?'含中台登记步骤':'流程直接读取后端命令'}`:esc(S.runId||'选择作品和版本后开局，也可恢复服务端保存的步骤。')}</p></div></details>`,'c12');}
+function cardResourcePanel(){const pending=journal[journal.cardResourceSlot];if(pending){S.grantAccount=pending.body.accountId||'';S.grantKind=pending.body.itemKind;S.grantQuantity=pending.body.quantity;S.grantReason=pending.body.reason;}return tile('测试账号资源',`<details><summary>发放生图额度 / 卡面碎片</summary><fieldset class="console-form" ${pending?'disabled':''}><label>测试账号 ID（留空发给当前中台账号）<input id="grant-account" value="${esc(S.grantAccount||'')}"/></label><label>资源<select id="grant-kind">${option('card_fragment','卡面碎片',S.grantKind||'card_fragment')}${option('image_credit','生图额度',S.grantKind||'card_fragment')}</select></label><label>数量<input id="grant-quantity" type="number" min="1" max="100000" value="${esc(S.grantQuantity||260)}"/></label><label>原因<input id="grant-reason" value="${esc(S.grantReason||'卡面测试')}"/></label></fieldset>${button(pending?'重试上次发放':'发放测试资源','grant-card-resources',S.busy)}<p class="note">仅测试账号可领取。升档仍按当前配置消耗碎片。</p></details>`,'c12');}
 function renderPlay(){
   const step=S.steps.find(s=>s.stepNo===S.selected),stepCalls=S.calls.get(stepCallKey(step))||[],e=S.evidence.get(step?.commandId)||{};
   const selectedCall=stepCalls.find(c=>c.callId===S.selectedCall),calls=selectedCall?[selectedCall]:stepCalls;
   const name=selectedCall?.chainId||stepLabel(step);
   const kpi=(label,value,note)=>`<div class="kpi"><div class="l">${label}</div><div class="v">${value}</div><div class="d">${note}</div></div>`;
-  return `<div class="bento">${launchPanel()}${S.runId?`
+  return `<div class="bento">${launchPanel()}${cardResourcePanel()}${S.runId?`
     ${tile('环节记录',`<div class="step-list">${S.steps.map(s=>`<button class="btn history-row" data-step="${s.stepNo}" aria-pressed="${s.stepNo===S.selected}" ${S.busy?'disabled':''}><b>${s.stepNo}. ${esc(stepLabel(s))}</b><small>${esc(fmtTime(s.createdAt))}</small></button>`).join('')||'<p class="note">暂无环节记录。</p>'}</div>`,'c12')}
     <section id="stage-detail" class="tile c12 stage-detail" aria-label="环节详情">
       <div class="tile-h"><h2>${esc(name)}</h2>${button('导出当前轮','export-step',S.busy||!step)}<span class="sub">${esc(fmtTime(selectedCall?.startedAt||step?.createdAt))}</span></div>
@@ -449,10 +450,12 @@ document.addEventListener('click',e=>{const el=e.target.closest('button,[data-ca
   if(el.dataset.vnOption!==undefined){if(S.busy)return;S.input=S.current.chapter.story.vn.segments.at(-1).options[Number(el.dataset.vnOption)];render();return;}
   if(el.dataset.talent){if(S.busy||journal.action)return;S.choice=el.dataset.talent;S.action='confirm_talent';render();return;}
   const action=el.dataset.action;if(!action)return;
+  if(action==='grant-card-resources'){S.grantAccount=$('#grant-account').value;S.grantKind=$('#grant-kind').value;S.grantQuantity=$('#grant-quantity').value;S.grantReason=$('#grant-reason').value;}
   task(async()=>{if(action==='logout'){S.auth=null;write(sessionStorage,'slice-console-auth',null);observation++;return;}
     if(['vn_enter','vn_reply','vn_exit'].includes(action)){S.action=action;return submit();}
     if(action==='confirm-opening'){S.action='confirm_talent';return submit();}if(action==='prepare')return prepare();if(action==='start')return start();if(action==='submit')return submit();
     if(action==='refresh'){if(S.view==='safety')return safetyConsole.load();await loadConsoleRuns();if(S.view==='flow'&&S.worldId){if(S.runId)await loadCostTree();S.stats=await api('evalGetChainStats',{worldId:S.worldId});return;}if(S.runId){await loadRun();if(S.view==='prompts')await loadRunTrace(true);return;}return boot();}
+    if(action==='grant-card-resources'){const body={itemKind:S.grantKind||'card_fragment',quantity:Number(S.grantQuantity||260),reason:S.grantReason||'卡面测试',...(S.grantAccount?.trim()?{accountId:S.grantAccount.trim()}:{})};journal.cardResourceSlot||='card-resources:'+crypto.randomUUID();saveJournal();await mutation(journal.cardResourceSlot,'evalGrantAccountItems',{},body);delete journal.cardResourceSlot;saveJournal();S.notice='测试资源已发放';return;}
     if(action==='stats'){S.stats=await api('evalGetChainStats',{worldId:S.worldId});}
     if(action==='trace')await loadRunTrace(true);
     if(action==='export-run'||action==='export-step')return exportEvidence(action==='export-step'?'step':'run');
